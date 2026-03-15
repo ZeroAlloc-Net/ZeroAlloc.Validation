@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj" />
     <Project Path="src/ZValidation.Generator/ZValidation.Generator.csproj" />
+    <Project Path="src/ZValidation.Testing/ZValidation.Testing.csproj" />
     <Project Path="src/ZValidation/ZValidation.csproj" />
   </Folder>
 </Solution>
