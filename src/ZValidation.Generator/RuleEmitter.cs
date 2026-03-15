@@ -41,7 +41,8 @@ internal static class RuleEmitter
         }
 
         var nestedProperties = GetNestedValidateProperties(classSymbol).ToList();
-        bool hasNested = nestedProperties.Count > 0;
+        var collectionProperties = GetCollectionValidateProperties(classSymbol).ToList();
+        bool hasNested = nestedProperties.Count > 0 || collectionProperties.Count > 0;
         int totalDirectRules = byProperty.Sum(x => x.Rules.Count);
 
         if (hasNested)
@@ -86,6 +87,35 @@ internal static class RuleEmitter
                 sb.AppendLine($"            var nestedResult = new {qualifiedValidatorName}().Validate({modelParamName}.{propName});");
                 sb.AppendLine("            foreach (var f in nestedResult.Failures)");
                 sb.AppendLine($"                failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
+                sb.AppendLine("        }");
+                sb.AppendLine();
+            }
+
+            // Collection validators
+            foreach (var (collProp, elementType) in collectionProperties)
+            {
+                var propName = collProp.Name;
+                var varName = char.ToLowerInvariant(propName[0]) + propName.Substring(1);
+                var elemNamespace = elementType.ContainingNamespace?.ToDisplayString();
+                var elemTypeName = elementType.Name;
+                var collValidatorName = $"{elemTypeName}Validator";
+                var qualifiedCollValidatorName = string.IsNullOrEmpty(elemNamespace) || elemNamespace == "<global namespace>"
+                    ? $"global::{collValidatorName}"
+                    : $"global::{elemNamespace}.{collValidatorName}";
+
+                sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
+                sb.AppendLine("        {");
+                sb.AppendLine($"            int {varName}Idx = 0;");
+                sb.AppendLine($"            foreach (var {varName}Item in {modelParamName}.{propName})");
+                sb.AppendLine("            {");
+                sb.AppendLine($"                if ({varName}Item is not null)");
+                sb.AppendLine("                {");
+                sb.AppendLine($"                    var {varName}Result = new {qualifiedCollValidatorName}().Validate({varName}Item);");
+                sb.AppendLine($"                    foreach (var f in {varName}Result.Failures)");
+                sb.AppendLine($"                        failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
+                sb.AppendLine("                }");
+                sb.AppendLine($"                {varName}Idx++;");
+                sb.AppendLine("            }");
                 sb.AppendLine("        }");
                 sb.AppendLine();
             }
@@ -219,11 +249,6 @@ internal static class RuleEmitter
 
         return null;
     }
-
-    private static bool HasCollectionValidateProperties(INamedTypeSymbol classSymbol) =>
-        classSymbol.GetMembers()
-            .OfType<IPropertySymbol>()
-            .Any(p => GetCollectionElementType(p) is INamedTypeSymbol t && HasValidateAttribute(t));
 
     private static IEnumerable<(IPropertySymbol Property, INamedTypeSymbol ElementType)> GetCollectionValidateProperties(INamedTypeSymbol classSymbol) =>
         classSymbol.GetMembers()
