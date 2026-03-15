@@ -92,10 +92,11 @@ internal static class RuleEmitter
             }
 
             // Collection validators
-            foreach (var (collProp, elementType) in collectionProperties)
+            for (int _ci = 0; _ci < collectionProperties.Count; _ci++)
             {
+                var (collProp, elementType) = collectionProperties[_ci];
                 var propName = collProp.Name;
-                var varName = char.ToLowerInvariant(propName[0]) + propName.Substring(1);
+                var varName = $"_c{_ci}";   // _c0, _c1, _c2, ... — guaranteed unique
                 var elemNamespace = elementType.ContainingNamespace?.ToDisplayString();
                 var elemTypeName = elementType.Name;
                 var collValidatorName = $"{elemTypeName}Validator";
@@ -210,11 +211,6 @@ internal static class RuleEmitter
 
     private static string EscapeString(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"");
-
-    private static bool HasNestedValidateProperties(INamedTypeSymbol classSymbol) =>
-        classSymbol.GetMembers()
-            .OfType<IPropertySymbol>()
-            .Any(p => p.Type is INamedTypeSymbol t && HasValidateAttribute(t));
 
     private static IEnumerable<IPropertySymbol> GetNestedValidateProperties(INamedTypeSymbol classSymbol) =>
         classSymbol.GetMembers()
