@@ -46,8 +46,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         sb.AppendLine("{");
         sb.AppendLine($"    public override global::ZValidation.ValidationResult Validate({modelName} instance)");
         sb.AppendLine("    {");
-        sb.AppendLine("        // TODO: rule emission (Task 8)");
-        sb.AppendLine("        return new global::ZValidation.ValidationResult([]);");
+
+        RuleEmitter.EmitValidateBody(sb, classSymbol);
+
         sb.AppendLine("    }");
         sb.AppendLine("}");
 

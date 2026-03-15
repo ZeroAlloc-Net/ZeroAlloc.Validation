@@ -1,0 +1,124 @@
+using Microsoft.CodeAnalysis;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text;
+
+namespace ZValidation.Generator;
+
+internal static class RuleEmitter
+{
+    private const string NotNullFqn          = "ZValidation.NotNullAttribute";
+    private const string NotEmptyFqn         = "ZValidation.NotEmptyAttribute";
+    private const string MinLengthFqn        = "ZValidation.MinLengthAttribute";
+    private const string MaxLengthFqn        = "ZValidation.MaxLengthAttribute";
+    private const string GreaterThanFqn      = "ZValidation.GreaterThanAttribute";
+    private const string LessThanFqn         = "ZValidation.LessThanAttribute";
+    private const string InclusiveBetweenFqn = "ZValidation.InclusiveBetweenAttribute";
+    private const string EmailAddressFqn     = "ZValidation.EmailAddressAttribute";
+    private const string MatchesFqn          = "ZValidation.MatchesAttribute";
+
+    private static bool IsRuleAttribute(AttributeData attr)
+    {
+        var fqn = attr.AttributeClass?.ToDisplayString();
+        return fqn is NotNullFqn or NotEmptyFqn or MinLengthFqn or MaxLengthFqn
+            or GreaterThanFqn or LessThanFqn or InclusiveBetweenFqn
+            or EmailAddressFqn or MatchesFqn;
+    }
+
+    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance")
+    {
+        // Group rules by property in declaration order
+        var byProperty = new List<(IPropertySymbol Property, List<AttributeData> Rules)>();
+        foreach (var member in classSymbol.GetMembers())
+        {
+            if (member is not IPropertySymbol prop) continue;
+            var propRules = prop.GetAttributes().Where(IsRuleAttribute).ToList();
+            if (propRules.Count > 0)
+                byProperty.Add((prop, propRules));
+        }
+
+        int totalRules = byProperty.Sum(x => x.Rules.Count);
+
+        sb.AppendLine($"        Span<global::ZValidation.ValidationFailure> buffer = stackalloc global::ZValidation.ValidationFailure[{totalRules}];");
+        sb.AppendLine("        int count = 0;");
+        sb.AppendLine();
+
+        foreach (var (prop, rules) in byProperty)
+        {
+            var propName = prop.Name;
+            var propAccess = $"{modelParamName}.{propName}";
+
+            for (int i = 0; i < rules.Count; i++)
+            {
+                var attr = rules[i];
+                var fqn = attr.AttributeClass!.ToDisplayString();
+                var prefix = i == 0 ? "        if" : "        else if";
+                var condition = BuildCondition(fqn, attr, propAccess);
+                var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
+
+                sb.AppendLine($"{prefix} ({condition})");
+                sb.AppendLine($"            buffer[count++] = new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
+            }
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("        return new global::ZValidation.ValidationResult(buffer[..count].ToArray());");
+    }
+
+    private static string? GetMessage(AttributeData attr)
+    {
+        foreach (var named in attr.NamedArguments)
+            if (named.Key == "Message" && named.Value.Value is string s)
+                return s;
+        return null;
+    }
+
+    private static object? GetArg(AttributeData attr, int index)
+    {
+        if (attr.ConstructorArguments.Length <= index) return null;
+        return attr.ConstructorArguments[index].Value;
+    }
+
+    private static int GetIntArg(AttributeData attr, int index)
+        => System.Convert.ToInt32(GetArg(attr, index));
+
+    private static double GetDoubleArg(AttributeData attr, int index)
+        => System.Convert.ToDouble(GetArg(attr, index));
+
+    private static string GetStringArg(AttributeData attr, int index)
+        => GetArg(attr, index) as string ?? string.Empty;
+
+    private static string BuildCondition(string fqn, AttributeData attr, string access) =>
+        fqn switch
+        {
+            NotNullFqn          => $"{access} is null",
+            NotEmptyFqn         => $"string.IsNullOrEmpty({access})",
+            MinLengthFqn        => $"{access}.Length < {GetIntArg(attr, 0)}",
+            MaxLengthFqn        => $"{access}.Length > {GetIntArg(attr, 0)}",
+            GreaterThanFqn      => $"System.Convert.ToDouble({access}) <= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
+            LessThanFqn         => $"System.Convert.ToDouble({access}) >= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
+            InclusiveBetweenFqn => $"System.Convert.ToDouble({access}) < {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)} || System.Convert.ToDouble({access}) > {GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture)}",
+            EmailAddressFqn     => $"!global::ZValidationInternal.EmailValidator.IsValid({access})",
+            MatchesFqn          => $"!global::System.Text.RegularExpressions.Regex.IsMatch({access} ?? \"\", \"{EscapeString(GetStringArg(attr, 0))}\")",
+            _                   => "false"
+        };
+
+    private static string GetDefaultMessage(string fqn, AttributeData attr, string propName) =>
+        fqn switch
+        {
+            NotNullFqn          => $"{propName} must not be null.",
+            NotEmptyFqn         => $"{propName} must not be empty.",
+            MinLengthFqn        => $"{propName} must be at least {GetArg(attr, 0)} characters.",
+            MaxLengthFqn        => $"{propName} must not exceed {GetArg(attr, 0)} characters.",
+            GreaterThanFqn      => $"{propName} must be greater than {GetArg(attr, 0)}.",
+            LessThanFqn         => $"{propName} must be less than {GetArg(attr, 0)}.",
+            InclusiveBetweenFqn => $"{propName} must be between {GetArg(attr, 0)} and {GetArg(attr, 1)}.",
+            EmailAddressFqn     => $"{propName} must be a valid email address.",
+            MatchesFqn          => $"{propName} does not match the required pattern.",
+            _                   => $"{propName} is invalid."
+        };
+
+    private static string EscapeString(string s) =>
+        s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+}
