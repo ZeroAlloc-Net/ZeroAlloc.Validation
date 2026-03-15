@@ -85,6 +85,71 @@ public class AttributeDeclarationTests
         Assert.Equal(@"^\d{4}$", attr.Pattern);
     }
 
+    [Fact]
+    public void NotNullAttribute_MessageDefaultsToNull()
+    {
+        var attr = new NotNullAttribute();
+        Assert.Null(attr.Message);
+    }
+
+    [Fact]
+    public void MinLengthAttribute_MessageDefaultsToNull()
+    {
+        // FQN required: System.ComponentModel.DataAnnotations also defines MinLengthAttribute
+        var attr = new ZValidation.MinLengthAttribute(3);
+        Assert.Null(attr.Message);
+    }
+
+    [Fact]
+    public void MinLengthAttribute_CanSetCustomMessage()
+    {
+        var attr = new ZValidation.MinLengthAttribute(3) { Message = "Too short" };
+        Assert.Equal("Too short", attr.Message);
+    }
+
+    [Fact]
+    public void MaxLengthAttribute_MessageDefaultsToNull()
+    {
+        // FQN required: System.ComponentModel.DataAnnotations also defines MaxLengthAttribute
+        var attr = new ZValidation.MaxLengthAttribute(100);
+        Assert.Null(attr.Message);
+    }
+
+    [Fact]
+    public void MaxLengthAttribute_CanSetCustomMessage()
+    {
+        var attr = new ZValidation.MaxLengthAttribute(100) { Message = "Too long" };
+        Assert.Equal("Too long", attr.Message);
+    }
+
+    [Fact]
+    public void GreaterThanAttribute_MessageDefaultsToNull()
+    {
+        var attr = new GreaterThanAttribute(0);
+        Assert.Null(attr.Message);
+    }
+
+    [Fact]
+    public void LessThanAttribute_MessageDefaultsToNull()
+    {
+        var attr = new LessThanAttribute(120);
+        Assert.Null(attr.Message);
+    }
+
+    [Fact]
+    public void InclusiveBetweenAttribute_MessageDefaultsToNull()
+    {
+        var attr = new InclusiveBetweenAttribute(1, 100);
+        Assert.Null(attr.Message);
+    }
+
+    [Fact]
+    public void MatchesAttribute_MessageDefaultsToNull()
+    {
+        var attr = new MatchesAttribute(@"^\d{4}$");
+        Assert.Null(attr.Message);
+    }
+
     [Validate]
     private class SampleModel { }
 
