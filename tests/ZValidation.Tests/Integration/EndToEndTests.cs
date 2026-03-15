@@ -84,3 +84,106 @@ public class EndToEndTests
         ValidationAssert.HasError(result, "Age");
     }
 }
+
+[Validate]
+public class Address
+{
+    [NotEmpty(Message = "Street is required.")]
+    public string Street { get; set; } = "";
+
+    [NotEmpty(Message = "City is required.")]
+    public string City { get; set; } = "";
+}
+
+[Validate]
+public class Order
+{
+    [NotEmpty]
+    public string Reference { get; set; } = "";
+
+    [NotNull]
+    public Address? ShippingAddress { get; set; }
+
+    // Address has [Validate] → automatically nested
+    public Address BillingAddress { get; set; } = new();
+}
+
+public class NestedValidationTests
+{
+    private readonly OrderValidator _validator = new();
+
+    [Fact]
+    public void Valid_Order_PassesValidation()
+    {
+        var order = new Order
+        {
+            Reference = "ORD-001",
+            ShippingAddress = new Address { Street = "123 Main St", City = "Springfield" },
+            BillingAddress = new Address { Street = "456 Oak Ave", City = "Shelbyville" }
+        };
+        var result = _validator.Validate(order);
+        ValidationAssert.NoErrors(result);
+    }
+
+    [Fact]
+    public void Nested_BillingAddress_Invalid_ReportsDotPrefixedFailure()
+    {
+        var order = new Order
+        {
+            Reference = "ORD-001",
+            ShippingAddress = new Address { Street = "123 Main St", City = "Springfield" },
+            BillingAddress = new Address { Street = "", City = "Shelbyville" }
+        };
+        var result = _validator.Validate(order);
+        Assert.False(result.IsValid);
+        ValidationAssert.HasError(result, "BillingAddress.Street");
+        Assert.Equal("Street is required.", result.Failures.ToArray()
+            .First(f => f.PropertyName == "BillingAddress.Street").ErrorMessage);
+    }
+
+    [Fact]
+    public void Nested_BillingAddress_Null_IsSkipped()
+    {
+        // BillingAddress has default value (new Address()), so make it invalid differently
+        // This test verifies null skipping by using a nullable ShippingAddress set to null
+        var order = new Order
+        {
+            Reference = "ORD-001",
+            ShippingAddress = null,  // [NotNull] should fire
+            BillingAddress = new Address { Street = "456 Oak Ave", City = "Shelbyville" }
+        };
+        var result = _validator.Validate(order);
+        // ShippingAddress is null → NotNull fires, but no nested failures for ShippingAddress
+        ValidationAssert.HasError(result, "ShippingAddress");
+        // No "ShippingAddress.Street" type failures since ShippingAddress is null
+        Assert.DoesNotContain(result.Failures.ToArray(), f => f.PropertyName.StartsWith("ShippingAddress."));
+    }
+
+    [Fact]
+    public void Multiple_Nested_Failures_AllReported()
+    {
+        var order = new Order
+        {
+            Reference = "ORD-001",
+            ShippingAddress = new Address { Street = "123 Main St", City = "Springfield" },
+            BillingAddress = new Address { Street = "", City = "" }
+        };
+        var result = _validator.Validate(order);
+        ValidationAssert.HasError(result, "BillingAddress.Street");
+        ValidationAssert.HasError(result, "BillingAddress.City");
+    }
+
+    [Fact]
+    public void Direct_And_Nested_Failures_Reported_Together()
+    {
+        var order = new Order
+        {
+            Reference = "",  // direct failure
+            ShippingAddress = new Address { Street = "123 Main St", City = "Springfield" },
+            BillingAddress = new Address { Street = "", City = "Shelbyville" }  // nested failure
+        };
+        var result = _validator.Validate(order);
+        ValidationAssert.HasError(result, "Reference");
+        ValidationAssert.HasError(result, "BillingAddress.Street");
+    }
+}
