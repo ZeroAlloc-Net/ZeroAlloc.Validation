@@ -707,6 +707,65 @@ public class GeneratorRuleEmissionTests
         Assert.Contains("!instance.IsValidCode(", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_ForwardsScoped_ToValidator()
+    {
+        var source = """
+            using ZValidation;
+            namespace ZeroAlloc.Inject { public sealed class ScopedAttribute : System.Attribute {} }
+            namespace TestModels;
+            [Validate, global::ZeroAlloc.Inject.Scoped]
+            public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("[global::ZeroAlloc.Inject.ScopedAttribute]", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_ForwardsTransient_ToValidator()
+    {
+        var source = """
+            using ZValidation;
+            namespace ZeroAlloc.Inject { public sealed class TransientAttribute : System.Attribute {} }
+            namespace TestModels;
+            [Validate, global::ZeroAlloc.Inject.Transient]
+            public class Order { [NotEmpty] public string Ref { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("[global::ZeroAlloc.Inject.TransientAttribute]", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_ForwardsSingleton_ToValidator()
+    {
+        var source = """
+            using ZValidation;
+            namespace ZeroAlloc.Inject { public sealed class SingletonAttribute : System.Attribute {} }
+            namespace TestModels;
+            [Validate, global::ZeroAlloc.Inject.Singleton]
+            public class Country { [NotEmpty] public string Code { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("[global::ZeroAlloc.Inject.SingletonAttribute]", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_NoLifetime_EmitsNoLifetimeAttribute()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Plain { [NotEmpty] public string Value { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.DoesNotContain("ZeroAlloc.Inject", generated, StringComparison.Ordinal);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.

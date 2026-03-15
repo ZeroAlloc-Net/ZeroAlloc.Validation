@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -7,6 +8,9 @@ namespace ZValidation.Generator;
 public sealed class ValidatorGenerator : IIncrementalGenerator
 {
     private const string ValidateAttributeFqn = "ZValidation.ValidateAttribute";
+    private const string TransientFqn = "ZeroAlloc.Inject.TransientAttribute";
+    private const string ScopedFqn    = "ZeroAlloc.Inject.ScopedAttribute";
+    private const string SingletonFqn = "ZeroAlloc.Inject.SingletonAttribute";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -46,6 +50,13 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             sb.AppendLine($"namespace {namespaceName};");
             sb.AppendLine();
         }
+
+        var lifetimeFqn = classSymbol.GetAttributes()
+            .Select(a => a.AttributeClass?.ToDisplayString())
+            .FirstOrDefault(fqn => fqn is TransientFqn or ScopedFqn or SingletonFqn);
+
+        if (lifetimeFqn is not null)
+            sb.AppendLine($"[global::{lifetimeFqn}]");
 
         sb.AppendLine($"public sealed partial class {validatorName} : ValidatorFor<{modelName}>");
         sb.AppendLine("{");
