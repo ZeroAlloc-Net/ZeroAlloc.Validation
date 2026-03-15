@@ -21,6 +21,8 @@ internal static class RuleEmitter
     private const string MatchesFqn          = "ZValidation.MatchesAttribute";
     private const string NullFqn             = "ZValidation.NullAttribute";
     private const string EmptyFqn            = "ZValidation.EmptyAttribute";
+    private const string EqualFqn            = "ZValidation.EqualAttribute";
+    private const string NotEqualFqn         = "ZValidation.NotEqualAttribute";
 
     private static bool IsRuleAttribute(AttributeData attr)
     {
@@ -28,7 +30,8 @@ internal static class RuleEmitter
         return fqn is NotNullFqn or NotEmptyFqn or MinLengthFqn or MaxLengthFqn
             or GreaterThanFqn or LessThanFqn or InclusiveBetweenFqn
             or EmailAddressFqn or MatchesFqn
-            or NullFqn or EmptyFqn;
+            or NullFqn or EmptyFqn
+            or EqualFqn or NotEqualFqn;
     }
 
     public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance")
@@ -230,6 +233,12 @@ internal static class RuleEmitter
     private static string GetStringArg(AttributeData attr, int index)
         => GetArg(attr, index) as string ?? string.Empty;
 
+    private static bool IsStringArg(AttributeData attr, int index)
+    {
+        if (attr.ConstructorArguments.Length <= index) return false;
+        return attr.ConstructorArguments[index].Type?.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String;
+    }
+
     private static string BuildCondition(string fqn, AttributeData attr, string access) =>
         fqn switch
         {
@@ -244,6 +253,12 @@ internal static class RuleEmitter
             MatchesFqn          => $"!global::System.Text.RegularExpressions.Regex.IsMatch({access} ?? \"\", \"{EscapeString(GetStringArg(attr, 0))}\")",
             NullFqn             => $"{access} is not null",
             EmptyFqn            => $"!string.IsNullOrEmpty({access})",
+            EqualFqn            => IsStringArg(attr, 0)
+                ? $"{access} != \"{EscapeString(GetStringArg(attr, 0))}\""
+                : $"System.Convert.ToDouble({access}) != {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
+            NotEqualFqn         => IsStringArg(attr, 0)
+                ? $"{access} == \"{EscapeString(GetStringArg(attr, 0))}\""
+                : $"System.Convert.ToDouble({access}) == {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
             _                   => "false"
         };
 
@@ -261,6 +276,12 @@ internal static class RuleEmitter
             MatchesFqn          => $"{propName} does not match the required pattern.",
             NullFqn             => $"{propName} must be null.",
             EmptyFqn            => $"{propName} must be empty.",
+            EqualFqn            => IsStringArg(attr, 0)
+                ? $"{propName} must equal \"{GetStringArg(attr, 0)}\"."
+                : $"{propName} must equal {GetArg(attr, 0)}.",
+            NotEqualFqn         => IsStringArg(attr, 0)
+                ? $"{propName} must not equal \"{GetStringArg(attr, 0)}\"."
+                : $"{propName} must not equal {GetArg(attr, 0)}.",
             _                   => $"{propName} is invalid."
         };
 

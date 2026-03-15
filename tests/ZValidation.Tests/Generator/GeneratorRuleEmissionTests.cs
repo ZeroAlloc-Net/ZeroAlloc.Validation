@@ -324,6 +324,45 @@ public class GeneratorRuleEmissionTests
         Assert.Contains("\"Name\"", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_EmitsEqual_Numeric_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [Equal(42.0)] public int Value { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("!= 42", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsEqual_String_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [Equal("active")] public string Status { get; set; } = ""; }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("!= \"active\"", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsNotEqual_Numeric_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [NotEqual(0.0)] public double Score { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("== 0", generated, StringComparison.Ordinal);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.
