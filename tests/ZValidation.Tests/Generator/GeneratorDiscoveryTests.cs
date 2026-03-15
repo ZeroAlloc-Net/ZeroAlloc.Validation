@@ -61,9 +61,9 @@ public class GeneratorDiscoveryTests
         var result = RunGenerator(source);
         var generated = result.GeneratedTrees[0].ToString();
 
-        Assert.Contains("namespace TestModels", generated);
-        Assert.Contains("class PersonValidator", generated);
-        Assert.Contains("ValidatorFor<Person>", generated);
+        Assert.Contains("namespace TestModels", generated, System.StringComparison.Ordinal);
+        Assert.Contains("class PersonValidator", generated, System.StringComparison.Ordinal);
+        Assert.Contains("ValidatorFor<Person>", generated, System.StringComparison.Ordinal);
     }
 
     private static GeneratorDriverRunResult RunGenerator(string source)

@@ -4,9 +4,11 @@ public static class ValidationAssert
 {
     public static void HasError(ValidationResult result, string propertyName)
     {
-        foreach (var failure in result.Failures)
+        foreach (ref readonly ValidationFailure failure in result.Failures)
         {
-            if (failure.PropertyName == propertyName)
+#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
+            if (string.Equals(failure.PropertyName, propertyName, System.StringComparison.Ordinal))
+#pragma warning restore EPS06
                 return;
         }
         throw new ValidationAssertException(
@@ -20,5 +22,3 @@ public static class ValidationAssert
                 $"Expected no validation errors but found {result.Failures.Length}.");
     }
 }
-
-public sealed class ValidationAssertException(string message) : Exception(message);

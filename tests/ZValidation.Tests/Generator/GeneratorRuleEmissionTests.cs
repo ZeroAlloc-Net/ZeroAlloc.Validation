@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.CodeAnalysis;
@@ -21,8 +22,8 @@ public class GeneratorRuleEmissionTests
             """;
 
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("IsNullOrEmpty", generated);
-        Assert.Contains("\"Name\"", generated);
+        Assert.Contains("IsNullOrEmpty", generated, StringComparison.Ordinal);
+        Assert.Contains("\"Name\"", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -36,7 +37,7 @@ public class GeneratorRuleEmissionTests
             """;
 
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains(".Length > 50", generated);
+        Assert.Contains(".Length > 50", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -50,7 +51,7 @@ public class GeneratorRuleEmissionTests
             """;
 
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("<= 0", generated);
+        Assert.Contains("<= 0", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -69,7 +70,7 @@ public class GeneratorRuleEmissionTests
             """;
 
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("else if", generated);
+        Assert.Contains("else if", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -91,7 +92,7 @@ public class GeneratorRuleEmissionTests
 
         // 3 rules total
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("ValidationFailure[3]", generated);
+        Assert.Contains("ValidationFailure[3]", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -118,11 +119,11 @@ public class GeneratorRuleEmissionTests
             """;
 
         var customerSource = RunGeneratorGetSources(source)
-            .First(s => s.Contains("CustomerValidator"));
+            .First(s => s.Contains("CustomerValidator", StringComparison.Ordinal));
 
-        Assert.Contains("List<", customerSource);
+        Assert.Contains("List<", customerSource, StringComparison.Ordinal);
         Assert.DoesNotContain("List<", RunGeneratorGetSources(source)
-            .First(s => s.Contains("AddressValidator")));
+            .First(s => s.Contains("AddressValidator", StringComparison.Ordinal)), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -147,11 +148,11 @@ public class GeneratorRuleEmissionTests
             """;
 
         var customerSource = RunGeneratorGetSources(source)
-            .First(s => s.Contains("CustomerValidator"));
+            .First(s => s.Contains("CustomerValidator", StringComparison.Ordinal));
 
-        Assert.Contains("AddressValidator", customerSource);
-        Assert.Contains("\"Address.\" +", customerSource);
-        Assert.Contains("is not null", customerSource);
+        Assert.Contains("AddressValidator", customerSource, StringComparison.Ordinal);
+        Assert.Contains("\"Address.\" +", customerSource, StringComparison.Ordinal);
+        Assert.Contains("is not null", customerSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -171,9 +172,9 @@ public class GeneratorRuleEmissionTests
             """;
 
         var orderSource = RunGeneratorGetSources(source)
-            .First(s => s.Contains("OrderValidator"));
+            .First(s => s.Contains("OrderValidator", StringComparison.Ordinal));
 
-        Assert.Contains("global::Models.Addresses.AddressValidator", orderSource);
+        Assert.Contains("global::Models.Addresses.AddressValidator", orderSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -192,9 +193,9 @@ public class GeneratorRuleEmissionTests
             """;
 
         var customerSource = RunGeneratorGetSources(source)
-            .First(s => s.Contains("CustomerValidator"));
+            .First(s => s.Contains("CustomerValidator", StringComparison.Ordinal));
 
-        Assert.Contains("is not null", customerSource);
+        Assert.Contains("is not null", customerSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -222,11 +223,11 @@ public class GeneratorRuleEmissionTests
             """;
 
         var orderSource = RunGeneratorGetSources(source)
-            .First(s => s.Contains("OrderValidator"));
+            .First(s => s.Contains("OrderValidator", StringComparison.Ordinal));
 
-        Assert.Contains("List<", orderSource);
+        Assert.Contains("List<", orderSource, StringComparison.Ordinal);
         Assert.DoesNotContain("List<", RunGeneratorGetSources(source)
-            .First(s => s.Contains("LineItemValidator")));
+            .First(s => s.Contains("LineItemValidator", StringComparison.Ordinal)), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -245,12 +246,12 @@ public class GeneratorRuleEmissionTests
             """;
 
         var orderSource = RunGeneratorGetSources(source)
-            .First(s => s.Contains("OrderValidator"));
+            .First(s => s.Contains("OrderValidator", StringComparison.Ordinal));
 
-        Assert.Contains("LineItemValidator", orderSource);
-        Assert.Contains("\"Items[\" +", orderSource);
-        Assert.Contains("is not null", orderSource);
-        Assert.Contains("foreach", orderSource);
+        Assert.Contains("LineItemValidator", orderSource, StringComparison.Ordinal);
+        Assert.Contains("\"Items[\" +", orderSource, StringComparison.Ordinal);
+        Assert.Contains("is not null", orderSource, StringComparison.Ordinal);
+        Assert.Contains("foreach", orderSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -268,10 +269,10 @@ public class GeneratorRuleEmissionTests
             """;
 
         var articleSource = RunGeneratorGetSources(source)
-            .First(s => s.Contains("ArticleValidator"));
+            .First(s => s.Contains("ArticleValidator", StringComparison.Ordinal));
 
-        Assert.Contains("TagValidator", articleSource);
-        Assert.Contains("List<", articleSource);
+        Assert.Contains("TagValidator", articleSource, StringComparison.Ordinal);
+        Assert.Contains("List<", articleSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -290,9 +291,37 @@ public class GeneratorRuleEmissionTests
             """;
 
         var bagSource = RunGeneratorGetSources(source)
-            .First(s => s.Contains("BagValidator"));
+            .First(s => s.Contains("BagValidator", StringComparison.Ordinal));
 
-        Assert.Contains("is not null", bagSource);
+        Assert.Contains("is not null", bagSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsNull_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [Null] public string? Name { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("is not null", generated, StringComparison.Ordinal);
+        Assert.Contains("\"Name\"", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsEmpty_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [Empty] public string? Name { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("IsNullOrEmpty", generated, StringComparison.Ordinal);
+        Assert.Contains("\"Name\"", generated, StringComparison.Ordinal);
     }
 
     private static string RunGeneratorGetSource(string source)

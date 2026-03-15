@@ -10,7 +10,9 @@ public class AttributeDeclarationTests
     public void ValidateAttribute_CanBeAppliedToClass()
     {
         var attrs = typeof(SampleModel).GetCustomAttributes(typeof(ValidateAttribute), false);
+#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
         Assert.Single(attrs);
+#pragma warning restore HLQ005
     }
 
     [Fact]
