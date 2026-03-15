@@ -639,6 +639,36 @@ public class GeneratorRuleEmissionTests
         Assert.DoesNotContain("{MaxLength}", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_Placeholder_MinLength_Replaced()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Item { [MinLength(3, Message = "Min {MinLength} chars")] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("Min 3 chars", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("{MinLength}", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_Placeholder_MaxLength_Replaced()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Item { [MaxLength(50, Message = "Max {MaxLength} chars")] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("Max 50 chars", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("{MaxLength}", generated, StringComparison.Ordinal);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.

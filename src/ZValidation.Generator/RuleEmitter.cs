@@ -245,7 +245,7 @@ internal static class RuleEmitter
         if (fqn is GreaterThanFqn or LessThanFqn or GreaterThanOrEqualToFqn or LessThanOrEqualToFqn
                  or EqualFqn or NotEqualFqn)
         {
-            var val = fqn is EqualFqn or NotEqualFqn && IsStringArg(attr, 0)
+            var val = fqn is (EqualFqn or NotEqualFqn) && IsStringArg(attr, 0)
                 ? GetStringArg(attr, 0)
                 : GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture);
             result = result.Replace("{ComparisonValue}", val);
