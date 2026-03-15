@@ -1,5 +1,6 @@
 namespace ZValidationInternal;
 
+[System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
 public static class DecimalValidator
 {
     public static bool ExceedsPrecisionScale(decimal value, int precision, int scale)
