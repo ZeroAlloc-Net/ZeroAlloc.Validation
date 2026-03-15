@@ -155,6 +155,28 @@ public class GeneratorRuleEmissionTests
     }
 
     [Fact]
+    public void Generator_EmitsFullyQualifiedValidatorName_ForCrossNamespaceNestedType()
+    {
+        var source = """
+            namespace Models.Addresses
+            {
+                [ZValidation.Validate]
+                public class Address { [ZValidation.NotEmpty] public string Street { get; set; } = ""; }
+            }
+            namespace Models.Orders
+            {
+                [ZValidation.Validate]
+                public class Order { public Models.Addresses.Address Shipping { get; set; } = new(); }
+            }
+            """;
+
+        var orderSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("OrderValidator"));
+
+        Assert.Contains("global::Models.Addresses.AddressValidator", orderSource);
+    }
+
+    [Fact]
     public void Generator_EmitsNullGuard_ForNullableNestedProperty()
     {
         // The generated code must have the null guard

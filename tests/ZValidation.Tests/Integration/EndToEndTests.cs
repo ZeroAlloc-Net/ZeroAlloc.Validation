@@ -188,4 +188,89 @@ public class NestedValidationTests
         ValidationAssert.HasError(result, "BillingAddress.Street");
         Assert.Equal(2, result.Failures.Length);
     }
+
+    [Fact]
+    public void Nested_ShippingAddress_NonNull_Invalid_ReportsDotPrefixedFailure()
+    {
+        // ShippingAddress has [NotNull] AND its type [Validate] — when non-null the nested validator runs
+        var order = new Order
+        {
+            Reference = "ORD-001",
+            ShippingAddress = new Address { Street = "", City = "Springfield" },
+            BillingAddress = new Address { Street = "456 Oak Ave", City = "Shelbyville" }
+        };
+        var result = _validator.Validate(order);
+        ValidationAssert.HasError(result, "ShippingAddress.Street");
+        Assert.DoesNotContain(result.Failures.ToArray(), f => f.PropertyName == "ShippingAddress");
+    }
+}
+
+// Three-level deep nesting: Depot → DeliveryZone → PostalCode
+[Validate]
+public class PostalCode
+{
+    [NotEmpty(Message = "Code is required.")]
+    public string Code { get; set; } = "";
+}
+
+[Validate]
+public class DeliveryZone
+{
+    [NotEmpty(Message = "Zone name is required.")]
+    public string Name { get; set; } = "";
+
+    public PostalCode PostalCode { get; set; } = new();
+}
+
+[Validate]
+public class Depot
+{
+    [NotEmpty]
+    public string Id { get; set; } = "";
+
+    public DeliveryZone Zone { get; set; } = new();
+}
+
+public class DeepNestingTests
+{
+    private readonly DepotValidator _validator = new();
+
+    [Fact]
+    public void Valid_Depot_PassesValidation()
+    {
+        var depot = new Depot
+        {
+            Id = "D-01",
+            Zone = new DeliveryZone { Name = "North", PostalCode = new PostalCode { Code = "12345" } }
+        };
+        ValidationAssert.NoErrors(_validator.Validate(depot));
+    }
+
+    [Fact]
+    public void ThreeLevel_Deep_Failure_ReportsFullDotPath()
+    {
+        var depot = new Depot
+        {
+            Id = "D-01",
+            Zone = new DeliveryZone { Name = "North", PostalCode = new PostalCode { Code = "" } }
+        };
+        var result = _validator.Validate(depot);
+        var failures = result.Failures.ToArray();
+        ValidationAssert.HasError(result, "Zone.PostalCode.Code");
+        Assert.Equal("Code is required.", failures.Single(f => f.PropertyName == "Zone.PostalCode.Code").ErrorMessage);
+    }
+
+    [Fact]
+    public void ThreeLevel_Failures_At_Multiple_Levels_AllReported()
+    {
+        var depot = new Depot
+        {
+            Id = "D-01",
+            Zone = new DeliveryZone { Name = "", PostalCode = new PostalCode { Code = "" } }
+        };
+        var result = _validator.Validate(depot);
+        ValidationAssert.HasError(result, "Zone.Name");
+        ValidationAssert.HasError(result, "Zone.PostalCode.Code");
+        Assert.Equal(2, result.Failures.Length);
+    }
 }
