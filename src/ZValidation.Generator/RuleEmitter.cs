@@ -8,6 +8,8 @@ namespace ZValidation.Generator;
 
 internal static class RuleEmitter
 {
+    private const string ValidateAttributeFqn = "ZValidation.ValidateAttribute";
+
     private const string NotNullFqn          = "ZValidation.NotNullAttribute";
     private const string NotEmptyFqn         = "ZValidation.NotEmptyAttribute";
     private const string MinLengthFqn        = "ZValidation.MinLengthAttribute";
@@ -124,4 +126,18 @@ internal static class RuleEmitter
 
     private static string EscapeString(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+    private static bool HasNestedValidateProperties(INamedTypeSymbol classSymbol) =>
+        classSymbol.GetMembers()
+            .OfType<IPropertySymbol>()
+            .Any(p => p.Type is INamedTypeSymbol t && HasValidateAttribute(t));
+
+    private static IEnumerable<IPropertySymbol> GetNestedValidateProperties(INamedTypeSymbol classSymbol) =>
+        classSymbol.GetMembers()
+            .OfType<IPropertySymbol>()
+            .Where(p => p.Type is INamedTypeSymbol t && HasValidateAttribute(t));
+
+    private static bool HasValidateAttribute(INamedTypeSymbol typeSymbol) =>
+        typeSymbol.GetAttributes()
+            .Any(a => a.AttributeClass?.ToDisplayString() == ValidateAttributeFqn);
 }
