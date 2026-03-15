@@ -576,6 +576,69 @@ public class GeneratorRuleEmissionTests
         Assert.Contains("!instance.ShortTitleOk() &&", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_Placeholder_PropertyName_Replaced()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Item { [NotEmpty(Message = "'{PropertyName}' is required")] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        // {PropertyName} replaced with "Name", so the emitted string literal is "'Name' is required"
+        Assert.Contains("'Name' is required", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("{PropertyName}", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_Placeholder_ComparisonValue_Replaced()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Item { [GreaterThan(18, Message = "Must be > {ComparisonValue}")] public int Age { get; set; } }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("Must be > 18", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("{ComparisonValue}", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_Placeholder_FromTo_Replaced()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Item { [ExclusiveBetween(0, 100, Message = "Between {From} and {To}")] public double Value { get; set; } }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("Between 0 and 100", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("{From}", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("{To}", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_Placeholder_MinMaxLength_Replaced()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Item { [Length(2, 50, Message = "Length {MinLength}\u201350")] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("Length 2\u201350", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("{MinLength}", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("{MaxLength}", generated, StringComparison.Ordinal);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.

@@ -113,7 +113,7 @@ internal static class RuleEmitter
                 var attr = rules[i];
                 var fqn = attr.AttributeClass!.ToDisplayString();
                 var prefix = i == 0 ? "        if" : "        else if";
-                var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
+                var message = ResolveMessage(attr, fqn, propName) ?? GetDefaultMessage(fqn, attr, propName);
                 var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
                 var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
                 var whenMethod   = GetWhen(attr);
@@ -210,7 +210,7 @@ internal static class RuleEmitter
                 var attr = rules[i];
                 var fqn = attr.AttributeClass!.ToDisplayString();
                 var prefix = i == 0 ? "        if" : "        else if";
-                var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
+                var message = ResolveMessage(attr, fqn, propName) ?? GetDefaultMessage(fqn, attr, propName);
                 var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
                 var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
                 var whenMethod   = GetWhen(attr);
@@ -233,6 +233,46 @@ internal static class RuleEmitter
     private static bool IsGlobalOrEmpty(string? namespaceName) =>
         string.IsNullOrEmpty(namespaceName)
         || string.Equals(namespaceName, "<global namespace>", StringComparison.Ordinal);
+
+    private static string? ResolveMessage(AttributeData attr, string fqn, string propName)
+    {
+        var raw = GetMessage(attr);
+        if (raw is null) return null;
+
+        var result = raw.Replace("{PropertyName}", propName);
+
+        // {ComparisonValue} — single numeric arg used by comparison validators
+        if (fqn is GreaterThanFqn or LessThanFqn or GreaterThanOrEqualToFqn or LessThanOrEqualToFqn
+                 or EqualFqn or NotEqualFqn)
+        {
+            var val = fqn is EqualFqn or NotEqualFqn && IsStringArg(attr, 0)
+                ? GetStringArg(attr, 0)
+                : GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture);
+            result = result.Replace("{ComparisonValue}", val);
+        }
+
+        // {MinLength} / {MaxLength}
+        if (fqn is LengthFqn)
+        {
+            result = result
+                .Replace("{MinLength}", GetIntArg(attr, 0).ToString(CultureInfo.InvariantCulture))
+                .Replace("{MaxLength}", GetIntArg(attr, 1).ToString(CultureInfo.InvariantCulture));
+        }
+        if (fqn is MinLengthFqn)
+            result = result.Replace("{MinLength}", GetIntArg(attr, 0).ToString(CultureInfo.InvariantCulture));
+        if (fqn is MaxLengthFqn)
+            result = result.Replace("{MaxLength}", GetIntArg(attr, 0).ToString(CultureInfo.InvariantCulture));
+
+        // {From} / {To}
+        if (fqn is ExclusiveBetweenFqn or InclusiveBetweenFqn)
+        {
+            result = result
+                .Replace("{From}", GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture))
+                .Replace("{To}",   GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture));
+        }
+
+        return result;
+    }
 
     private static string? GetMessage(AttributeData attr)
     {
