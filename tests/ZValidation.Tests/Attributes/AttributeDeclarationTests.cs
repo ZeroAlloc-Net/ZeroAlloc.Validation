@@ -152,6 +152,38 @@ public class AttributeDeclarationTests
         Assert.Null(attr.Message);
     }
 
+    [Fact]
+    public void EqualAttribute_NumericConstructor_StoresValue()
+    {
+        var attr = new EqualAttribute(42.0);
+        Assert.Equal(42.0, attr.NumericValue);
+        Assert.Null(attr.Message);
+    }
+
+    [Fact]
+    public void EqualAttribute_StringConstructor_StoresValue()
+    {
+        var attr = new EqualAttribute("active");
+        Assert.Equal("active", attr.StringValue);
+        Assert.Null(attr.Message);
+    }
+
+    [Fact]
+    public void NotEqualAttribute_NumericConstructor_StoresValue()
+    {
+        var attr = new NotEqualAttribute(0.0);
+        Assert.Equal(0.0, attr.NumericValue);
+        Assert.Null(attr.Message);
+    }
+
+    [Fact]
+    public void NotEqualAttribute_StringConstructor_StoresValue()
+    {
+        var attr = new NotEqualAttribute("inactive");
+        Assert.Equal("inactive", attr.StringValue);
+        Assert.Null(attr.Message);
+    }
+
     [Validate]
     private class SampleModel { }
 
