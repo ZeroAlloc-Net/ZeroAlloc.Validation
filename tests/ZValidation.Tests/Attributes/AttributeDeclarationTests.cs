@@ -218,6 +218,13 @@ public class AttributeDeclarationTests
         Assert.Null(attr.Message);
     }
 
+    [Fact]
+    public void IsInEnumAttribute_DefaultConstructor_MessageIsNull()
+    {
+        var attr = new IsInEnumAttribute();
+        Assert.Null(attr.Message);
+    }
+
     [Validate]
     private class SampleModel { }
 

@@ -430,6 +430,21 @@ public class GeneratorRuleEmissionTests
         Assert.Contains(".Length > 50", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_EmitsIsInEnum_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            public enum Color { Red, Green, Blue }
+            [Validate]
+            public class Foo { [IsInEnum] public Color Hue { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("IsDefined", generated, StringComparison.Ordinal);
+        Assert.Contains("Color", generated, StringComparison.Ordinal);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.

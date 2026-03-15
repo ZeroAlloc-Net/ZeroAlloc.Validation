@@ -27,6 +27,7 @@ internal static class RuleEmitter
     private const string EmptyFqn                 = "ZValidation.EmptyAttribute";
     private const string EqualFqn                 = "ZValidation.EqualAttribute";
     private const string NotEqualFqn              = "ZValidation.NotEqualAttribute";
+    private const string IsInEnumFqn              = "ZValidation.IsInEnumAttribute";
 
     private static bool IsRuleAttribute(AttributeData attr)
     {
@@ -37,7 +38,8 @@ internal static class RuleEmitter
             or ExclusiveBetweenFqn or LengthFqn
             or EmailAddressFqn or MatchesFqn
             or NullFqn or EmptyFqn
-            or EqualFqn or NotEqualFqn;
+            or EqualFqn or NotEqualFqn
+            or IsInEnumFqn;
     }
 
     public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance")
@@ -106,7 +108,8 @@ internal static class RuleEmitter
                 var fqn = attr.AttributeClass!.ToDisplayString();
                 var prefix = i == 0 ? "        if" : "        else if";
                 var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
-                var condition = BuildCondition(fqn, attr, propAccess);
+                var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
+                var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName);
 
                 sb.AppendLine($"{prefix} ({condition})");
                 sb.AppendLine($"            failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }});");
@@ -198,7 +201,8 @@ internal static class RuleEmitter
                 var fqn = attr.AttributeClass!.ToDisplayString();
                 var prefix = i == 0 ? "        if" : "        else if";
                 var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
-                var condition = BuildCondition(fqn, attr, propAccess);
+                var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
+                var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName);
 
                 sb.AppendLine($"{prefix} ({condition})");
                 sb.AppendLine($"            buffer[count++] = new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
@@ -245,7 +249,7 @@ internal static class RuleEmitter
         return attr.ConstructorArguments[index].Type?.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String;
     }
 
-    private static string BuildCondition(string fqn, AttributeData attr, string access) =>
+    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "") =>
         fqn switch
         {
             NotNullFqn               => $"{access} is null",
@@ -269,6 +273,7 @@ internal static class RuleEmitter
             NotEqualFqn              => IsStringArg(attr, 0)
                 ? $"{access} == \"{EscapeString(GetStringArg(attr, 0))}\""
                 : $"System.Convert.ToDouble({access}) == {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
+            IsInEnumFqn              => $"!global::System.Enum.IsDefined(typeof({propTypeFullName}), {access})",
             _                        => "false"
         };
 
@@ -296,8 +301,18 @@ internal static class RuleEmitter
             NotEqualFqn              => IsStringArg(attr, 0)
                 ? $"{propName} must not equal \"{GetStringArg(attr, 0)}\"."
                 : $"{propName} must not equal {GetArg(attr, 0)}.",
+            IsInEnumFqn              => $"{propName} is not a valid value.",
             _                        => $"{propName} is invalid."
         };
+
+    private static string GetNullableUnwrappedFullTypeName(IPropertySymbol prop)
+    {
+        var type = prop.Type;
+        if (type is INamedTypeSymbol named && named.IsGenericType
+            && string.Equals(named.OriginalDefinition.ToDisplayString(), "System.Nullable<T>", StringComparison.Ordinal))
+            type = named.TypeArguments[0];
+        return type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    }
 
     private static string EscapeString(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"");
