@@ -291,6 +291,13 @@ public class AttributeDeclarationTests
         Assert.Null(attr.When);
     }
 
+    [Fact]
+    public void MustAttribute_UnlessDefaultsToNull()
+    {
+        var attr = new MustAttribute("MyMethod");
+        Assert.Null(attr.Unless);
+    }
+
     [Validate]
     private class SampleModel { }
 
