@@ -669,6 +669,44 @@ public class GeneratorRuleEmissionTests
         Assert.DoesNotContain("{MaxLength}", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_Placeholder_InclusiveBetween_FromTo_Replaced()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Item { [InclusiveBetween(1, 10, Message = "Between {From} and {To}")] public double Value { get; set; } }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("Between 1 and 10", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("{From}", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("{To}", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsMust_WithWhen_Guard()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Widget
+            {
+                public bool IsEnabled { get; set; }
+                [Must(nameof(IsValidCode), When = nameof(EnabledCheck))]
+                public string Code { get; set; } = "";
+                public bool IsValidCode(string value) => value.StartsWith("W", System.StringComparison.Ordinal);
+                public bool EnabledCheck() => IsEnabled;
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("instance.EnabledCheck() &&", generated, StringComparison.Ordinal);
+        Assert.Contains("!instance.IsValidCode(", generated, StringComparison.Ordinal);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.

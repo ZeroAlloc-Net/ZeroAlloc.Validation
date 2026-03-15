@@ -50,7 +50,7 @@ validator.ValidateAndThrow(customer);               // throws on failure
 
 ---
 
-## 2. Built-in Validators ⬜
+## 2. Built-in Validators ✅
 
 ### Null / Empty
 | Rule | Description |
@@ -119,10 +119,14 @@ RuleFor(x => x.Name)
 
 ## 4. Custom Validators ⬜
 
-### 4.1 Predicate (`Must`)
+### 4.1 Predicate (`Must`) ✅
+
+Attribute-based (no fluent API): `[Must(nameof(MethodName))]` where the model has `bool MethodName(PropertyType value)`.
 
 ```csharp
-RuleFor(x => x.Name).Must(name => name.StartsWith("A"));
+[Must(nameof(NameStartsWithA))]
+public string Name { get; set; }
+private bool NameStartsWithA(string value) => value.StartsWith("A", StringComparison.Ordinal);
 ```
 
 ### 4.2 Custom Method (multiple failures)
@@ -143,23 +147,26 @@ Implement a strongly-typed validator class for complex logic that can be reused 
 
 ## 5. Error Message Configuration ⬜
 
-### 5.1 `WithMessage`
+### 5.1 `WithMessage` ✅
+
+Every validation attribute accepts a `Message` named parameter:
 
 ```csharp
-RuleFor(x => x.Age).GreaterThan(0).WithMessage("Age must be positive.");
+[GreaterThan(0, Message = "Age must be positive.")]
+public int Age { get; set; }
 ```
 
-### 5.2 Placeholders (zero-alloc interpolation via source gen)
+### 5.2 Placeholders (zero-alloc interpolation via source gen) ✅
 
-| Placeholder | Description |
-|-------------|-------------|
-| `{PropertyName}` | Display name of the property |
-| `{PropertyValue}` | Actual value that failed |
-| `{ComparisonValue}` | Value used in comparison validators |
-| `{MinLength}` / `{MaxLength}` | Used in length validators |
-| `{From}` / `{To}` | Used in between validators |
+| Placeholder | Description | Status |
+|-------------|-------------|--------|
+| `{PropertyName}` | Display name of the property | ✅ |
+| `{ComparisonValue}` | Value used in comparison validators | ✅ |
+| `{MinLength}` / `{MaxLength}` | Used in length validators | ✅ |
+| `{From}` / `{To}` | Used in between validators | ✅ |
+| `{PropertyValue}` | Actual value that failed | ⬜ (requires runtime allocation) |
 
-Messages with placeholders are resolved at code-gen time into efficient string formatting — no runtime reflection or `string.Format` boxing.
+All supported placeholders are resolved at code-gen time into string literals — no runtime allocation.
 
 ### 5.3 `WithName` / `OverridePropertyName`
 
@@ -193,13 +200,18 @@ RuleFor(x => x.Age).GreaterThan(0).WithState(x => new { x.Id });
 
 ## 6. Conditional Validation ⬜
 
-### 6.1 `When` / `Unless`
+### 6.1 `When` / `Unless` ✅
 
-Apply a rule only when a condition is true or false:
+Attribute-based (no fluent API): `When` and `Unless` are named params on every validation attribute. The referenced method is an instance method on the model with signature `bool MethodName()`.
 
 ```csharp
-RuleFor(x => x.Discount).GreaterThan(0).When(x => x.IsPreferredCustomer);
-RuleFor(x => x.Discount).Empty().Unless(x => x.IsPreferredCustomer);
+[NotNull(When = nameof(ShippingRequired))]
+public Address? ShippingAddress { get; set; }
+private bool ShippingRequired() => RequiresShipping;
+
+[MinLength(5, Unless = nameof(ShortNameOk))]
+public string Name { get; set; }
+private bool ShortNameOk() => AllowShortName;
 ```
 
 ### 6.2 Top-level `When` Block
