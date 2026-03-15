@@ -200,6 +200,15 @@ public class AttributeDeclarationTests
         Assert.Null(attr.Message);
     }
 
+    [Fact]
+    public void ExclusiveBetweenAttribute_StoresMinMax()
+    {
+        var attr = new ExclusiveBetweenAttribute(1.0, 9.0);
+        Assert.Equal(1.0, attr.Min);
+        Assert.Equal(9.0, attr.Max);
+        Assert.Null(attr.Message);
+    }
+
     [Validate]
     private class SampleModel { }
 
