@@ -43,6 +43,29 @@ public class GeneratorDiscoveryTests
         Assert.Empty(result.GeneratedTrees);
     }
 
+    [Fact]
+    public void Generator_EmitsValidatorClass_InSameNamespace()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+
+            [Validate]
+            public class Person
+            {
+                [NotEmpty]
+                public string Name { get; set; } = "";
+            }
+            """;
+
+        var result = RunGenerator(source);
+        var generated = result.GeneratedTrees[0].ToString();
+
+        Assert.Contains("namespace TestModels", generated);
+        Assert.Contains("class PersonValidator", generated);
+        Assert.Contains("ValidatorFor<Person>", generated);
+    }
+
     private static GeneratorDriverRunResult RunGenerator(string source)
     {
         var compilation = CSharpCompilation.Create(
