@@ -194,4 +194,41 @@ internal static class RuleEmitter
     private static bool HasValidateAttribute(INamedTypeSymbol typeSymbol) =>
         typeSymbol.GetAttributes()
             .Any(a => a.AttributeClass?.ToDisplayString() == ValidateAttributeFqn);
+
+    private static ITypeSymbol? GetCollectionElementType(IPropertySymbol prop)
+    {
+        // T[]
+        if (prop.Type is IArrayTypeSymbol arr)
+            return arr.ElementType;
+
+        if (prop.Type is not INamedTypeSymbol named)
+            return null;
+
+        // IEnumerable<T> directly
+        if (named.IsGenericType && named.TypeArguments.Length == 1
+            && named.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.IEnumerable<T>")
+            return named.TypeArguments[0];
+
+        // Any type implementing IEnumerable<T> (List<T>, IList<T>, ICollection<T>, etc.)
+        foreach (var iface in named.AllInterfaces)
+        {
+            if (iface.IsGenericType && iface.TypeArguments.Length == 1
+                && iface.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.IEnumerable<T>")
+                return iface.TypeArguments[0];
+        }
+
+        return null;
+    }
+
+    private static bool HasCollectionValidateProperties(INamedTypeSymbol classSymbol) =>
+        classSymbol.GetMembers()
+            .OfType<IPropertySymbol>()
+            .Any(p => GetCollectionElementType(p) is INamedTypeSymbol t && HasValidateAttribute(t));
+
+    private static IEnumerable<(IPropertySymbol Property, INamedTypeSymbol ElementType)> GetCollectionValidateProperties(INamedTypeSymbol classSymbol) =>
+        classSymbol.GetMembers()
+            .OfType<IPropertySymbol>()
+            .Select(p => (Property: p, ElementType: GetCollectionElementType(p) as INamedTypeSymbol))
+            .Where(x => x.ElementType is not null && HasValidateAttribute(x.ElementType!))
+            .Select(x => (x.Property, x.ElementType!));
 }

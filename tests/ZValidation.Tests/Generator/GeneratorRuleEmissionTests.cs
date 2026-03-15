@@ -197,6 +197,38 @@ public class GeneratorRuleEmissionTests
         Assert.Contains("is not null", customerSource);
     }
 
+    [Fact]
+    public void Generator_UsesListForModelWithCollectionOfValidateType()
+    {
+        var source = """
+            using ZValidation;
+            using System.Collections.Generic;
+            namespace TestModels;
+
+            [Validate]
+            public class LineItem
+            {
+                [NotEmpty]
+                public string Sku { get; set; } = "";
+            }
+
+            [Validate]
+            public class Order
+            {
+                [NotEmpty]
+                public string Reference { get; set; } = "";
+                public List<LineItem> LineItems { get; set; } = new();
+            }
+            """;
+
+        var orderSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("OrderValidator"));
+
+        Assert.Contains("List<", orderSource);
+        Assert.DoesNotContain("List<", RunGeneratorGetSources(source)
+            .First(s => s.Contains("LineItemValidator")));
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.
@@ -208,6 +240,7 @@ public class GeneratorRuleEmissionTests
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(ValidateAttribute).Assembly.Location),
                 MetadataReference.CreateFromFile(System.IO.Path.Combine(systemRuntime, "System.Runtime.dll")),
+                MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
             ],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
@@ -227,6 +260,7 @@ public class GeneratorRuleEmissionTests
                 MetadataReference.CreateFromFile(typeof(ValidateAttribute).Assembly.Location),
                 MetadataReference.CreateFromFile(
                     System.IO.Path.Combine(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(), "System.Runtime.dll")),
+                MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
             ],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
