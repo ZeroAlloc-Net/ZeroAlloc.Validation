@@ -19,6 +19,7 @@
     <ProjectReference Include="..\..\src\ZValidation\ZValidation.csproj" />
     <ProjectReference Include="..\..\src\ZValidation.Testing\ZValidation.Testing.csproj" />
     <ProjectReference Include="..\..\src\ZValidation.Generator\ZValidation.Generator.csproj"
+                      OutputItemType="Analyzer"
                       ReferenceOutputAssembly="true" />
   </ItemGroup>
 

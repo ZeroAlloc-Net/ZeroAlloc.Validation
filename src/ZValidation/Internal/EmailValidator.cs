@@ -1,9 +1,9 @@
 namespace ZValidationInternal;
 
-internal static class EmailValidator
+public static class EmailValidator
 {
     // Zero-alloc check: must have exactly one '@' with chars before it and a '.' in the domain part.
-    internal static bool IsValid(string? email)
+    public static bool IsValid(string? email)
     {
         if (string.IsNullOrEmpty(email)) return false;
         var atIndex = email.IndexOf('@');

@@ -15,7 +15,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 ValidateAttributeFqn,
                 predicate: static (node, _) => node is ClassDeclarationSyntax,
                 transform: static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol)
-            .Where(static s => s is not null);
+            .Where(static s => s is not null && s.DeclaredAccessibility != Accessibility.Private);
 
         context.RegisterSourceOutput(validateClasses, Emit);
     }

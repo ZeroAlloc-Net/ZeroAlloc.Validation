@@ -40,7 +40,7 @@ internal static class RuleEmitter
 
         int totalRules = byProperty.Sum(x => x.Rules.Count);
 
-        sb.AppendLine($"        Span<global::ZValidation.ValidationFailure> buffer = stackalloc global::ZValidation.ValidationFailure[{totalRules}];");
+        sb.AppendLine($"        var buffer = new global::ZValidation.ValidationFailure[{totalRules}];");
         sb.AppendLine("        int count = 0;");
         sb.AppendLine();
 
@@ -63,7 +63,10 @@ internal static class RuleEmitter
             sb.AppendLine();
         }
 
-        sb.AppendLine("        return new global::ZValidation.ValidationResult(buffer[..count].ToArray());");
+        sb.AppendLine("        if (count == buffer.Length) return new global::ZValidation.ValidationResult(buffer);");
+        sb.AppendLine("        var result = new global::ZValidation.ValidationFailure[count];");
+        sb.AppendLine("        global::System.Array.Copy(buffer, result, count);");
+        sb.AppendLine("        return new global::ZValidation.ValidationResult(result);");
     }
 
     private static string? GetMessage(AttributeData attr)

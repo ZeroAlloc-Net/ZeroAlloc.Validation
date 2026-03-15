@@ -88,8 +88,7 @@ public class GeneratorRuleEmissionTests
 
         // 3 rules total
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("stackalloc", generated);
-        Assert.Contains("[3]", generated);
+        Assert.Contains("ValidationFailure[3]", generated);
     }
 
     private static string RunGeneratorGetSource(string source)
