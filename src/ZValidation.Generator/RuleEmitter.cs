@@ -30,7 +30,6 @@ internal static class RuleEmitter
 
     public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance")
     {
-        // Group rules by property in declaration order
         var byProperty = new List<(IPropertySymbol Property, List<AttributeData> Rules)>();
         foreach (var member in classSymbol.GetMembers())
         {
@@ -40,35 +39,85 @@ internal static class RuleEmitter
                 byProperty.Add((prop, propRules));
         }
 
-        int totalRules = byProperty.Sum(x => x.Rules.Count);
+        var nestedProperties = GetNestedValidateProperties(classSymbol).ToList();
+        bool hasNested = nestedProperties.Count > 0;
+        int totalDirectRules = byProperty.Sum(x => x.Rules.Count);
 
-        sb.AppendLine($"        var buffer = new global::ZValidation.ValidationFailure[{totalRules}];");
-        sb.AppendLine("        int count = 0;");
-        sb.AppendLine();
-
-        foreach (var (prop, rules) in byProperty)
+        if (hasNested)
         {
-            var propName = prop.Name;
-            var propAccess = $"{modelParamName}.{propName}";
-
-            for (int i = 0; i < rules.Count; i++)
-            {
-                var attr = rules[i];
-                var fqn = attr.AttributeClass!.ToDisplayString();
-                var prefix = i == 0 ? "        if" : "        else if";
-                var condition = BuildCondition(fqn, attr, propAccess);
-                var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
-
-                sb.AppendLine($"{prefix} ({condition})");
-                sb.AppendLine($"            buffer[count++] = new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
-            }
+            // Use List<> — nested validator failure count unknown at compile time
+            sb.AppendLine("        var failures = new System.Collections.Generic.List<global::ZValidation.ValidationFailure>();");
             sb.AppendLine();
-        }
 
-        sb.AppendLine("        if (count == buffer.Length) return new global::ZValidation.ValidationResult(buffer);");
-        sb.AppendLine("        var result = new global::ZValidation.ValidationFailure[count];");
-        sb.AppendLine("        global::System.Array.Copy(buffer, result, count);");
-        sb.AppendLine("        return new global::ZValidation.ValidationResult(result);");
+            // Direct rules — use failures.Add(...)
+            foreach (var (prop, rules) in byProperty)
+            {
+                var propName = prop.Name;
+                var propAccess = $"{modelParamName}.{propName}";
+
+                for (int i = 0; i < rules.Count; i++)
+                {
+                    var attr = rules[i];
+                    var fqn = attr.AttributeClass!.ToDisplayString();
+                    var prefix = i == 0 ? "        if" : "        else if";
+                    var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
+                    var condition = BuildCondition(fqn, attr, propAccess);
+
+                    sb.AppendLine($"{prefix} ({condition})");
+                    sb.AppendLine($"            failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }});");
+                }
+                sb.AppendLine();
+            }
+
+            // Nested validators
+            foreach (var nestedProp in nestedProperties)
+            {
+                var propName = nestedProp.Name;
+                var nestedTypeName = nestedProp.Type.Name;
+                var validatorName = $"{nestedTypeName}Validator";
+
+                sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
+                sb.AppendLine("        {");
+                sb.AppendLine($"            var nestedResult = new {validatorName}().Validate({modelParamName}.{propName});");
+                sb.AppendLine("            foreach (var f in nestedResult.Failures)");
+                sb.AppendLine($"                failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
+                sb.AppendLine("        }");
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("        return new global::ZValidation.ValidationResult(failures.ToArray());");
+        }
+        else
+        {
+            // Flat model — keep existing fixed array path
+            sb.AppendLine($"        var buffer = new global::ZValidation.ValidationFailure[{totalDirectRules}];");
+            sb.AppendLine("        int count = 0;");
+            sb.AppendLine();
+
+            foreach (var (prop, rules) in byProperty)
+            {
+                var propName = prop.Name;
+                var propAccess = $"{modelParamName}.{propName}";
+
+                for (int i = 0; i < rules.Count; i++)
+                {
+                    var attr = rules[i];
+                    var fqn = attr.AttributeClass!.ToDisplayString();
+                    var prefix = i == 0 ? "        if" : "        else if";
+                    var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
+                    var condition = BuildCondition(fqn, attr, propAccess);
+
+                    sb.AppendLine($"{prefix} ({condition})");
+                    sb.AppendLine($"            buffer[count++] = new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
+                }
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("        if (count == buffer.Length) return new global::ZValidation.ValidationResult(buffer);");
+            sb.AppendLine("        var result = new global::ZValidation.ValidationFailure[count];");
+            sb.AppendLine("        global::System.Array.Copy(buffer, result, count);");
+            sb.AppendLine("        return new global::ZValidation.ValidationResult(result);");
+        }
     }
 
     private static string? GetMessage(AttributeData attr)
