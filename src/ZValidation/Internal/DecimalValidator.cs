@@ -1,8 +1,8 @@
 namespace ZValidationInternal;
 
-internal static class DecimalValidator
+public static class DecimalValidator
 {
-    internal static bool ExceedsPrecisionScale(decimal value, int precision, int scale)
+    public static bool ExceedsPrecisionScale(decimal value, int precision, int scale)
     {
         // Extract actual scale (decimal places) from decimal bits — zero allocation
         var bits = decimal.GetBits(value);
