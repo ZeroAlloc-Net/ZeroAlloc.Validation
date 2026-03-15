@@ -20,6 +20,7 @@ internal static class RuleEmitter
     private const string GreaterThanOrEqualToFqn  = "ZValidation.GreaterThanOrEqualToAttribute";
     private const string LessThanOrEqualToFqn     = "ZValidation.LessThanOrEqualToAttribute";
     private const string ExclusiveBetweenFqn      = "ZValidation.ExclusiveBetweenAttribute";
+    private const string LengthFqn                = "ZValidation.LengthAttribute";
     private const string EmailAddressFqn          = "ZValidation.EmailAddressAttribute";
     private const string MatchesFqn               = "ZValidation.MatchesAttribute";
     private const string NullFqn                  = "ZValidation.NullAttribute";
@@ -33,7 +34,7 @@ internal static class RuleEmitter
         return fqn is NotNullFqn or NotEmptyFqn or MinLengthFqn or MaxLengthFqn
             or GreaterThanFqn or LessThanFqn or InclusiveBetweenFqn
             or GreaterThanOrEqualToFqn or LessThanOrEqualToFqn
-            or ExclusiveBetweenFqn
+            or ExclusiveBetweenFqn or LengthFqn
             or EmailAddressFqn or MatchesFqn
             or NullFqn or EmptyFqn
             or EqualFqn or NotEqualFqn;
@@ -257,6 +258,7 @@ internal static class RuleEmitter
             GreaterThanOrEqualToFqn  => $"System.Convert.ToDouble({access}) < {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
             LessThanOrEqualToFqn     => $"System.Convert.ToDouble({access}) > {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
             ExclusiveBetweenFqn      => $"System.Convert.ToDouble({access}) <= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)} || System.Convert.ToDouble({access}) >= {GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture)}",
+            LengthFqn                => $"{access}.Length < {GetIntArg(attr, 0)} || {access}.Length > {GetIntArg(attr, 1)}",
             EmailAddressFqn          => $"!global::ZValidationInternal.EmailValidator.IsValid({access})",
             MatchesFqn               => $"!global::System.Text.RegularExpressions.Regex.IsMatch({access} ?? \"\", \"{EscapeString(GetStringArg(attr, 0))}\")",
             NullFqn                  => $"{access} is not null",
@@ -283,6 +285,7 @@ internal static class RuleEmitter
             GreaterThanOrEqualToFqn  => $"{propName} must be greater than or equal to {GetArg(attr, 0)}.",
             LessThanOrEqualToFqn     => $"{propName} must be less than or equal to {GetArg(attr, 0)}.",
             ExclusiveBetweenFqn      => $"{propName} must be exclusively between {GetArg(attr, 0)} and {GetArg(attr, 1)}.",
+            LengthFqn                => $"{propName} must be between {GetArg(attr, 0)} and {GetArg(attr, 1)} characters.",
             EmailAddressFqn          => $"{propName} must be a valid email address.",
             MatchesFqn               => $"{propName} does not match the required pattern.",
             NullFqn                  => $"{propName} must be null.",

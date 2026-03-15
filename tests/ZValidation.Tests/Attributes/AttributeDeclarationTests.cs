@@ -209,6 +209,15 @@ public class AttributeDeclarationTests
         Assert.Null(attr.Message);
     }
 
+    [Fact]
+    public void LengthAttribute_StoresMinMax()
+    {
+        var attr = new LengthAttribute(2, 50);
+        Assert.Equal(2, attr.Min);
+        Assert.Equal(50, attr.Max);
+        Assert.Null(attr.Message);
+    }
+
     [Validate]
     private class SampleModel { }
 

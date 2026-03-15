@@ -416,6 +416,20 @@ public class GeneratorRuleEmissionTests
         Assert.Contains(">= 100", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_EmitsLength_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [Length(2, 50)] public string Name { get; set; } = ""; }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains(".Length < 2", generated, StringComparison.Ordinal);
+        Assert.Contains(".Length > 50", generated, StringComparison.Ordinal);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.
