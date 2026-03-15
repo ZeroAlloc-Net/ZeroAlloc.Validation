@@ -28,6 +28,7 @@ internal static class RuleEmitter
     private const string EqualFqn                 = "ZValidation.EqualAttribute";
     private const string NotEqualFqn              = "ZValidation.NotEqualAttribute";
     private const string IsInEnumFqn              = "ZValidation.IsInEnumAttribute";
+    private const string IsEnumNameFqn            = "ZValidation.IsEnumNameAttribute";
 
     private static bool IsRuleAttribute(AttributeData attr)
     {
@@ -39,7 +40,8 @@ internal static class RuleEmitter
             or EmailAddressFqn or MatchesFqn
             or NullFqn or EmptyFqn
             or EqualFqn or NotEqualFqn
-            or IsInEnumFqn;
+            or IsInEnumFqn
+            or IsEnumNameFqn;
     }
 
     public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance")
@@ -243,6 +245,13 @@ internal static class RuleEmitter
     private static string GetStringArg(AttributeData attr, int index)
         => GetArg(attr, index) as string ?? string.Empty;
 
+    private static string GetTypeArgFullName(AttributeData attr, int index)
+    {
+        if (attr.ConstructorArguments.Length <= index) return "global::System.Enum";
+        var typeSymbol = attr.ConstructorArguments[index].Value as ITypeSymbol;
+        return typeSymbol?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? "global::System.Enum";
+    }
+
     private static bool IsStringArg(AttributeData attr, int index)
     {
         if (attr.ConstructorArguments.Length <= index) return false;
@@ -274,6 +283,7 @@ internal static class RuleEmitter
                 ? $"{access} == \"{EscapeString(GetStringArg(attr, 0))}\""
                 : $"System.Convert.ToDouble({access}) == {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
             IsInEnumFqn              => $"!global::System.Enum.IsDefined(typeof({propTypeFullName}), {access})",
+            IsEnumNameFqn            => $"!global::System.Enum.IsDefined(typeof({GetTypeArgFullName(attr, 0)}), {access})",
             _                        => "false"
         };
 
@@ -302,6 +312,7 @@ internal static class RuleEmitter
                 ? $"{propName} must not equal \"{GetStringArg(attr, 0)}\"."
                 : $"{propName} must not equal {GetArg(attr, 0)}.",
             IsInEnumFqn              => $"{propName} is not a valid value.",
+            IsEnumNameFqn            => $"{propName} is not a valid enum name.",
             _                        => $"{propName} is invalid."
         };
 

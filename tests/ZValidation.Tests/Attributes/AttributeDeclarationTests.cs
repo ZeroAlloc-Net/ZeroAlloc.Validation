@@ -225,6 +225,14 @@ public class AttributeDeclarationTests
         Assert.Null(attr.Message);
     }
 
+    [Fact]
+    public void IsEnumNameAttribute_StoresEnumType()
+    {
+        var attr = new IsEnumNameAttribute(typeof(System.DayOfWeek));
+        Assert.Equal(typeof(System.DayOfWeek), attr.EnumType);
+        Assert.Null(attr.Message);
+    }
+
     [Validate]
     private class SampleModel { }
 
