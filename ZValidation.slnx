@@ -1,2 +1,5 @@
 <Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ZValidation.Generator/ZValidation.Generator.csproj" />
+  </Folder>
 </Solution>
