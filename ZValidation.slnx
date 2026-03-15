@@ -7,6 +7,7 @@
     <Project Path="src/ZValidation/ZValidation.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/ZValidation.Tests.AspNetCore/ZValidation.Tests.AspNetCore.csproj" />
     <Project Path="tests/ZValidation.Tests.MSTest/ZValidation.Tests.MSTest.csproj" />
     <Project Path="tests/ZValidation.Tests.NUnit/ZValidation.Tests.NUnit.csproj" />
     <Project Path="tests/ZValidation.Tests/ZValidation.Tests.csproj" />
