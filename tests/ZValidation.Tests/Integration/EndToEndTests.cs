@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Xunit;
 using ZValidation;
 using ZValidation.Testing;
@@ -271,6 +272,118 @@ public class DeepNestingTests
         var result = _validator.Validate(depot);
         ValidationAssert.HasError(result, "Zone.Name");
         ValidationAssert.HasError(result, "Zone.PostalCode.Code");
+        Assert.Equal(2, result.Failures.Length);
+    }
+}
+
+[Validate]
+public class LineItem
+{
+    [NotEmpty(Message = "SKU is required.")]
+    public string Sku { get; set; } = "";
+
+    [GreaterThan(0, Message = "Quantity must be positive.")]
+    public int Quantity { get; set; }
+}
+
+[Validate]
+public class Cart
+{
+    [NotEmpty]
+    public string CustomerId { get; set; } = "";
+
+    public List<LineItem> Items { get; set; } = [];
+}
+
+public class CollectionValidationTests
+{
+    private readonly CartValidator _validator = new();
+
+    [Fact]
+    public void Valid_Cart_PassesValidation()
+    {
+        var cart = new Cart
+        {
+            CustomerId = "C-001",
+            Items =
+            [
+                new LineItem { Sku = "ABC", Quantity = 2 },
+                new LineItem { Sku = "DEF", Quantity = 1 }
+            ]
+        };
+        ValidationAssert.NoErrors(_validator.Validate(cart));
+    }
+
+    [Fact]
+    public void Item_InvalidSku_ReportsBracketIndexedFailure()
+    {
+        var cart = new Cart
+        {
+            CustomerId = "C-001",
+            Items = [ new LineItem { Sku = "", Quantity = 1 } ]
+        };
+        var result = _validator.Validate(cart);
+        var failures = result.Failures.ToArray();
+        ValidationAssert.HasError(result, "Items[0].Sku");
+        Assert.Equal("SKU is required.", failures.Single(f => f.PropertyName == "Items[0].Sku").ErrorMessage);
+    }
+
+    [Fact]
+    public void SecondItem_Invalid_ReportsCorrectIndex()
+    {
+        var cart = new Cart
+        {
+            CustomerId = "C-001",
+            Items =
+            [
+                new LineItem { Sku = "ABC", Quantity = 1 },
+                new LineItem { Sku = "", Quantity = 1 }
+            ]
+        };
+        var result = _validator.Validate(cart);
+        ValidationAssert.HasError(result, "Items[1].Sku");
+        Assert.DoesNotContain(result.Failures.ToArray(), f => f.PropertyName == "Items[0].Sku");
+    }
+
+    [Fact]
+    public void Multiple_Items_Multiple_Failures_AllReported()
+    {
+        var cart = new Cart
+        {
+            CustomerId = "C-001",
+            Items =
+            [
+                new LineItem { Sku = "", Quantity = 0 },
+                new LineItem { Sku = "ABC", Quantity = 1 },
+                new LineItem { Sku = "", Quantity = -1 }
+            ]
+        };
+        var result = _validator.Validate(cart);
+        ValidationAssert.HasError(result, "Items[0].Sku");
+        ValidationAssert.HasError(result, "Items[0].Quantity");
+        ValidationAssert.HasError(result, "Items[2].Sku");
+        ValidationAssert.HasError(result, "Items[2].Quantity");
+        Assert.Equal(4, result.Failures.Length);
+    }
+
+    [Fact]
+    public void Null_Collection_IsSkipped()
+    {
+        var cart = new Cart { CustomerId = "C-001", Items = null! };
+        ValidationAssert.NoErrors(_validator.Validate(cart));
+    }
+
+    [Fact]
+    public void Direct_And_Collection_Failures_ReportedTogether()
+    {
+        var cart = new Cart
+        {
+            CustomerId = "",  // direct failure
+            Items = [ new LineItem { Sku = "", Quantity = 1 } ]  // collection failure
+        };
+        var result = _validator.Validate(cart);
+        ValidationAssert.HasError(result, "CustomerId");
+        ValidationAssert.HasError(result, "Items[0].Sku");
         Assert.Equal(2, result.Failures.Length);
     }
 }
