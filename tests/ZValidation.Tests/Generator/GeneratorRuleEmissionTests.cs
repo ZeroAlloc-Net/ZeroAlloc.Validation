@@ -125,6 +125,56 @@ public class GeneratorRuleEmissionTests
             .First(s => s.Contains("AddressValidator")));
     }
 
+    [Fact]
+    public void Generator_EmitsNestedValidation_WithDotPrefix()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+
+            [Validate]
+            public class Address
+            {
+                [NotEmpty]
+                public string Street { get; set; } = "";
+            }
+
+            [Validate]
+            public class Customer
+            {
+                public Address Address { get; set; } = new();
+            }
+            """;
+
+        var customerSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("CustomerValidator"));
+
+        Assert.Contains("AddressValidator", customerSource);
+        Assert.Contains("\"Address.\" +", customerSource);
+        Assert.Contains("is not null", customerSource);
+    }
+
+    [Fact]
+    public void Generator_SkipsNestedValidation_WhenPropertyIsNull()
+    {
+        // The generated code must have the null guard
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+
+            [Validate]
+            public class Address { [NotEmpty] public string Street { get; set; } = ""; }
+
+            [Validate]
+            public class Customer { public Address? Address { get; set; } }
+            """;
+
+        var customerSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("CustomerValidator"));
+
+        Assert.Contains("is not null", customerSource);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.
