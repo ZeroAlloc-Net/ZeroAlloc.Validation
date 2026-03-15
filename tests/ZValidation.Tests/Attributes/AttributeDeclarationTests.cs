@@ -242,6 +242,20 @@ public class AttributeDeclarationTests
         Assert.Null(attr.Message);
     }
 
+    [Fact]
+    public void MustAttribute_StoresMethodName()
+    {
+        var attr = new MustAttribute("MyMethod");
+        Assert.Equal("MyMethod", attr.MethodName);
+    }
+
+    [Fact]
+    public void MustAttribute_MessageDefaultsToNull()
+    {
+        var attr = new MustAttribute("MyMethod");
+        Assert.Null(attr.Message);
+    }
+
     [Validate]
     private class SampleModel { }
 

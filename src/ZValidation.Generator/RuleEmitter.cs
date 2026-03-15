@@ -30,6 +30,7 @@ internal static class RuleEmitter
     private const string IsInEnumFqn              = "ZValidation.IsInEnumAttribute";
     private const string IsEnumNameFqn            = "ZValidation.IsEnumNameAttribute";
     private const string PrecisionScaleFqn        = "ZValidation.PrecisionScaleAttribute";
+    private const string MustFqn                  = "ZValidation.MustAttribute";
 
     private static bool IsRuleAttribute(AttributeData attr)
     {
@@ -43,7 +44,8 @@ internal static class RuleEmitter
             or EqualFqn or NotEqualFqn
             or IsInEnumFqn
             or IsEnumNameFqn
-            or PrecisionScaleFqn;
+            or PrecisionScaleFqn
+            or MustFqn;
     }
 
     public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance")
@@ -113,7 +115,7 @@ internal static class RuleEmitter
                 var prefix = i == 0 ? "        if" : "        else if";
                 var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
                 var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-                var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName);
+                var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
 
                 sb.AppendLine($"{prefix} ({condition})");
                 sb.AppendLine($"            failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }});");
@@ -206,7 +208,7 @@ internal static class RuleEmitter
                 var prefix = i == 0 ? "        if" : "        else if";
                 var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
                 var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-                var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName);
+                var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
 
                 sb.AppendLine($"{prefix} ({condition})");
                 sb.AppendLine($"            buffer[count++] = new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
@@ -260,7 +262,7 @@ internal static class RuleEmitter
         return attr.ConstructorArguments[index].Type?.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String;
     }
 
-    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "") =>
+    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "", string modelParamName = "instance") =>
         fqn switch
         {
             NotNullFqn               => $"{access} is null",
@@ -287,6 +289,7 @@ internal static class RuleEmitter
             IsInEnumFqn              => $"!global::System.Enum.IsDefined(typeof({propTypeFullName}), {access})",
             IsEnumNameFqn            => $"!global::System.Enum.IsDefined(typeof({GetTypeArgFullName(attr, 0)}), {access})",
             PrecisionScaleFqn        => $"global::ZValidationInternal.DecimalValidator.ExceedsPrecisionScale({access}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})",
+            MustFqn                  => $"!{modelParamName}.{GetStringArg(attr, 0)}({access})",
             _                        => "false"
         };
 
@@ -317,6 +320,7 @@ internal static class RuleEmitter
             IsInEnumFqn              => $"{propName} is not a valid value.",
             IsEnumNameFqn            => $"{propName} is not a valid enum name.",
             PrecisionScaleFqn        => $"{propName} must not exceed {GetArg(attr, 0)} digits total with {GetArg(attr, 1)} decimal places.",
+            MustFqn                  => $"{propName} is invalid.",
             _                        => $"{propName} is invalid."
         };
 
