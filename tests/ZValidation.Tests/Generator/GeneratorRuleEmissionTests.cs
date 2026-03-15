@@ -494,6 +494,25 @@ public class GeneratorRuleEmissionTests
         Assert.Contains("!instance.IsValidCode(", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_EmitsMust_DefaultMessage()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Widget
+            {
+                [Must(nameof(IsValidCode))]
+                public string Code { get; set; } = "";
+                public bool IsValidCode(string value) => value.StartsWith("W", System.StringComparison.Ordinal);
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("Code is invalid.", generated, StringComparison.Ordinal);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.

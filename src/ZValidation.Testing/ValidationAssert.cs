@@ -26,7 +26,19 @@ public static class ValidationAssert
                 return;
         }
         throw new ValidationAssertException(
-            $"Expected a validation error for '{propertyName}' with message '{expectedMessage}' but none was found.");
+            $"Expected a failure for '{propertyName}' with message '{expectedMessage}' but none found.\nActual failures: {FailureSummary(result)}");
+    }
+
+    private static string FailureSummary(ValidationResult result)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (ref readonly var f in result.Failures)
+        {
+#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
+            sb.Append($"\n  [{f.PropertyName}] {f.ErrorMessage}");
+#pragma warning restore EPS06
+        }
+        return sb.Length == 0 ? "(none)" : sb.ToString();
     }
 
     public static void NoErrors(ValidationResult result)
