@@ -256,6 +256,41 @@ public class AttributeDeclarationTests
         Assert.Null(attr.Message);
     }
 
+    [Fact]
+    public void ValidationAttribute_WhenDefaultsToNull()
+    {
+        var attr = new NotEmptyAttribute();
+        Assert.Null(attr.When);
+    }
+
+    [Fact]
+    public void ValidationAttribute_UnlessDefaultsToNull()
+    {
+        var attr = new NotEmptyAttribute();
+        Assert.Null(attr.Unless);
+    }
+
+    [Fact]
+    public void ValidationAttribute_CanSetWhen()
+    {
+        var attr = new NotEmptyAttribute { When = "IsActive" };
+        Assert.Equal("IsActive", attr.When);
+    }
+
+    [Fact]
+    public void ValidationAttribute_CanSetUnless()
+    {
+        var attr = new NotEmptyAttribute { Unless = "IsGuest" };
+        Assert.Equal("IsGuest", attr.Unless);
+    }
+
+    [Fact]
+    public void MustAttribute_WhenDefaultsToNull()
+    {
+        var attr = new MustAttribute("MyMethod");
+        Assert.Null(attr.When);
+    }
+
     [Validate]
     private class SampleModel { }
 

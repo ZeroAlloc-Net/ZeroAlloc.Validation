@@ -116,8 +116,12 @@ internal static class RuleEmitter
                 var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
                 var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
                 var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
+                var whenMethod   = GetWhen(attr);
+                var unlessMethod = GetUnless(attr);
+                var whenGuard    = whenMethod   is null ? "" : $"{modelParamName}.{whenMethod}() && ";
+                var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
 
-                sb.AppendLine($"{prefix} ({condition})");
+                sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
                 sb.AppendLine($"            failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }});");
             }
             sb.AppendLine();
@@ -209,8 +213,12 @@ internal static class RuleEmitter
                 var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
                 var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
                 var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
+                var whenMethod   = GetWhen(attr);
+                var unlessMethod = GetUnless(attr);
+                var whenGuard    = whenMethod   is null ? "" : $"{modelParamName}.{whenMethod}() && ";
+                var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
 
-                sb.AppendLine($"{prefix} ({condition})");
+                sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
                 sb.AppendLine($"            buffer[count++] = new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
             }
             sb.AppendLine();
@@ -230,6 +238,22 @@ internal static class RuleEmitter
     {
         foreach (var named in attr.NamedArguments)
             if (string.Equals(named.Key, "Message", StringComparison.Ordinal) && named.Value.Value is string s)
+                return s;
+        return null;
+    }
+
+    private static string? GetWhen(AttributeData attr)
+    {
+        foreach (var named in attr.NamedArguments)
+            if (string.Equals(named.Key, "When", StringComparison.Ordinal) && named.Value.Value is string s)
+                return s;
+        return null;
+    }
+
+    private static string? GetUnless(AttributeData attr)
+    {
+        foreach (var named in attr.NamedArguments)
+            if (string.Equals(named.Key, "Unless", StringComparison.Ordinal) && named.Value.Value is string s)
                 return s;
         return null;
     }

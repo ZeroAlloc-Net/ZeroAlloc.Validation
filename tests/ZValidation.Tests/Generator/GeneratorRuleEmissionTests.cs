@@ -513,6 +513,69 @@ public class GeneratorRuleEmissionTests
         Assert.Contains("Code is invalid.", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_EmitsWhen_Guard()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Order
+            {
+                public bool NeedsShipping { get; set; }
+                [NotNull(When = nameof(IsShippingRequired))]
+                public string? ShippingAddress { get; set; }
+                public bool IsShippingRequired() => NeedsShipping;
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("instance.IsShippingRequired() &&", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsUnless_Guard()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Profile
+            {
+                public bool IsGuest { get; set; }
+                [NotEmpty(Unless = nameof(AllowEmpty))]
+                public string Name { get; set; } = "";
+                public bool AllowEmpty() => IsGuest;
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("!instance.AllowEmpty() &&", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsBothWhenAndUnless_Guards()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Doc
+            {
+                public bool IsPublished { get; set; }
+                public bool AllowShortTitle { get; set; }
+                [MinLength(10, When = nameof(CheckTitle), Unless = nameof(ShortTitleOk))]
+                public string Title { get; set; } = "";
+                public bool CheckTitle() => IsPublished;
+                public bool ShortTitleOk() => AllowShortTitle;
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("instance.CheckTitle() &&", generated, StringComparison.Ordinal);
+        Assert.Contains("!instance.ShortTitleOk() &&", generated, StringComparison.Ordinal);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.
