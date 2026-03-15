@@ -35,6 +35,20 @@ public class AttributeDeclarationTests
         Assert.Equal("Required", attr.Message);
     }
 
+    [Fact]
+    public void MinLengthAttribute_StoresMinValue()
+    {
+        var attr = new ZValidation.MinLengthAttribute(3);
+        Assert.Equal(3, attr.Min);
+    }
+
+    [Fact]
+    public void MaxLengthAttribute_StoresMaxValue()
+    {
+        var attr = new ZValidation.MaxLengthAttribute(100);
+        Assert.Equal(100, attr.Max);
+    }
+
     [Validate]
     private class SampleModel { }
 
