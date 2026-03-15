@@ -229,6 +229,72 @@ public class GeneratorRuleEmissionTests
             .First(s => s.Contains("LineItemValidator")));
     }
 
+    [Fact]
+    public void Generator_EmitsCollectionValidation_WithBracketIndex()
+    {
+        var source = """
+            using ZValidation;
+            using System.Collections.Generic;
+            namespace TestModels;
+
+            [Validate]
+            public class LineItem { [NotEmpty] public string Sku { get; set; } = ""; }
+
+            [Validate]
+            public class Order { public List<LineItem> Items { get; set; } = new(); }
+            """;
+
+        var orderSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("OrderValidator"));
+
+        Assert.Contains("LineItemValidator", orderSource);
+        Assert.Contains("\"Items[\" +", orderSource);
+        Assert.Contains("is not null", orderSource);
+        Assert.Contains("foreach", orderSource);
+    }
+
+    [Fact]
+    public void Generator_DetectsArrayOfValidateType()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+
+            [Validate]
+            public class Tag { [NotEmpty] public string Name { get; set; } = ""; }
+
+            [Validate]
+            public class Article { public Tag[] Tags { get; set; } = []; }
+            """;
+
+        var articleSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("ArticleValidator"));
+
+        Assert.Contains("TagValidator", articleSource);
+        Assert.Contains("List<", articleSource);
+    }
+
+    [Fact]
+    public void Generator_EmitsNullGuard_ForCollectionProperty()
+    {
+        var source = """
+            using ZValidation;
+            using System.Collections.Generic;
+            namespace TestModels;
+
+            [Validate]
+            public class Item { [NotEmpty] public string Name { get; set; } = ""; }
+
+            [Validate]
+            public class Bag { public List<Item>? Items { get; set; } }
+            """;
+
+        var bagSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("BagValidator"));
+
+        Assert.Contains("is not null", bagSource);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.
