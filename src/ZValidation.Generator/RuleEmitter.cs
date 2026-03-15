@@ -29,6 +29,7 @@ internal static class RuleEmitter
     private const string NotEqualFqn              = "ZValidation.NotEqualAttribute";
     private const string IsInEnumFqn              = "ZValidation.IsInEnumAttribute";
     private const string IsEnumNameFqn            = "ZValidation.IsEnumNameAttribute";
+    private const string PrecisionScaleFqn        = "ZValidation.PrecisionScaleAttribute";
 
     private static bool IsRuleAttribute(AttributeData attr)
     {
@@ -41,7 +42,8 @@ internal static class RuleEmitter
             or NullFqn or EmptyFqn
             or EqualFqn or NotEqualFqn
             or IsInEnumFqn
-            or IsEnumNameFqn;
+            or IsEnumNameFqn
+            or PrecisionScaleFqn;
     }
 
     public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance")
@@ -284,6 +286,7 @@ internal static class RuleEmitter
                 : $"System.Convert.ToDouble({access}) == {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
             IsInEnumFqn              => $"!global::System.Enum.IsDefined(typeof({propTypeFullName}), {access})",
             IsEnumNameFqn            => $"!global::System.Enum.IsDefined(typeof({GetTypeArgFullName(attr, 0)}), {access})",
+            PrecisionScaleFqn        => $"global::ZValidationInternal.DecimalValidator.ExceedsPrecisionScale({access}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})",
             _                        => "false"
         };
 
@@ -313,6 +316,7 @@ internal static class RuleEmitter
                 : $"{propName} must not equal {GetArg(attr, 0)}.",
             IsInEnumFqn              => $"{propName} is not a valid value.",
             IsEnumNameFqn            => $"{propName} is not a valid enum name.",
+            PrecisionScaleFqn        => $"{propName} must not exceed {GetArg(attr, 0)} digits total with {GetArg(attr, 1)} decimal places.",
             _                        => $"{propName} is invalid."
         };
 

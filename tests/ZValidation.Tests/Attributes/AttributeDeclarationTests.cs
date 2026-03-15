@@ -226,6 +226,15 @@ public class AttributeDeclarationTests
     }
 
     [Fact]
+    public void PrecisionScaleAttribute_StoresPrecisionAndScale()
+    {
+        var attr = new PrecisionScaleAttribute(10, 4);
+        Assert.Equal(10, attr.Precision);
+        Assert.Equal(4, attr.Scale);
+        Assert.Null(attr.Message);
+    }
+
+    [Fact]
     public void IsEnumNameAttribute_StoresEnumType()
     {
         var attr = new IsEnumNameAttribute(typeof(System.DayOfWeek));

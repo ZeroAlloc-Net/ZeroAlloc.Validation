@@ -446,6 +446,21 @@ public class GeneratorRuleEmissionTests
     }
 
     [Fact]
+    public void Generator_EmitsPrecisionScale_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [PrecisionScale(5, 2)] public decimal Amount { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("ExceedsPrecisionScale", generated, StringComparison.Ordinal);
+        Assert.Contains("5", generated, StringComparison.Ordinal);
+        Assert.Contains("2", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Generator_EmitsIsEnumName_Check()
     {
         var source = """
