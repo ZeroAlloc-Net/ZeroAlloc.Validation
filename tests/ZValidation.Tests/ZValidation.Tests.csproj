@@ -21,6 +21,8 @@
     <ProjectReference Include="..\..\src\ZValidation.Generator\ZValidation.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="true" />
+    <ProjectReference Include="..\..\src\ZValidation.AspNetCore.Generator\ZValidation.AspNetCore.Generator.csproj"
+                      ReferenceOutputAssembly="true" />
   </ItemGroup>
 
 </Project>
