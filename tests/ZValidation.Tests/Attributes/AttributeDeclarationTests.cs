@@ -71,6 +71,20 @@ public class AttributeDeclarationTests
         Assert.Equal(100.0, attr.Max);
     }
 
+    [Fact]
+    public void EmailAddressAttribute_CanBeCreated()
+    {
+        var attr = new ZValidation.EmailAddressAttribute();
+        Assert.Null(attr.Message);
+    }
+
+    [Fact]
+    public void MatchesAttribute_StoresPattern()
+    {
+        var attr = new MatchesAttribute(@"^\d{4}$");
+        Assert.Equal(@"^\d{4}$", attr.Pattern);
+    }
+
     [Validate]
     private class SampleModel { }
 
