@@ -49,6 +49,28 @@ public class AttributeDeclarationTests
         Assert.Equal(100, attr.Max);
     }
 
+    [Fact]
+    public void GreaterThanAttribute_StoresValue()
+    {
+        var attr = new GreaterThanAttribute(0);
+        Assert.Equal(0.0, attr.Value);
+    }
+
+    [Fact]
+    public void LessThanAttribute_StoresValue()
+    {
+        var attr = new LessThanAttribute(120);
+        Assert.Equal(120.0, attr.Value);
+    }
+
+    [Fact]
+    public void InclusiveBetweenAttribute_StoresMinAndMax()
+    {
+        var attr = new InclusiveBetweenAttribute(1, 100);
+        Assert.Equal(1.0, attr.Min);
+        Assert.Equal(100.0, attr.Max);
+    }
+
     [Validate]
     private class SampleModel { }
 
