@@ -376,6 +376,32 @@ public class GeneratorRuleEmissionTests
         Assert.Contains("== \"inactive\"", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_EmitsGreaterThanOrEqualTo_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [GreaterThanOrEqualTo(0)] public int Age { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("< 0", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsLessThanOrEqualTo_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [LessThanOrEqualTo(100)] public int Score { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("> 100", generated, StringComparison.Ordinal);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.

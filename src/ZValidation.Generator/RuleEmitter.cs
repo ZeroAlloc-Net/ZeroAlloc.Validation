@@ -10,25 +10,28 @@ internal static class RuleEmitter
 {
     private const string ValidateAttributeFqn = "ZValidation.ValidateAttribute";
 
-    private const string NotNullFqn          = "ZValidation.NotNullAttribute";
-    private const string NotEmptyFqn         = "ZValidation.NotEmptyAttribute";
-    private const string MinLengthFqn        = "ZValidation.MinLengthAttribute";
-    private const string MaxLengthFqn        = "ZValidation.MaxLengthAttribute";
-    private const string GreaterThanFqn      = "ZValidation.GreaterThanAttribute";
-    private const string LessThanFqn         = "ZValidation.LessThanAttribute";
-    private const string InclusiveBetweenFqn = "ZValidation.InclusiveBetweenAttribute";
-    private const string EmailAddressFqn     = "ZValidation.EmailAddressAttribute";
-    private const string MatchesFqn          = "ZValidation.MatchesAttribute";
-    private const string NullFqn             = "ZValidation.NullAttribute";
-    private const string EmptyFqn            = "ZValidation.EmptyAttribute";
-    private const string EqualFqn            = "ZValidation.EqualAttribute";
-    private const string NotEqualFqn         = "ZValidation.NotEqualAttribute";
+    private const string NotNullFqn               = "ZValidation.NotNullAttribute";
+    private const string NotEmptyFqn              = "ZValidation.NotEmptyAttribute";
+    private const string MinLengthFqn             = "ZValidation.MinLengthAttribute";
+    private const string MaxLengthFqn             = "ZValidation.MaxLengthAttribute";
+    private const string GreaterThanFqn           = "ZValidation.GreaterThanAttribute";
+    private const string LessThanFqn              = "ZValidation.LessThanAttribute";
+    private const string InclusiveBetweenFqn      = "ZValidation.InclusiveBetweenAttribute";
+    private const string GreaterThanOrEqualToFqn  = "ZValidation.GreaterThanOrEqualToAttribute";
+    private const string LessThanOrEqualToFqn     = "ZValidation.LessThanOrEqualToAttribute";
+    private const string EmailAddressFqn          = "ZValidation.EmailAddressAttribute";
+    private const string MatchesFqn               = "ZValidation.MatchesAttribute";
+    private const string NullFqn                  = "ZValidation.NullAttribute";
+    private const string EmptyFqn                 = "ZValidation.EmptyAttribute";
+    private const string EqualFqn                 = "ZValidation.EqualAttribute";
+    private const string NotEqualFqn              = "ZValidation.NotEqualAttribute";
 
     private static bool IsRuleAttribute(AttributeData attr)
     {
         var fqn = attr.AttributeClass?.ToDisplayString();
         return fqn is NotNullFqn or NotEmptyFqn or MinLengthFqn or MaxLengthFqn
             or GreaterThanFqn or LessThanFqn or InclusiveBetweenFqn
+            or GreaterThanOrEqualToFqn or LessThanOrEqualToFqn
             or EmailAddressFqn or MatchesFqn
             or NullFqn or EmptyFqn
             or EqualFqn or NotEqualFqn;
@@ -242,47 +245,51 @@ internal static class RuleEmitter
     private static string BuildCondition(string fqn, AttributeData attr, string access) =>
         fqn switch
         {
-            NotNullFqn          => $"{access} is null",
-            NotEmptyFqn         => $"string.IsNullOrEmpty({access})",
-            MinLengthFqn        => $"{access}.Length < {GetIntArg(attr, 0)}",
-            MaxLengthFqn        => $"{access}.Length > {GetIntArg(attr, 0)}",
-            GreaterThanFqn      => $"System.Convert.ToDouble({access}) <= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
-            LessThanFqn         => $"System.Convert.ToDouble({access}) >= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
-            InclusiveBetweenFqn => $"System.Convert.ToDouble({access}) < {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)} || System.Convert.ToDouble({access}) > {GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture)}",
-            EmailAddressFqn     => $"!global::ZValidationInternal.EmailValidator.IsValid({access})",
-            MatchesFqn          => $"!global::System.Text.RegularExpressions.Regex.IsMatch({access} ?? \"\", \"{EscapeString(GetStringArg(attr, 0))}\")",
-            NullFqn             => $"{access} is not null",
-            EmptyFqn            => $"!string.IsNullOrEmpty({access})",
-            EqualFqn            => IsStringArg(attr, 0)
+            NotNullFqn               => $"{access} is null",
+            NotEmptyFqn              => $"string.IsNullOrEmpty({access})",
+            MinLengthFqn             => $"{access}.Length < {GetIntArg(attr, 0)}",
+            MaxLengthFqn             => $"{access}.Length > {GetIntArg(attr, 0)}",
+            GreaterThanFqn           => $"System.Convert.ToDouble({access}) <= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
+            LessThanFqn              => $"System.Convert.ToDouble({access}) >= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
+            InclusiveBetweenFqn      => $"System.Convert.ToDouble({access}) < {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)} || System.Convert.ToDouble({access}) > {GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture)}",
+            GreaterThanOrEqualToFqn  => $"System.Convert.ToDouble({access}) < {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
+            LessThanOrEqualToFqn     => $"System.Convert.ToDouble({access}) > {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
+            EmailAddressFqn          => $"!global::ZValidationInternal.EmailValidator.IsValid({access})",
+            MatchesFqn               => $"!global::System.Text.RegularExpressions.Regex.IsMatch({access} ?? \"\", \"{EscapeString(GetStringArg(attr, 0))}\")",
+            NullFqn                  => $"{access} is not null",
+            EmptyFqn                 => $"!string.IsNullOrEmpty({access})",
+            EqualFqn                 => IsStringArg(attr, 0)
                 ? $"{access} != \"{EscapeString(GetStringArg(attr, 0))}\""
                 : $"System.Convert.ToDouble({access}) != {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
-            NotEqualFqn         => IsStringArg(attr, 0)
+            NotEqualFqn              => IsStringArg(attr, 0)
                 ? $"{access} == \"{EscapeString(GetStringArg(attr, 0))}\""
                 : $"System.Convert.ToDouble({access}) == {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
-            _                   => "false"
+            _                        => "false"
         };
 
     private static string GetDefaultMessage(string fqn, AttributeData attr, string propName) =>
         fqn switch
         {
-            NotNullFqn          => $"{propName} must not be null.",
-            NotEmptyFqn         => $"{propName} must not be empty.",
-            MinLengthFqn        => $"{propName} must be at least {GetArg(attr, 0)} characters.",
-            MaxLengthFqn        => $"{propName} must not exceed {GetArg(attr, 0)} characters.",
-            GreaterThanFqn      => $"{propName} must be greater than {GetArg(attr, 0)}.",
-            LessThanFqn         => $"{propName} must be less than {GetArg(attr, 0)}.",
-            InclusiveBetweenFqn => $"{propName} must be between {GetArg(attr, 0)} and {GetArg(attr, 1)}.",
-            EmailAddressFqn     => $"{propName} must be a valid email address.",
-            MatchesFqn          => $"{propName} does not match the required pattern.",
-            NullFqn             => $"{propName} must be null.",
-            EmptyFqn            => $"{propName} must be empty.",
-            EqualFqn            => IsStringArg(attr, 0)
+            NotNullFqn               => $"{propName} must not be null.",
+            NotEmptyFqn              => $"{propName} must not be empty.",
+            MinLengthFqn             => $"{propName} must be at least {GetArg(attr, 0)} characters.",
+            MaxLengthFqn             => $"{propName} must not exceed {GetArg(attr, 0)} characters.",
+            GreaterThanFqn           => $"{propName} must be greater than {GetArg(attr, 0)}.",
+            LessThanFqn              => $"{propName} must be less than {GetArg(attr, 0)}.",
+            InclusiveBetweenFqn      => $"{propName} must be between {GetArg(attr, 0)} and {GetArg(attr, 1)}.",
+            GreaterThanOrEqualToFqn  => $"{propName} must be greater than or equal to {GetArg(attr, 0)}.",
+            LessThanOrEqualToFqn     => $"{propName} must be less than or equal to {GetArg(attr, 0)}.",
+            EmailAddressFqn          => $"{propName} must be a valid email address.",
+            MatchesFqn               => $"{propName} does not match the required pattern.",
+            NullFqn                  => $"{propName} must be null.",
+            EmptyFqn                 => $"{propName} must be empty.",
+            EqualFqn                 => IsStringArg(attr, 0)
                 ? $"{propName} must equal \"{GetStringArg(attr, 0)}\"."
                 : $"{propName} must equal {GetArg(attr, 0)}.",
-            NotEqualFqn         => IsStringArg(attr, 0)
+            NotEqualFqn              => IsStringArg(attr, 0)
                 ? $"{propName} must not equal \"{GetStringArg(attr, 0)}\"."
                 : $"{propName} must not equal {GetArg(attr, 0)}.",
-            _                   => $"{propName} is invalid."
+            _                        => $"{propName} is invalid."
         };
 
     private static string EscapeString(string s) =>

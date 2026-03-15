@@ -184,6 +184,22 @@ public class AttributeDeclarationTests
         Assert.Null(attr.Message);
     }
 
+    [Fact]
+    public void GreaterThanOrEqualToAttribute_StoresValue()
+    {
+        var attr = new GreaterThanOrEqualToAttribute(5.0);
+        Assert.Equal(5.0, attr.Value);
+        Assert.Null(attr.Message);
+    }
+
+    [Fact]
+    public void LessThanOrEqualToAttribute_StoresValue()
+    {
+        var attr = new LessThanOrEqualToAttribute(100.0);
+        Assert.Equal(100.0, attr.Value);
+        Assert.Null(attr.Message);
+    }
+
     [Validate]
     private class SampleModel { }
 
