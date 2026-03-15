@@ -31,6 +31,7 @@ internal static class RuleEmitter
     public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance")
     {
         var byProperty = new List<(IPropertySymbol Property, List<AttributeData> Rules)>();
+        // Group rules by property in declaration order
         foreach (var member in classSymbol.GetMembers())
         {
             if (member is not IPropertySymbol prop) continue;
@@ -73,12 +74,16 @@ internal static class RuleEmitter
             foreach (var nestedProp in nestedProperties)
             {
                 var propName = nestedProp.Name;
+                var nestedNamespace = nestedProp.Type.ContainingNamespace?.ToDisplayString();
                 var nestedTypeName = nestedProp.Type.Name;
                 var validatorName = $"{nestedTypeName}Validator";
+                var qualifiedValidatorName = string.IsNullOrEmpty(nestedNamespace) || nestedNamespace == "<global namespace>"
+                    ? $"global::{validatorName}"
+                    : $"global::{nestedNamespace}.{validatorName}";
 
                 sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
                 sb.AppendLine("        {");
-                sb.AppendLine($"            var nestedResult = new {validatorName}().Validate({modelParamName}.{propName});");
+                sb.AppendLine($"            var nestedResult = new {qualifiedValidatorName}().Validate({modelParamName}.{propName});");
                 sb.AppendLine("            foreach (var f in nestedResult.Failures)");
                 sb.AppendLine($"                failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
                 sb.AppendLine("        }");
