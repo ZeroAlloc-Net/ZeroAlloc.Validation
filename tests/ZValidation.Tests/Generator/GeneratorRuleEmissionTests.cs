@@ -155,7 +155,7 @@ public class GeneratorRuleEmissionTests
     }
 
     [Fact]
-    public void Generator_SkipsNestedValidation_WhenPropertyIsNull()
+    public void Generator_EmitsNullGuard_ForNullableNestedProperty()
     {
         // The generated code must have the null guard
         var source = """
