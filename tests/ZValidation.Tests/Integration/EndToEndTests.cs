@@ -135,14 +135,14 @@ public class NestedValidationTests
             BillingAddress = new Address { Street = "", City = "Shelbyville" }
         };
         var result = _validator.Validate(order);
+        var failures = result.Failures.ToArray();
         Assert.False(result.IsValid);
         ValidationAssert.HasError(result, "BillingAddress.Street");
-        Assert.Equal("Street is required.", result.Failures.ToArray()
-            .First(f => f.PropertyName == "BillingAddress.Street").ErrorMessage);
+        Assert.Equal("Street is required.", failures.First(f => f.PropertyName == "BillingAddress.Street").ErrorMessage);
     }
 
     [Fact]
-    public void Nested_BillingAddress_Null_IsSkipped()
+    public void Nested_ShippingAddress_Null_SkipsNestedValidation()
     {
         // BillingAddress has default value (new Address()), so make it invalid differently
         // This test verifies null skipping by using a nullable ShippingAddress set to null
@@ -171,6 +171,7 @@ public class NestedValidationTests
         var result = _validator.Validate(order);
         ValidationAssert.HasError(result, "BillingAddress.Street");
         ValidationAssert.HasError(result, "BillingAddress.City");
+        Assert.Equal(2, result.Failures.Length);
     }
 
     [Fact]
@@ -185,5 +186,6 @@ public class NestedValidationTests
         var result = _validator.Validate(order);
         ValidationAssert.HasError(result, "Reference");
         ValidationAssert.HasError(result, "BillingAddress.Street");
+        Assert.Equal(2, result.Failures.Length);
     }
 }
