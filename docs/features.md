@@ -2,6 +2,8 @@
 
 > A **code-generated, zero-allocation** validation library for .NET.
 
+**Legend:** ✅ Done &nbsp;|&nbsp; ⬜ Pending
+
 ---
 
 ## Design Goals
@@ -14,9 +16,9 @@
 
 ---
 
-## 1. Core Validator API
+## 1. Core Validator API ✅
 
-### 1.1 Validator Definition
+### 1.1 Validator Definition ✅
 Define validators by implementing a source-generated interface or annotating a partial class:
 
 ```csharp
@@ -32,7 +34,7 @@ public partial class CustomerValidator : ValidatorFor<Customer>
 }
 ```
 
-### 1.2 Validation Execution
+### 1.2 Validation Execution ⬜
 
 ```csharp
 var result = validator.Validate(customer);          // sync
@@ -40,7 +42,7 @@ var result = await validator.ValidateAsync(customer); // async
 validator.ValidateAndThrow(customer);               // throws on failure
 ```
 
-### 1.3 Zero-Allocation Result
+### 1.3 Zero-Allocation Result ✅
 
 - `ValidationResult` is a `ref struct` or uses a pooled buffer
 - Failures stored in a `Span<ValidationFailure>` or `stackalloc`-backed list
@@ -48,7 +50,7 @@ validator.ValidateAndThrow(customer);               // throws on failure
 
 ---
 
-## 2. Built-in Validators
+## 2. Built-in Validators ⬜
 
 ### Null / Empty
 | Rule | Description |
@@ -101,7 +103,7 @@ validator.ValidateAndThrow(customer);               // throws on failure
 
 ---
 
-## 3. Rule Chaining
+## 3. Rule Chaining ⬜
 
 Rules on the same property chain with `.`:
 
@@ -115,7 +117,7 @@ RuleFor(x => x.Name)
 
 ---
 
-## 4. Custom Validators
+## 4. Custom Validators ⬜
 
 ### 4.1 Predicate (`Must`)
 
@@ -139,7 +141,7 @@ Implement a strongly-typed validator class for complex logic that can be reused 
 
 ---
 
-## 5. Error Message Configuration
+## 5. Error Message Configuration ⬜
 
 ### 5.1 `WithMessage`
 
@@ -189,7 +191,7 @@ RuleFor(x => x.Age).GreaterThan(0).WithState(x => new { x.Id });
 
 ---
 
-## 6. Conditional Validation
+## 6. Conditional Validation ⬜
 
 ### 6.1 `When` / `Unless`
 
@@ -223,7 +225,7 @@ Controls whether a condition applies to `CurrentValidator` only or `AllValidator
 
 ---
 
-## 7. Cascade Modes
+## 7. Cascade Modes ⬜
 
 ### 7.1 Rule-Level Cascade (`CascadeMode`)
 
@@ -249,7 +251,7 @@ Configurable at startup via `ValidatorOptions`.
 
 ---
 
-## 8. Complex Property Validation
+## 8. Complex Property Validation ⬜
 
 Validate nested objects with their own validator:
 
@@ -259,7 +261,7 @@ RuleFor(x => x.Address).SetValidator(new AddressValidator());
 
 ---
 
-## 9. Collection Validation
+## 9. Collection Validation ⬜
 
 ### 9.1 `RuleForEach`
 
@@ -276,7 +278,7 @@ Override how collection indices appear in property names in failure messages.
 
 ---
 
-## 10. RuleSets
+## 10. RuleSets ⬜
 
 Group rules by name and execute selectively:
 
@@ -300,7 +302,7 @@ validator.Validate(model, options => options.IncludeAllRuleSets());
 
 ---
 
-## 11. Dependent Rules
+## 11. Dependent Rules ⬜
 
 Run follow-up rules only when a preceding rule passes:
 
@@ -315,7 +317,7 @@ RuleFor(x => x.Email)
 
 ---
 
-## 12. Inheritance / Polymorphic Validation
+## 12. Inheritance / Polymorphic Validation ⬜
 
 Validate derived types with type-specific rules:
 
@@ -329,7 +331,7 @@ RuleFor(x => x.Shape).SetInheritanceValidator(v =>
 
 ---
 
-## 13. Async Validation
+## 13. Async Validation ⬜
 
 ```csharp
 RuleFor(x => x.Username)
@@ -342,7 +344,7 @@ RuleFor(x => x.Username)
 
 ---
 
-## 14. Rule Inclusion / Reuse
+## 14. Rule Inclusion / Reuse ⬜
 
 Include all rules from another validator:
 
@@ -352,7 +354,7 @@ Include(new BaseCustomerValidator());
 
 ---
 
-## 15. Pre-Validation Hook
+## 15. Pre-Validation Hook ⬜
 
 Override `PreValidate` to short-circuit validation before rules run (e.g., null-model guard):
 
@@ -370,7 +372,7 @@ protected override bool PreValidate(ValidationContext<Customer> context, Validat
 
 ---
 
-## 16. Root Context Data
+## 16. Root Context Data ⬜
 
 Pass arbitrary data into the validation pipeline without changing the model:
 
@@ -384,7 +386,7 @@ In zero-alloc design, this is passed as a typed parameter to avoid `object` boxi
 
 ---
 
-## 17. Dependency Injection
+## 17. Dependency Injection ⬜
 
 Validators integrate with **[ZInject](https://github.com/MarcelRoozekrans/ZInject)** — a compile-time DI source generator that eliminates runtime reflection and scanning.
 
@@ -407,7 +409,7 @@ ZInject registers each validator against its implemented interfaces and concrete
 
 ---
 
-## 18. Localization
+## 18. Localization ⬜
 
 - Override default error messages globally
 - Plug in custom resource providers
@@ -416,7 +418,7 @@ ZInject registers each validator against its implemented interfaces and concrete
 
 ---
 
-## 19. Test Extensions
+## 19. Test Extensions ✅
 
 ```csharp
 // Assert a rule exists for a property
@@ -426,24 +428,24 @@ validator.ShouldNotHaveValidationErrorFor(x => x.Name, "John");
 
 ---
 
-## 20. Zero-Allocation Specifics
+## 20. Zero-Allocation Specifics ⬜
 
 Features enabled by source generation:
 
 | Feature | Description |
 |---------|-------------|
-| `Span<ValidationFailure>` results | Failures stored on stack or in pooled buffer — no heap list |
-| Source-generated dispatch | All rule calls inlined at compile time, no virtual dispatch or reflection |
-| Struct-based `ValidationFailure` | Failure type is a `readonly struct` to avoid heap allocation |
-| Compile-time message formatting | Placeholder substitution compiled into efficient `string.Create` or interpolated string handlers |
-| `ref struct ValidationContext` | Context passed by reference, never heap-allocated |
-| No boxing for `WithState<T>` | State is stored as a typed generic field, not `object` |
-| AOT / NativeAOT safe | No `Activator.CreateInstance`, no reflection-based rule discovery |
-| Pooled result buffers | Optional `ArrayPool<ValidationFailure>` integration for larger result sets |
+| `Span<ValidationFailure>` results | Failures stored on stack or in pooled buffer — no heap list | ⬜ |
+| Source-generated dispatch | All rule calls inlined at compile time, no virtual dispatch or reflection | ⬜ |
+| Struct-based `ValidationFailure` | Failure type is a `readonly struct` to avoid heap allocation | ✅ |
+| Compile-time message formatting | Placeholder substitution compiled into efficient `string.Create` or interpolated string handlers | ⬜ |
+| `ref struct ValidationContext` | Context passed by reference, never heap-allocated | ✅ |
+| No boxing for `WithState<T>` | State is stored as a typed generic field, not `object` | ⬜ |
+| AOT / NativeAOT safe | No `Activator.CreateInstance`, no reflection-based rule discovery | ⬜ |
+| Pooled result buffers | Optional `ArrayPool<ValidationFailure>` integration for larger result sets | ⬜ |
 
 ---
 
-## 21. ASP.NET Core Integration
+## 21. ASP.NET Core Integration ⬜
 
 - Auto-validate models in controllers via `IActionFilter`
 - Return `ValidationProblemDetails` on failure
@@ -452,7 +454,7 @@ Features enabled by source generation:
 
 ---
 
-## 22. Analyzers
+## 22. Analyzers ✅
 
 ZValidation enforces correctness and zero-allocation constraints at compile time via a curated set of Roslyn analyzers. All are analyzer-only dependencies (no runtime impact).
 
