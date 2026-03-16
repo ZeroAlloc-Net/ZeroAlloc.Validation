@@ -12,8 +12,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ZValidation\ZValidation.csproj" />
-    <ProjectReference Include="..\..\src\ZValidation.Testing\ZValidation.Testing.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Testing\ZeroAlloc.Validation.Testing.csproj" />
   </ItemGroup>
 
 </Project>

@@ -6,7 +6,7 @@
 
   <!-- Bundle the source generator into this NuGet package -->
   <ItemGroup>
-    <ProjectReference Include="..\ZValidation.Generator\ZValidation.Generator.csproj"
+    <ProjectReference Include="..\ZeroAlloc.Validation.Generator\ZeroAlloc.Validation.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>

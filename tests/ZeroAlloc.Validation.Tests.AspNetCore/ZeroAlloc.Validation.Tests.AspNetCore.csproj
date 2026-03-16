@@ -23,12 +23,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ZValidation\ZValidation.csproj" />
-    <ProjectReference Include="..\..\src\ZValidation.AspNetCore\ZValidation.AspNetCore.csproj" />
-    <ProjectReference Include="..\..\src\ZValidation.Generator\ZValidation.Generator.csproj"
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.AspNetCore\ZeroAlloc.Validation.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Generator\ZeroAlloc.Validation.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\ZValidation.AspNetCore.Generator\ZValidation.AspNetCore.Generator.csproj"
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.AspNetCore.Generator\ZeroAlloc.Validation.AspNetCore.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>

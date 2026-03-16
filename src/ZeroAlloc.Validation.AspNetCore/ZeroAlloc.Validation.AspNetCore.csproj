@@ -9,11 +9,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ZValidation\ZValidation.csproj" />
+    <ProjectReference Include="..\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ZValidation.AspNetCore.Generator\ZValidation.AspNetCore.Generator.csproj"
+    <ProjectReference Include="..\ZeroAlloc.Validation.AspNetCore.Generator\ZeroAlloc.Validation.AspNetCore.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>

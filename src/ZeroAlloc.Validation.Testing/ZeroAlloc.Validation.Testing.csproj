@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ZValidation\ZValidation.csproj" />
+    <ProjectReference Include="..\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj" />
   </ItemGroup>
 
 </Project>
