@@ -20,7 +20,7 @@ public class AspNetCoreGeneratorTests
             [Validate] public class Order    { [NotEmpty] public string Ref  { get; set; } = ""; }
             """;
 
-        var filter = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationActionFilter.g.cs");
+        var filter = RunAspNetGeneratorGetSource(source, "ZValidationActionFilter.g.cs");
         Assert.Contains("global::MyApp.Customer", filter, StringComparison.Ordinal);
         Assert.Contains("global::MyApp.Order",    filter, StringComparison.Ordinal);
     }
@@ -35,7 +35,7 @@ public class AspNetCoreGeneratorTests
             [Validate] public class Order    { [NotEmpty] public string Ref  { get; set; } = ""; }
             """;
 
-        var ext = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationServiceCollectionExtensions.g.cs");
+        var ext = RunAspNetGeneratorGetSource(source, "ZValidationServiceCollectionExtensions.g.cs");
         Assert.Contains("TryAddTransient<global::MyApp.CustomerValidator>", ext, StringComparison.Ordinal);
         Assert.Contains("TryAddTransient<global::MyApp.OrderValidator>",    ext, StringComparison.Ordinal);
     }
@@ -50,12 +50,12 @@ public class AspNetCoreGeneratorTests
             public class NotAModel { public string X { get; set; } = ""; }
             """;
 
-        var filter = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationActionFilter.g.cs");
+        var filter = RunAspNetGeneratorGetSource(source, "ZValidationActionFilter.g.cs");
         Assert.DoesNotContain("NotAModel", filter, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Generator_EmitsAddZeroAllocValidationAutoValidation_ExtensionMethod()
+    public void Generator_EmitsAddZValidationAutoValidation_ExtensionMethod()
     {
         var source = """
             using ZeroAlloc.Validation;
@@ -63,8 +63,8 @@ public class AspNetCoreGeneratorTests
             [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
             """;
 
-        var ext = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationServiceCollectionExtensions.g.cs");
-        Assert.Contains("AddZeroAllocValidationAutoValidation", ext, StringComparison.Ordinal);
+        var ext = RunAspNetGeneratorGetSource(source, "ZValidationServiceCollectionExtensions.g.cs");
+        Assert.Contains("AddZValidationAutoValidation", ext, StringComparison.Ordinal);
     }
 
     private static string RunAspNetGeneratorGetSource(string source, string fileName)

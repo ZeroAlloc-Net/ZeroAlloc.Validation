@@ -16,7 +16,7 @@ public static class TestApp
             .AddControllers()
             .AddApplicationPart(typeof(SampleController).Assembly);
 
-        builder.Services.AddZeroAllocValidationAutoValidation();
+        builder.Services.AddZValidationAutoValidation();
 
         var app = builder.Build();
         app.MapControllers();

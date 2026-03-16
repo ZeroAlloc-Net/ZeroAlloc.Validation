@@ -66,9 +66,9 @@ public class AutoValidationIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public void AddZeroAllocValidationAutoValidation_RegistersFilter()
+    public void AddZValidationAutoValidation_RegistersFilter()
     {
-        var filter = _app!.Services.GetService<ZeroAllocValidationActionFilter>();
+        var filter = _app!.Services.GetService<ZValidationActionFilter>();
         Assert.NotNull(filter);
     }
 }
