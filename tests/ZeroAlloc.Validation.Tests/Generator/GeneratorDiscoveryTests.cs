@@ -1,9 +1,9 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
-using ZValidation.Generator;
+using ZeroAlloc.Validation.Generator;
 
-namespace ZValidation.Tests.Generator;
+namespace ZeroAlloc.Validation.Tests.Generator;
 
 public class GeneratorDiscoveryTests
 {
@@ -11,7 +11,7 @@ public class GeneratorDiscoveryTests
     public void Generator_ProducesOutput_ForValidateClass()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
 
             namespace TestModels;
 
@@ -47,7 +47,7 @@ public class GeneratorDiscoveryTests
     public void Generator_EmitsValidatorClass_InSameNamespace()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace TestModels;
 
             [Validate]

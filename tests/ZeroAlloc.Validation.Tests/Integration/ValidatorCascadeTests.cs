@@ -1,9 +1,9 @@
 using System;
 using System.Linq;
 using Xunit;
-using ZValidation.Testing;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 public class ValidatorCascadeTests
 {

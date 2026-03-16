@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 
-namespace ZValidation.Tests.AspNetCore;
+namespace ZeroAlloc.Validation.Tests.AspNetCore;
 
 [ApiController]
 [Route("sample")]

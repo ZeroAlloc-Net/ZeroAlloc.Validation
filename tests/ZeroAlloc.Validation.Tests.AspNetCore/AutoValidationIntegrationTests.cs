@@ -9,7 +9,7 @@ using Xunit;
 
 #pragma warning disable MA0004 // ConfigureAwait: suppressed because xUnit1030 prohibits ConfigureAwait in test methods
 
-namespace ZValidation.Tests.AspNetCore;
+namespace ZeroAlloc.Validation.Tests.AspNetCore;
 
 public class AutoValidationIntegrationTests : IAsyncLifetime
 {
@@ -66,9 +66,9 @@ public class AutoValidationIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public void AddZValidationAutoValidation_RegistersFilter()
+    public void AddZeroAllocValidationAutoValidation_RegistersFilter()
     {
-        var filter = _app!.Services.GetService<ZValidationActionFilter>();
+        var filter = _app!.Services.GetService<ZeroAllocValidationActionFilter>();
         Assert.NotNull(filter);
     }
 }

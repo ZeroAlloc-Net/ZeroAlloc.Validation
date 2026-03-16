@@ -1,8 +1,8 @@
 using System.Reflection;
 using Xunit;
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Attributes;
+namespace ZeroAlloc.Validation.Tests.Attributes;
 
 public class AttributeDeclarationTests
 {
@@ -40,14 +40,14 @@ public class AttributeDeclarationTests
     [Fact]
     public void MinLengthAttribute_StoresMinValue()
     {
-        var attr = new ZValidation.MinLengthAttribute(3);
+        var attr = new ZeroAlloc.Validation.MinLengthAttribute(3);
         Assert.Equal(3, attr.Min);
     }
 
     [Fact]
     public void MaxLengthAttribute_StoresMaxValue()
     {
-        var attr = new ZValidation.MaxLengthAttribute(100);
+        var attr = new ZeroAlloc.Validation.MaxLengthAttribute(100);
         Assert.Equal(100, attr.Max);
     }
 
@@ -76,7 +76,7 @@ public class AttributeDeclarationTests
     [Fact]
     public void EmailAddressAttribute_CanBeCreated()
     {
-        var attr = new ZValidation.EmailAddressAttribute();
+        var attr = new ZeroAlloc.Validation.EmailAddressAttribute();
         Assert.Null(attr.Message);
     }
 
@@ -98,14 +98,14 @@ public class AttributeDeclarationTests
     public void MinLengthAttribute_MessageDefaultsToNull()
     {
         // FQN required: System.ComponentModel.DataAnnotations also defines MinLengthAttribute
-        var attr = new ZValidation.MinLengthAttribute(3);
+        var attr = new ZeroAlloc.Validation.MinLengthAttribute(3);
         Assert.Null(attr.Message);
     }
 
     [Fact]
     public void MinLengthAttribute_CanSetCustomMessage()
     {
-        var attr = new ZValidation.MinLengthAttribute(3) { Message = "Too short" };
+        var attr = new ZeroAlloc.Validation.MinLengthAttribute(3) { Message = "Too short" };
         Assert.Equal("Too short", attr.Message);
     }
 
@@ -113,14 +113,14 @@ public class AttributeDeclarationTests
     public void MaxLengthAttribute_MessageDefaultsToNull()
     {
         // FQN required: System.ComponentModel.DataAnnotations also defines MaxLengthAttribute
-        var attr = new ZValidation.MaxLengthAttribute(100);
+        var attr = new ZeroAlloc.Validation.MaxLengthAttribute(100);
         Assert.Null(attr.Message);
     }
 
     [Fact]
     public void MaxLengthAttribute_CanSetCustomMessage()
     {
-        var attr = new ZValidation.MaxLengthAttribute(100) { Message = "Too long" };
+        var attr = new ZeroAlloc.Validation.MaxLengthAttribute(100) { Message = "Too long" };
         Assert.Equal("Too long", attr.Message);
     }
 

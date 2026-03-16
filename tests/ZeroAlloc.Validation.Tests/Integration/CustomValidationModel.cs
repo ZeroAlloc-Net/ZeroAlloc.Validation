@@ -1,7 +1,7 @@
 using System.Collections.Generic;
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public class CustomValidationModel

@@ -1,8 +1,8 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using ZValidation;
-using ZValidation.Testing;
+using ZeroAlloc.Validation;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.MSTest;
+namespace ZeroAlloc.Validation.Tests.MSTest;
 
 [TestClass]
 public class ValidationAssertCompatTests

@@ -1,15 +1,15 @@
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public class Person
 {
     [NotEmpty(Message = "Name is required.")]
-    [ZValidation.MaxLength(100)]
+    [ZeroAlloc.Validation.MaxLength(100)]
     public string Name { get; set; } = "";
 
-    [ZValidation.EmailAddress]
+    [ZeroAlloc.Validation.EmailAddress]
     public string Email { get; set; } = "";
 
     [GreaterThan(0)]

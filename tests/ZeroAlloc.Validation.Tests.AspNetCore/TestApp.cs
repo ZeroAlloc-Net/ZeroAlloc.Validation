@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ZValidation.Tests.AspNetCore;
+namespace ZeroAlloc.Validation.Tests.AspNetCore;
 
 public static class TestApp
 {
@@ -16,7 +16,7 @@ public static class TestApp
             .AddControllers()
             .AddApplicationPart(typeof(SampleController).Assembly);
 
-        builder.Services.AddZValidationAutoValidation();
+        builder.Services.AddZeroAllocValidationAutoValidation();
 
         var app = builder.Build();
         app.MapControllers();

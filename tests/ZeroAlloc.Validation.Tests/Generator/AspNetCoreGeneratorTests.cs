@@ -4,9 +4,9 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Generator;
+namespace ZeroAlloc.Validation.Tests.Generator;
 
 public class AspNetCoreGeneratorTests
 {
@@ -14,13 +14,13 @@ public class AspNetCoreGeneratorTests
     public void Generator_EmitsDispatch_ForBothValidateModels()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace MyApp;
             [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
             [Validate] public class Order    { [NotEmpty] public string Ref  { get; set; } = ""; }
             """;
 
-        var filter = RunAspNetGeneratorGetSource(source, "ZValidationActionFilter.g.cs");
+        var filter = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationActionFilter.g.cs");
         Assert.Contains("global::MyApp.Customer", filter, StringComparison.Ordinal);
         Assert.Contains("global::MyApp.Order",    filter, StringComparison.Ordinal);
     }
@@ -29,13 +29,13 @@ public class AspNetCoreGeneratorTests
     public void Generator_EmitsExtensionMethod_WithTryAddTransient_ForBothValidators()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace MyApp;
             [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
             [Validate] public class Order    { [NotEmpty] public string Ref  { get; set; } = ""; }
             """;
 
-        var ext = RunAspNetGeneratorGetSource(source, "ZValidationServiceCollectionExtensions.g.cs");
+        var ext = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationServiceCollectionExtensions.g.cs");
         Assert.Contains("TryAddTransient<global::MyApp.CustomerValidator>", ext, StringComparison.Ordinal);
         Assert.Contains("TryAddTransient<global::MyApp.OrderValidator>",    ext, StringComparison.Ordinal);
     }
@@ -44,27 +44,27 @@ public class AspNetCoreGeneratorTests
     public void Generator_NonValidateType_NotPresentInDispatch()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace MyApp;
             [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
             public class NotAModel { public string X { get; set; } = ""; }
             """;
 
-        var filter = RunAspNetGeneratorGetSource(source, "ZValidationActionFilter.g.cs");
+        var filter = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationActionFilter.g.cs");
         Assert.DoesNotContain("NotAModel", filter, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Generator_EmitsAddZValidationAutoValidation_ExtensionMethod()
+    public void Generator_EmitsAddZeroAllocValidationAutoValidation_ExtensionMethod()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace MyApp;
             [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
             """;
 
-        var ext = RunAspNetGeneratorGetSource(source, "ZValidationServiceCollectionExtensions.g.cs");
-        Assert.Contains("AddZValidationAutoValidation", ext, StringComparison.Ordinal);
+        var ext = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationServiceCollectionExtensions.g.cs");
+        Assert.Contains("AddZeroAllocValidationAutoValidation", ext, StringComparison.Ordinal);
     }
 
     private static string RunAspNetGeneratorGetSource(string source, string fileName)
@@ -86,7 +86,7 @@ public class AspNetCoreGeneratorTests
             ],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var generator = new ZValidation.AspNetCore.Generator.AspNetCoreFilterEmitter();
+        var generator = new ZeroAlloc.Validation.AspNetCore.Generator.AspNetCoreFilterEmitter();
         var driver = CSharpGeneratorDriver.Create(generator).RunGenerators(compilation);
         return driver.GetRunResult().GeneratedTrees.Select(t => t.ToString()).ToList();
     }

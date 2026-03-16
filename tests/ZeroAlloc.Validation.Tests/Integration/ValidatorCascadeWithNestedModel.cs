@@ -1,6 +1,6 @@
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 // Nested-path model (uses nested validator — Address already has [Validate])
 [Validate(StopOnFirstFailure = true)]

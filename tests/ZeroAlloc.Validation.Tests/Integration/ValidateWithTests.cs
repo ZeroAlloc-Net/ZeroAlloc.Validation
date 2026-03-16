@@ -1,9 +1,9 @@
 using System;
 using System.Linq;
 using Xunit;
-using ZValidation.Testing;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 // Note: a null-guard path test (Null_Point_IsSkipped) is intentionally omitted.
 // Location.Point is non-nullable, so exercising the null guard requires a null! cast.

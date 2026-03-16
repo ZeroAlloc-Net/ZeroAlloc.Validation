@@ -1,6 +1,6 @@
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 // Hand-written validator for a third-party type. NOT source-generated.
 public class CoordinateValidator : ValidatorFor<Coordinate>

@@ -1,6 +1,6 @@
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public partial class ConditionalModel

@@ -1,8 +1,8 @@
 using NUnit.Framework;
-using ZValidation;
-using ZValidation.Testing;
+using ZeroAlloc.Validation;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.NUnit;
+namespace ZeroAlloc.Validation.Tests.NUnit;
 
 [TestFixture]
 public class ValidationAssertCompatTests

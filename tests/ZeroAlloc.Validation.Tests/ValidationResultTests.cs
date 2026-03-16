@@ -1,8 +1,8 @@
 using Xunit;
-using ZValidation;
-using ZValidation.Testing;
+using ZeroAlloc.Validation;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests;
+namespace ZeroAlloc.Validation.Tests;
 
 public class ValidationResultTests
 {

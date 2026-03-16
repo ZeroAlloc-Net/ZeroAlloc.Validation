@@ -1,6 +1,6 @@
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.AspNetCore;
+namespace ZeroAlloc.Validation.Tests.AspNetCore;
 
 [Validate]
 public partial class SampleModel
