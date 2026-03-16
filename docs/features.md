@@ -221,9 +221,20 @@ public string MiddleName { get; set; } = "";
 
 Propagated through nested and collection validators.
 
-### 5.5 `WithName` / Display Name Override ⬜
+### 5.5 `[DisplayName]` ✅
 
-Override the property name used in error messages — not yet implemented.
+Override the property name used in error messages. Declared at the property level; applies to all rules on that property:
+
+```csharp
+[DisplayName("First Name")]
+[NotEmpty]
+[MinLength(2)]
+public string Forename { get; set; } = "";
+// → "First Name must not be empty."
+// → "First Name must be at least 2 characters."
+```
+
+`ValidationFailure.PropertyName` always stays as the raw C# property name (`"Forename"`), not the display name — by design for programmatic use.
 
 ---
 
@@ -266,9 +277,23 @@ A single condition guard covering multiple properties — not yet implemented.
 public string Username { get; set; } = "";
 ```
 
-### 7.2 Validator-Level Cascade ⬜
+### 7.2 Validator-Level Cascade ✅
 
-Stop after the first *property* that produces a failure (fail-fast across properties) — not yet implemented.
+Stop validating further properties after the first one that produces any failure. Enabled via `StopOnFirstFailure = true` on `[Validate]`:
+
+```csharp
+[Validate(StopOnFirstFailure = true)]
+public class Order
+{
+    [NotEmpty]
+    public string Reference { get; set; } = "";   // fails → returns immediately
+
+    [NotNull]
+    public Address? ShippingAddress { get; set; }  // only reached if Reference passed
+}
+```
+
+Composes correctly with property-level `[StopOnFirstFailure]`: both can be active simultaneously. A failure from a nested validator counts as the property failing.
 
 ### 7.3 Global Defaults ⬜
 
