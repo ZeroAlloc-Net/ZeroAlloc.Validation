@@ -28,8 +28,8 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
     {
         if (models.IsDefaultOrEmpty) return;
 
-        ctx.AddSource("ZValidation.ValidationActionFilter.g.cs",                EmitFilter(models));
-        ctx.AddSource("ZValidation.ValidationServiceCollectionExtensions.g.cs", EmitExtensions(models));
+        ctx.AddSource("ZeroAlloc.Validation.ZValidationActionFilter.g.cs",                EmitFilter(models));
+        ctx.AddSource("ZeroAlloc.Validation.ZValidationServiceCollectionExtensions.g.cs", EmitExtensions(models));
     }
 
     private static string EmitFilter(ImmutableArray<INamedTypeSymbol> models)
