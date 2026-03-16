@@ -1276,4 +1276,62 @@ public class GeneratorRuleEmissionTests
         // Should NOT be an interpolated string
         Assert.DoesNotContain("$\"Must be positive.\"", generated, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Generator_DisplayName_UsesDisplayNameInDefaultMessage()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class M
+            {
+                [DisplayName("First Name")]
+                [NotEmpty]
+                public string Forename { get; set; } = "";
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("\"First Name must not be empty.\"", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Forename must not be empty.\"", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_DisplayName_SubstitutesPropertyNamePlaceholder()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class M
+            {
+                [DisplayName("ZIP Code")]
+                [Matches(@"^\d{5}$", Message = "{PropertyName} must be 5 digits.")]
+                public string ZipCode { get; set; } = "";
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("\"ZIP Code must be 5 digits.\"", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"ZipCode must be 5 digits.\"", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_NoDisplayName_UsesRawPropertyName()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class M
+            {
+                [NotEmpty]
+                public string Forename { get; set; } = "";
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("\"Forename must not be empty.\"", generated, StringComparison.Ordinal);
+    }
 }

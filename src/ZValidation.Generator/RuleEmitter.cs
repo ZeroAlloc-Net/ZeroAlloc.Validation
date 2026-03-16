@@ -11,6 +11,7 @@ internal static class RuleEmitter
     private const string ValidateAttributeFqn = "ZValidation.ValidateAttribute";
     private const string ValidateWithAttributeFqn = "ZValidation.ValidateWithAttribute";
     private const string StopOnFirstFailureFqn = "ZValidation.StopOnFirstFailureAttribute";
+    private const string DisplayNameAttributeFqn = "ZValidation.DisplayNameAttribute";
 
     private const string NotNullFqn               = "ZValidation.NotNullAttribute";
     private const string NotEmptyFqn              = "ZValidation.NotEmptyAttribute";
@@ -112,6 +113,7 @@ internal static class RuleEmitter
         {
             var (prop, rules) = byProperty[pi];
             var propName = prop.Name;
+            var displayName = GetDisplayName(prop) ?? propName;
             var propAccess = $"{modelParamName}.{propName}";
             var stopMode = HasStopOnFirstFailure(prop);
 
@@ -120,7 +122,7 @@ internal static class RuleEmitter
                 var attr = rules[i];
                 var fqn = attr.AttributeClass!.ToDisplayString();
                 var prefix = (stopMode && i > 0) ? "        else if" : "        if";
-                var message = ResolveMessage(attr, fqn, propName) ?? GetDefaultMessage(fqn, attr, propName);
+                var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
                 var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
                 var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
                 var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
@@ -203,6 +205,7 @@ internal static class RuleEmitter
         {
             var (prop, rules) = byProperty[pi];
             var propName = prop.Name;
+            var displayName = GetDisplayName(prop) ?? propName;
             var propAccess = $"{modelParamName}.{propName}";
             var stopMode = HasStopOnFirstFailure(prop);
 
@@ -211,7 +214,7 @@ internal static class RuleEmitter
                 var attr = rules[i];
                 var fqn = attr.AttributeClass!.ToDisplayString();
                 var prefix = (stopMode && i > 0) ? "        else if" : "        if";
-                var message = ResolveMessage(attr, fqn, propName) ?? GetDefaultMessage(fqn, attr, propName);
+                var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
                 var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
                 var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
                 var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
@@ -297,6 +300,18 @@ internal static class RuleEmitter
         foreach (var named in attr.NamedArguments)
             if (string.Equals(named.Key, "Unless", StringComparison.Ordinal) && named.Value.Value is string s)
                 return s;
+        return null;
+    }
+
+    private static string? GetDisplayName(IPropertySymbol prop)
+    {
+        foreach (var attr in prop.GetAttributes())
+        {
+            if (!string.Equals(attr.AttributeClass?.ToDisplayString(), DisplayNameAttributeFqn, StringComparison.Ordinal))
+                continue;
+            if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is string s)
+                return s;
+        }
         return null;
     }
 
