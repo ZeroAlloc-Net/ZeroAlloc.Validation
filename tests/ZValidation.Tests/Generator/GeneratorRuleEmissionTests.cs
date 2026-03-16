@@ -895,6 +895,62 @@ public class GeneratorRuleEmissionTests
         Assert.Contains("\"Tags[\" +", articleSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Analyzer_ZV0011_Fires_WhenValidateWithOnAlreadyValidatedType()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate] public class Address { [NotEmpty] public string Street { get; set; } = ""; }
+            [Validate] public class Customer
+            {
+                [ValidateWith(typeof(AddressValidator))]
+                public Address Home { get; set; } = new();
+            }
+            """;
+
+        var diagnostics = RunGeneratorGetDiagnostics(source);
+        Assert.Contains(diagnostics, d => string.Equals(d.Id, "ZV0011", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Analyzer_ZV0012_Fires_WhenValidateWithTypeDoesNotMatchProperty()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate] public class Address { [NotEmpty] public string Street { get; set; } = ""; }
+            [Validate] public class Name    { [NotEmpty] public string Value  { get; set; } = ""; }
+            [Validate] public class Customer
+            {
+                [ValidateWith(typeof(NameValidator))]
+                public Address Home { get; set; } = new();
+            }
+            """;
+
+        var diagnostics = RunGeneratorGetDiagnostics(source);
+        Assert.Contains(diagnostics, d => string.Equals(d.Id, "ZV0012", StringComparison.Ordinal));
+    }
+
+    private static System.Collections.Generic.IReadOnlyList<Diagnostic> RunGeneratorGetDiagnostics(string source)
+    {
+        var systemRuntime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            [CSharpSyntaxTree.ParseText(source)],
+            [
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(ValidateAttribute).Assembly.Location),
+                MetadataReference.CreateFromFile(System.IO.Path.Combine(systemRuntime, "System.Runtime.dll")),
+                MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
+            ],
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var generator = new ValidatorGenerator();
+        var driver = CSharpGeneratorDriver.Create(generator).RunGenerators(compilation);
+        return driver.GetRunResult().Diagnostics;
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.

@@ -9,9 +9,26 @@ namespace ZValidation.Generator;
 public sealed class ValidatorGenerator : IIncrementalGenerator
 {
     private const string ValidateAttributeFqn = "ZValidation.ValidateAttribute";
+    private const string ValidateWithFqn      = "ZValidation.ValidateWithAttribute";
     private const string TransientFqn = "ZeroAlloc.Inject.TransientAttribute";
     private const string ScopedFqn    = "ZeroAlloc.Inject.ScopedAttribute";
     private const string SingletonFqn = "ZeroAlloc.Inject.SingletonAttribute";
+
+    private static readonly DiagnosticDescriptor ZV0011 = new DiagnosticDescriptor(
+        id: "ZV0011",
+        title: "Redundant [ValidateWith] attribute",
+        messageFormat: "Property '{0}' has [ValidateWith] but its type '{1}' already has [Validate]. Remove [ValidateWith] to use the auto-generated validator.",
+        category: "ZValidation",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor ZV0012 = new DiagnosticDescriptor(
+        id: "ZV0012",
+        title: "Invalid [ValidateWith] validator type",
+        messageFormat: "Validator type '{0}' specified via [ValidateWith] on property '{1}' does not implement ValidatorFor<{2}>",
+        category: "ZValidation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -28,6 +45,8 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     {
         if (classSymbol.DeclaredAccessibility == Accessibility.Private)
             return;
+
+        ReportNestedDiagnostics(ctx, classSymbol);
 
         var namespaceName = classSymbol.ContainingNamespace.IsGlobalNamespace
             ? null
@@ -110,5 +129,91 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             sb.AppendLine($"        {fieldName} = {paramName};");
         sb.AppendLine("    }");
         sb.AppendLine();
+    }
+
+    private static void ReportNestedDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
+    {
+        foreach (var member in classSymbol.GetMembers())
+        {
+            if (member is not IPropertySymbol prop) continue;
+
+            var validateWithAttr = FindValidateWithAttribute(prop);
+            if (validateWithAttr is null) continue;
+
+            ReportZV0011IfApplicable(ctx, prop, member, validateWithAttr);
+            ReportZV0012IfApplicable(ctx, prop, member, validateWithAttr);
+        }
+    }
+
+    private static AttributeData? FindValidateWithAttribute(IPropertySymbol prop)
+    {
+        foreach (var attr in prop.GetAttributes())
+        {
+            if (string.Equals(attr.AttributeClass?.ToDisplayString(), ValidateWithFqn, StringComparison.Ordinal))
+                return attr;
+        }
+        return null;
+    }
+
+    private static void ReportZV0011IfApplicable(
+        SourceProductionContext ctx,
+        IPropertySymbol prop,
+        ISymbol member,
+        AttributeData validateWithAttr)
+    {
+        if (prop.Type is not INamedTypeSymbol propNamed) return;
+
+        foreach (var a in propNamed.GetAttributes())
+        {
+            if (string.Equals(a.AttributeClass?.ToDisplayString(), ValidateAttributeFqn, StringComparison.Ordinal))
+            {
+                ctx.ReportDiagnostic(Diagnostic.Create(ZV0011,
+                    validateWithAttr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
+                        ?? member.Locations.FirstOrDefault(),
+                    prop.Name, prop.Type.Name));
+                return;
+            }
+        }
+    }
+
+    private static void ReportZV0012IfApplicable(
+        SourceProductionContext ctx,
+        IPropertySymbol prop,
+        ISymbol member,
+        AttributeData validateWithAttr)
+    {
+        var specifiedType = validateWithAttr.ConstructorArguments.Length > 0
+            ? validateWithAttr.ConstructorArguments[0].Value as INamedTypeSymbol
+            : null;
+
+        if (specifiedType is null) return;
+
+        ITypeSymbol expectedModelType = RuleEmitter.GetCollectionElementTypePublic(prop) ?? prop.Type;
+
+        if (!ImplementsValidatorFor(specifiedType, expectedModelType))
+        {
+            ctx.ReportDiagnostic(Diagnostic.Create(ZV0012,
+                validateWithAttr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
+                    ?? member.Locations.FirstOrDefault(),
+                specifiedType.Name, prop.Name, expectedModelType.Name));
+        }
+    }
+
+    private static bool ImplementsValidatorFor(INamedTypeSymbol specifiedType, ITypeSymbol expectedModelType)
+    {
+        var current = specifiedType.BaseType;
+        while (current is not null)
+        {
+            if (current.IsGenericType
+                && string.Equals(current.OriginalDefinition.ToDisplayString(),
+                    "ZValidation.ValidatorFor<T>", StringComparison.Ordinal)
+                && current.TypeArguments.Length == 1
+                && SymbolEqualityComparer.Default.Equals(current.TypeArguments[0], expectedModelType))
+            {
+                return true;
+            }
+            current = current.BaseType;
+        }
+        return false;
     }
 }
