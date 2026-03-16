@@ -1,4 +1,4 @@
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = true)]
 public abstract class ValidationAttribute : Attribute

@@ -1,4 +1,4 @@
-namespace ZValidationInternal;
+namespace ZeroAlloc.Validation.Internal;
 
 public static class EmailValidator
 {

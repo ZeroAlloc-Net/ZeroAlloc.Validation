@@ -1,4 +1,4 @@
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 /// <summary>
 /// Specifies an explicit validator type for a property whose type does not carry [Validate].

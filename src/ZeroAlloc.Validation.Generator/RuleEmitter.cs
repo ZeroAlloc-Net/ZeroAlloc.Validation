@@ -4,38 +4,38 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 
-namespace ZValidation.Generator;
+namespace ZeroAlloc.Validation.Generator;
 
 internal static class RuleEmitter
 {
-    private const string ValidateAttributeFqn = "ZValidation.ValidateAttribute";
-    private const string ValidateWithAttributeFqn = "ZValidation.ValidateWithAttribute";
-    private const string StopOnFirstFailureFqn = "ZValidation.StopOnFirstFailureAttribute";
-    private const string DisplayNameAttributeFqn = "ZValidation.DisplayNameAttribute";
-    private const string SkipWhenAttributeFqn = "ZValidation.SkipWhenAttribute";
-    private const string CustomValidationAttributeFqn = "ZValidation.CustomValidationAttribute";
+    private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
+    private const string ValidateWithAttributeFqn = "ZeroAlloc.Validation.ValidateWithAttribute";
+    private const string StopOnFirstFailureFqn = "ZeroAlloc.Validation.StopOnFirstFailureAttribute";
+    private const string DisplayNameAttributeFqn = "ZeroAlloc.Validation.DisplayNameAttribute";
+    private const string SkipWhenAttributeFqn = "ZeroAlloc.Validation.SkipWhenAttribute";
+    private const string CustomValidationAttributeFqn = "ZeroAlloc.Validation.CustomValidationAttribute";
 
-    private const string NotNullFqn               = "ZValidation.NotNullAttribute";
-    private const string NotEmptyFqn              = "ZValidation.NotEmptyAttribute";
-    private const string MinLengthFqn             = "ZValidation.MinLengthAttribute";
-    private const string MaxLengthFqn             = "ZValidation.MaxLengthAttribute";
-    private const string GreaterThanFqn           = "ZValidation.GreaterThanAttribute";
-    private const string LessThanFqn              = "ZValidation.LessThanAttribute";
-    private const string InclusiveBetweenFqn      = "ZValidation.InclusiveBetweenAttribute";
-    private const string GreaterThanOrEqualToFqn  = "ZValidation.GreaterThanOrEqualToAttribute";
-    private const string LessThanOrEqualToFqn     = "ZValidation.LessThanOrEqualToAttribute";
-    private const string ExclusiveBetweenFqn      = "ZValidation.ExclusiveBetweenAttribute";
-    private const string LengthFqn                = "ZValidation.LengthAttribute";
-    private const string EmailAddressFqn          = "ZValidation.EmailAddressAttribute";
-    private const string MatchesFqn               = "ZValidation.MatchesAttribute";
-    private const string NullFqn                  = "ZValidation.NullAttribute";
-    private const string EmptyFqn                 = "ZValidation.EmptyAttribute";
-    private const string EqualFqn                 = "ZValidation.EqualAttribute";
-    private const string NotEqualFqn              = "ZValidation.NotEqualAttribute";
-    private const string IsInEnumFqn              = "ZValidation.IsInEnumAttribute";
-    private const string IsEnumNameFqn            = "ZValidation.IsEnumNameAttribute";
-    private const string PrecisionScaleFqn        = "ZValidation.PrecisionScaleAttribute";
-    private const string MustFqn                  = "ZValidation.MustAttribute";
+    private const string NotNullFqn               = "ZeroAlloc.Validation.NotNullAttribute";
+    private const string NotEmptyFqn              = "ZeroAlloc.Validation.NotEmptyAttribute";
+    private const string MinLengthFqn             = "ZeroAlloc.Validation.MinLengthAttribute";
+    private const string MaxLengthFqn             = "ZeroAlloc.Validation.MaxLengthAttribute";
+    private const string GreaterThanFqn           = "ZeroAlloc.Validation.GreaterThanAttribute";
+    private const string LessThanFqn              = "ZeroAlloc.Validation.LessThanAttribute";
+    private const string InclusiveBetweenFqn      = "ZeroAlloc.Validation.InclusiveBetweenAttribute";
+    private const string GreaterThanOrEqualToFqn  = "ZeroAlloc.Validation.GreaterThanOrEqualToAttribute";
+    private const string LessThanOrEqualToFqn     = "ZeroAlloc.Validation.LessThanOrEqualToAttribute";
+    private const string ExclusiveBetweenFqn      = "ZeroAlloc.Validation.ExclusiveBetweenAttribute";
+    private const string LengthFqn                = "ZeroAlloc.Validation.LengthAttribute";
+    private const string EmailAddressFqn          = "ZeroAlloc.Validation.EmailAddressAttribute";
+    private const string MatchesFqn               = "ZeroAlloc.Validation.MatchesAttribute";
+    private const string NullFqn                  = "ZeroAlloc.Validation.NullAttribute";
+    private const string EmptyFqn                 = "ZeroAlloc.Validation.EmptyAttribute";
+    private const string EqualFqn                 = "ZeroAlloc.Validation.EqualAttribute";
+    private const string NotEqualFqn              = "ZeroAlloc.Validation.NotEqualAttribute";
+    private const string IsInEnumFqn              = "ZeroAlloc.Validation.IsInEnumAttribute";
+    private const string IsEnumNameFqn            = "ZeroAlloc.Validation.IsEnumNameAttribute";
+    private const string PrecisionScaleFqn        = "ZeroAlloc.Validation.PrecisionScaleAttribute";
+    private const string MustFqn                  = "ZeroAlloc.Validation.MustAttribute";
 
     private static bool IsRuleAttribute(AttributeData attr)
     {
@@ -63,7 +63,7 @@ internal static class RuleEmitter
         if (skipWhenMethod is not null)
         {
             sb.AppendLine($"        if ({modelParamName}.{skipWhenMethod}())");
-            sb.AppendLine($"            return new global::ZValidation.ValidationResult(global::System.Array.Empty<global::ZValidation.ValidationFailure>());");
+            sb.AppendLine($"            return new global::ZeroAlloc.Validation.ValidationResult(global::System.Array.Empty<global::ZeroAlloc.Validation.ValidationFailure>());");
             sb.AppendLine();
         }
 
@@ -113,7 +113,7 @@ internal static class RuleEmitter
         bool validatorStop,
         int totalDirectRules)
     {
-        sb.AppendLine($"        var _buf = new global::ZValidationInternal.FailureBuffer({totalDirectRules});");
+        sb.AppendLine($"        var _buf = new global::ZeroAlloc.Validation.Internal.FailureBuffer({totalDirectRules});");
         sb.AppendLine();
 
         if (!validatorStop)
@@ -165,7 +165,7 @@ internal static class RuleEmitter
             if (method.Parameters.Length != 0) continue;
             if (!string.Equals(
                 method.ReturnType.ToDisplayString(),
-                "System.Collections.Generic.IEnumerable<ZValidation.ValidationFailure>",
+                "System.Collections.Generic.IEnumerable<ZeroAlloc.Validation.ValidationFailure>",
                 StringComparison.Ordinal))
                 continue;
             result.Add(method.Name);
@@ -318,7 +318,7 @@ internal static class RuleEmitter
         sb.AppendLine("        {");
         sb.AppendLine($"            var nestedResult = _{camelN}Validator.Validate({modelParamName}.{propName});");
         sb.AppendLine("            foreach (ref readonly var f in nestedResult.Failures)");
-        sb.AppendLine($"                _buf.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
+        sb.AppendLine($"                _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
         sb.AppendLine("        }");
         sb.AppendLine();
     }
@@ -347,7 +347,7 @@ internal static class RuleEmitter
         sb.AppendLine("                {");
         sb.AppendLine($"                    var {varName}Result = _{camelC}Validator.Validate({varName}Item);");
         sb.AppendLine($"                    foreach (ref readonly var f in {varName}Result.Failures)");
-        sb.AppendLine($"                        _buf.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
+        sb.AppendLine($"                        _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
         sb.AppendLine("                }");
         sb.AppendLine($"                {varName}Idx++;");
         sb.AppendLine("            }");
@@ -364,7 +364,7 @@ internal static class RuleEmitter
     {
         // Buffer is sized to totalDirectRules (all rules), but [StopOnFirstFailure] properties may
         // write fewer entries. The count < buffer.Length check at the end trims the array correctly.
-        sb.AppendLine($"        var buffer = new global::ZValidation.ValidationFailure[{totalDirectRules}];");
+        sb.AppendLine($"        var buffer = new global::ZeroAlloc.Validation.ValidationFailure[{totalDirectRules}];");
         sb.AppendLine("        int count = 0;");
         sb.AppendLine();
 
@@ -401,19 +401,19 @@ internal static class RuleEmitter
             {
                 sb.AppendLine($"        if (count > _b{pi})");
                 sb.AppendLine("        {");
-                sb.AppendLine("            var r = new global::ZValidation.ValidationFailure[count];");
+                sb.AppendLine("            var r = new global::ZeroAlloc.Validation.ValidationFailure[count];");
                 sb.AppendLine("            global::System.Array.Copy(buffer, r, count);");
-                sb.AppendLine("            return new global::ZValidation.ValidationResult(r);");
+                sb.AppendLine("            return new global::ZeroAlloc.Validation.ValidationResult(r);");
                 sb.AppendLine("        }");
             }
 
             sb.AppendLine();
         }
 
-        sb.AppendLine("        if (count == buffer.Length) return new global::ZValidation.ValidationResult(buffer);");
-        sb.AppendLine("        var result = new global::ZValidation.ValidationFailure[count];");
+        sb.AppendLine("        if (count == buffer.Length) return new global::ZeroAlloc.Validation.ValidationResult(buffer);");
+        sb.AppendLine("        var result = new global::ZeroAlloc.Validation.ValidationFailure[count];");
         sb.AppendLine("        global::System.Array.Copy(buffer, result, count);");
-        sb.AppendLine("        return new global::ZValidation.ValidationResult(result);");
+        sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult(result);");
     }
 
     private static bool IsGlobalOrEmpty(string? namespaceName) =>
@@ -536,9 +536,9 @@ internal static class RuleEmitter
 
     private static string SeverityToLiteral(int severityValue) => severityValue switch
     {
-        1 => "global::ZValidation.Severity.Warning",
-        2 => "global::ZValidation.Severity.Info",
-        _ => "global::ZValidation.Severity.Error"
+        1 => "global::ZeroAlloc.Validation.Severity.Warning",
+        2 => "global::ZeroAlloc.Validation.Severity.Info",
+        _ => "global::ZeroAlloc.Validation.Severity.Error"
     };
 
     private static string BuildFailureInitializer(string propName, string message, AttributeData attr, string? propertyValueExpr = null)
@@ -571,7 +571,7 @@ internal static class RuleEmitter
         }
 
         var sb = new StringBuilder();
-        sb.Append($"new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = {errorMessageExpr}");
+        sb.Append($"new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = {errorMessageExpr}");
         if (errorCode is not null)
             sb.Append($", ErrorCode = \"{EscapeString(errorCode)}\"");
         if (severityValue != 0)
@@ -622,7 +622,7 @@ internal static class RuleEmitter
             LessThanOrEqualToFqn     => $"System.Convert.ToDouble({access}) > {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
             ExclusiveBetweenFqn      => $"System.Convert.ToDouble({access}) <= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)} || System.Convert.ToDouble({access}) >= {GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture)}",
             LengthFqn                => $"{access}.Length < {GetIntArg(attr, 0)} || {access}.Length > {GetIntArg(attr, 1)}",
-            EmailAddressFqn          => $"!global::ZValidationInternal.EmailValidator.IsValid({access})",
+            EmailAddressFqn          => $"!global::ZeroAlloc.Validation.Internal.EmailValidator.IsValid({access})",
             MatchesFqn               => $"!global::System.Text.RegularExpressions.Regex.IsMatch({access} ?? \"\", \"{EscapeString(GetStringArg(attr, 0))}\")",
             NullFqn                  => $"{access} is not null",
             EmptyFqn                 => $"!string.IsNullOrEmpty({access})",
@@ -634,7 +634,7 @@ internal static class RuleEmitter
                 : $"System.Convert.ToDouble({access}) == {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
             IsInEnumFqn              => $"!global::System.Enum.IsDefined(typeof({propTypeFullName}), {access})",
             IsEnumNameFqn            => $"!global::System.Enum.IsDefined(typeof({GetTypeArgFullName(attr, 0)}), {access})",
-            PrecisionScaleFqn        => $"global::ZValidationInternal.DecimalValidator.ExceedsPrecisionScale({access}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})",
+            PrecisionScaleFqn        => $"global::ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale({access}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})",
             MustFqn                  => $"!{modelParamName}.{GetStringArg(attr, 0)}({access})",
             _                        => "false"
         };

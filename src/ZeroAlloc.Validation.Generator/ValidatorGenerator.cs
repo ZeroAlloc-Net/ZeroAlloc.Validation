@@ -3,13 +3,13 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace ZValidation.Generator;
+namespace ZeroAlloc.Validation.Generator;
 
 [Generator]
 public sealed class ValidatorGenerator : IIncrementalGenerator
 {
-    private const string ValidateAttributeFqn = "ZValidation.ValidateAttribute";
-    private const string ValidateWithFqn      = "ZValidation.ValidateWithAttribute";
+    private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
+    private const string ValidateWithFqn      = "ZeroAlloc.Validation.ValidateWithAttribute";
     private const string TransientFqn = "ZeroAlloc.Inject.TransientAttribute";
     private const string ScopedFqn    = "ZeroAlloc.Inject.ScopedAttribute";
     private const string SingletonFqn = "ZeroAlloc.Inject.SingletonAttribute";
@@ -18,7 +18,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         id: "ZV0011",
         title: "Redundant [ValidateWith] attribute",
         messageFormat: "Property '{0}' has [ValidateWith] but its type '{1}' already has [Validate]. Remove [ValidateWith] to use the auto-generated validator.",
-        category: "ZValidation",
+        category: "ZeroAlloc.Validation",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
@@ -26,7 +26,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         id: "ZV0012",
         title: "Invalid [ValidateWith] validator type",
         messageFormat: "Validator type '{0}' specified via [ValidateWith] on property '{1}' does not implement ValidatorFor<{2}>",
-        category: "ZValidation",
+        category: "ZeroAlloc.Validation",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
@@ -34,7 +34,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         id: "ZV0013",
         title: "Invalid [CustomValidation] method signature",
         messageFormat: "Method '{0}' decorated with [CustomValidation] must have no parameters and return IEnumerable<ValidationFailure>",
-        category: "ZValidation",
+        category: "ZeroAlloc.Validation",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
@@ -69,7 +69,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         var nestedFields = RuleEmitter.CollectNestedValidatorFields(classSymbol);
         EmitFieldsAndConstructor(sb, validatorName, nestedFields);
 
-        sb.AppendLine($"    public override global::ZValidation.ValidationResult Validate({modelName} instance)");
+        sb.AppendLine($"    public override global::ZeroAlloc.Validation.ValidationResult Validate({modelName} instance)");
         sb.AppendLine("    {");
         RuleEmitter.EmitValidateBody(sb, classSymbol);
         sb.AppendLine("    }");
@@ -91,7 +91,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         sb.AppendLine("#pragma warning disable HLQ012 // CollectionsMarshal.AsSpan not needed in generated code");
         sb.AppendLine("#pragma warning disable EPS06  // False positive: ValidationFailure is a readonly struct");
         sb.AppendLine();
-        sb.AppendLine("using ZValidation;");
+        sb.AppendLine("using ZeroAlloc.Validation;");
         sb.AppendLine();
 
         if (namespaceName is not null)
@@ -156,8 +156,8 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
     private static void ReportCustomValidationDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
     {
-        const string customValidationFqn = "ZValidation.CustomValidationAttribute";
-        const string expectedReturnType = "System.Collections.Generic.IEnumerable<ZValidation.ValidationFailure>";
+        const string customValidationFqn = "ZeroAlloc.Validation.CustomValidationAttribute";
+        const string expectedReturnType = "System.Collections.Generic.IEnumerable<ZeroAlloc.Validation.ValidationFailure>";
 
         foreach (var member in classSymbol.GetMembers())
         {
@@ -250,7 +250,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         {
             if (current.IsGenericType
                 && string.Equals(current.OriginalDefinition.ToDisplayString(),
-                    "ZValidation.ValidatorFor<T>", StringComparison.Ordinal)
+                    "ZeroAlloc.Validation.ValidatorFor<T>", StringComparison.Ordinal)
                 && current.TypeArguments.Length == 1
                 && SymbolEqualityComparer.Default.Equals(current.TypeArguments[0], expectedModelType))
             {

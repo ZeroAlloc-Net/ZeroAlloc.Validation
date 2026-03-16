@@ -1,4 +1,4 @@
-namespace ZValidation.Testing;
+namespace ZeroAlloc.Validation.Testing;
 
 public static class ValidationAssert
 {

@@ -1,4 +1,4 @@
-namespace ZValidation.Testing;
+namespace ZeroAlloc.Validation.Testing;
 
 public sealed class ValidationAssertException : System.Exception
 {

@@ -1,13 +1,13 @@
 using System.Buffers;
 
-namespace ZValidationInternal;
+namespace ZeroAlloc.Validation.Internal;
 
 public ref struct FailureBuffer
 {
-    private static readonly ArrayPool<global::ZValidation.ValidationFailure> Pool =
-        ArrayPool<global::ZValidation.ValidationFailure>.Shared;
+    private static readonly ArrayPool<global::ZeroAlloc.Validation.ValidationFailure> Pool =
+        ArrayPool<global::ZeroAlloc.Validation.ValidationFailure>.Shared;
 
-    private global::ZValidation.ValidationFailure[] _buf;
+    private global::ZeroAlloc.Validation.ValidationFailure[] _buf;
     private int _count;
 
     // initialCapacity = totalDirectRules; nested/collection failures may exceed this and trigger Grow()
@@ -19,7 +19,7 @@ public ref struct FailureBuffer
 
     public int Count => _count;
 
-    public void Add(in global::ZValidation.ValidationFailure f)
+    public void Add(in global::ZeroAlloc.Validation.ValidationFailure f)
     {
         if (_count == _buf.Length) Grow();
         _buf[_count++] = f;
@@ -33,19 +33,19 @@ public ref struct FailureBuffer
         _buf = newBuf;
     }
 
-    public global::ZValidation.ValidationResult ToResult()
+    public global::ZeroAlloc.Validation.ValidationResult ToResult()
     {
         if (_count == 0)
         {
             Pool.Return(_buf, clearArray: false); // ValidationFailure is a readonly struct; stale slots pose no GC risk
-            _buf = System.Array.Empty<global::ZValidation.ValidationFailure>();
-            return new global::ZValidation.ValidationResult(
-                System.Array.Empty<global::ZValidation.ValidationFailure>());
+            _buf = System.Array.Empty<global::ZeroAlloc.Validation.ValidationFailure>();
+            return new global::ZeroAlloc.Validation.ValidationResult(
+                System.Array.Empty<global::ZeroAlloc.Validation.ValidationFailure>());
         }
-        var result = new global::ZValidation.ValidationFailure[_count];
+        var result = new global::ZeroAlloc.Validation.ValidationFailure[_count];
         System.Array.Copy(_buf, result, _count);
         Pool.Return(_buf, clearArray: false); // ValidationFailure is a readonly struct; stale slots pose no GC risk
-        _buf = System.Array.Empty<global::ZValidation.ValidationFailure>();
-        return new global::ZValidation.ValidationResult(result);
+        _buf = System.Array.Empty<global::ZeroAlloc.Validation.ValidationFailure>();
+        return new global::ZeroAlloc.Validation.ValidationResult(result);
     }
 }

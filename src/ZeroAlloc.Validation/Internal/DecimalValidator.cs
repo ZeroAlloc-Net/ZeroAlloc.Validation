@@ -1,4 +1,4 @@
-namespace ZValidationInternal;
+namespace ZeroAlloc.Validation.Internal;
 
 [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
 public static class DecimalValidator

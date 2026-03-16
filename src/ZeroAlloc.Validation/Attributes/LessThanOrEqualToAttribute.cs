@@ -1,4 +1,4 @@
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class LessThanOrEqualToAttribute(double value) : ValidationAttribute
 {

@@ -1,4 +1,4 @@
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class MaxLengthAttribute(int max) : ValidationAttribute
 {

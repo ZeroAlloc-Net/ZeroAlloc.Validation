@@ -1,4 +1,4 @@
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 // IMPORTANT: Error must remain the first (zero-value) member.
 // The source generator omits Severity from ValidationFailure initializers when
