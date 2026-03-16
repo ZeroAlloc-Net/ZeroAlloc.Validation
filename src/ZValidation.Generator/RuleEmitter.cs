@@ -192,6 +192,8 @@ internal static class RuleEmitter
         int totalDirectRules,
         string modelParamName)
     {
+        // Buffer is sized to totalDirectRules (all rules), but [StopOnFirstFailure] properties may
+        // write fewer entries. The count < buffer.Length check at the end trims the array correctly.
         sb.AppendLine($"        var buffer = new global::ZValidation.ValidationFailure[{totalDirectRules}];");
         sb.AppendLine("        int count = 0;");
         sb.AppendLine();
