@@ -1089,6 +1089,48 @@ public class GeneratorRuleEmissionTests
         Assert.Contains("f.Severity", bagSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_EmitsMatches_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [Matches(@"^\d{5}$")] public string Zip { get; set; } = ""; }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("Regex.IsMatch", generated, StringComparison.Ordinal);
+        // EscapeString in the generator converts \ to \\, so the emitted literal contains ^\\d{5}$
+        Assert.Contains(@"^\\d{5}$", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsEmailAddress_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [EmailAddress] public string Email { get; set; } = ""; }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("EmailValidator.IsValid", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsInclusiveBetween_Check()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [InclusiveBetween(1, 10)] public int Value { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("< 1", generated, StringComparison.Ordinal);
+        Assert.Contains("> 10", generated, StringComparison.Ordinal);
+    }
+
     private static int CountOccurrences(string text, string value)
     {
         int count = 0;
