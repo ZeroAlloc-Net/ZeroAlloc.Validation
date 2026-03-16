@@ -10,144 +10,177 @@
 
 - **Zero allocations** on the hot path — no `List<ValidationFailure>` heap allocations per validation call
 - **Source-generated** validator implementations — no reflection at runtime
-- **Strongly typed** fluent API — full IntelliSense, no magic strings
+- **Attribute-based** decorator API — rules declared directly on model properties, full IntelliSense, no magic strings
 - **AOT/NativeAOT friendly** — no dynamic code generation or reflection
-- Validation results returned as `ref struct` or pooled/stack-allocated result types
+- Validation results returned as value types backed by a stack-allocated or preallocated buffer
 
 ---
 
 ## 1. Core Validator API ✅
 
 ### 1.1 Validator Definition ✅
-Define validators by implementing a source-generated interface or annotating a partial class:
+
+Annotate a model class with `[Validate]`; the source generator produces a `{ClassName}Validator` extending `ValidatorFor<T>`:
 
 ```csharp
-[Validator]
-public partial class CustomerValidator : ValidatorFor<Customer>
+[Validate]
+public class Customer
 {
-    public CustomerValidator()
-    {
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Age).GreaterThan(0).LessThan(120);
-        RuleFor(x => x.Email).NotEmpty().EmailAddress();
-    }
+    [NotEmpty]
+    [MaxLength(100)]
+    public string Name { get; set; } = "";
+
+    [GreaterThan(0)]
+    [LessThan(120)]
+    public int Age { get; set; }
+
+    [NotEmpty]
+    [EmailAddress]
+    public string Email { get; set; } = "";
 }
+
+// Generated: CustomerValidator : ValidatorFor<Customer>
+var validator = new CustomerValidator();
 ```
 
-### 1.2 Validation Execution ⬜
+### 1.2 Validation Execution ✅
 
 ```csharp
-var result = validator.Validate(customer);          // sync
-var result = await validator.ValidateAsync(customer); // async
-validator.ValidateAndThrow(customer);               // throws on failure
+var result = validator.Validate(customer);  // sync
+bool ok = result.IsValid;
+ReadOnlySpan<ValidationFailure> failures = result.Failures;
 ```
+
+Async execution and `ValidateAndThrow` are out of scope (zero-alloc constraint; see §13).
 
 ### 1.3 Zero-Allocation Result ✅
 
-- `ValidationResult` is a `ref struct` or uses a pooled buffer
-- Failures stored in a `Span<ValidationFailure>` or `stackalloc`-backed list
-- No `IEnumerable` boxing; failures exposed as `ReadOnlySpan<ValidationFailure>`
+- `ValidationResult` is a `readonly struct` wrapping a `ValidationFailure[]`
+- `Failures` exposed as `ReadOnlySpan<ValidationFailure>` — no `IEnumerable` boxing
+- `ValidationFailure` is a `readonly struct` with init properties: `PropertyName`, `ErrorMessage`, `ErrorCode`, `Severity`
+- Flat-path (no nested/collection properties): preallocated array sized to total rule count, trimmed to actual failure count — zero heap allocation on the hot path
+- Mixed-path (nested or collection): accumulates into a `List<ValidationFailure>` then converts; allocation occurs only when nested validation is present
 
 ---
 
 ## 2. Built-in Validators ✅
 
+All attributes inherit `ValidationAttribute` and support `Message`, `When`, `Unless`, `ErrorCode`, and `Severity` named parameters.
+
 ### Null / Empty
-| Rule | Description |
-|------|-------------|
-| `NotNull()` | Property must not be `null` |
-| `Null()` | Property must be `null` |
-| `NotEmpty()` | Not null, not empty string/collection, not default value |
-| `Empty()` | Must be null, empty, or default |
+| Attribute | Description |
+|-----------|-------------|
+| `[NotNull]` | Property must not be `null` |
+| `[Null]` | Property must be `null` |
+| `[NotEmpty]` | Not null and not empty string (or not default for value types) |
+| `[Empty]` | Must be null or empty string |
 
 ### Equality
-| Rule | Description |
-|------|-------------|
-| `Equal(value)` | Must equal a constant or another property |
-| `NotEqual(value)` | Must not equal a constant or another property |
+| Attribute | Description |
+|-----------|-------------|
+| `[Equal(value)]` | Must equal the given constant (numeric or string) |
+| `[NotEqual(value)]` | Must not equal the given constant |
 
 ### String Length
-| Rule | Description |
-|------|-------------|
-| `Length(min, max)` | String length within range |
-| `MinimumLength(n)` | String length ≥ n |
-| `MaximumLength(n)` | String length ≤ n |
+| Attribute | Description |
+|-----------|-------------|
+| `[Length(min, max)]` | String length within `[min, max]` |
+| `[MinLength(n)]` | String length ≥ n |
+| `[MaxLength(n)]` | String length ≤ n |
 
-### Comparison (numeric / comparable)
-| Rule | Description |
-|------|-------------|
-| `LessThan(n)` | Value < n (or another property) |
-| `LessThanOrEqualTo(n)` | Value ≤ n |
-| `GreaterThan(n)` | Value > n |
-| `GreaterThanOrEqualTo(n)` | Value ≥ n |
-| `ExclusiveBetween(min, max)` | min < value < max |
-| `InclusiveBetween(min, max)` | min ≤ value ≤ max |
+### Comparison (numeric)
+| Attribute | Description |
+|-----------|-------------|
+| `[LessThan(n)]` | Value < n |
+| `[LessThanOrEqualTo(n)]` | Value ≤ n |
+| `[GreaterThan(n)]` | Value > n |
+| `[GreaterThanOrEqualTo(n)]` | Value ≥ n |
+| `[ExclusiveBetween(min, max)]` | min < value < max |
+| `[InclusiveBetween(min, max)]` | min ≤ value ≤ max |
 
 ### Format / Pattern
-| Rule | Description |
-|------|-------------|
-| `Matches(regex)` | Matches a regular expression |
-| `EmailAddress()` | Valid email address format |
-| `CreditCard()` | Luhn-valid credit card number |
+| Attribute | Description |
+|-----------|-------------|
+| `[Matches(pattern)]` | Value matches the given regex pattern |
+| `[EmailAddress]` | Valid email address (zero-alloc internal implementation) |
+| `[PrecisionScale(p, s)]` | Decimal fits within precision/scale (zero-alloc via `decimal.GetBits()`) |
 
 ### Enum
-| Rule | Description |
-|------|-------------|
-| `IsInEnum()` | Numeric value is defined in the enum |
-| `IsEnumName()` | String is a valid enum member name |
-
-### Decimal Precision
-| Rule | Description |
-|------|-------------|
-| `PrecisionScale(precision, scale)` | Decimal fits within precision/scale |
+| Attribute | Description |
+|-----------|-------------|
+| `[IsInEnum]` | Numeric value is a defined member of the property's enum type |
+| `[IsEnumName(typeof(TEnum))]` | String is a valid enum member name (case-sensitive) |
 
 ---
 
-## 3. Rule Chaining ⬜
+## 3. Rule Chaining ✅
 
-Rules on the same property chain with `.`:
+Multiple attributes on the same property are independent rules — all are evaluated by default (continue mode). Decorate with `[StopOnFirstFailure]` to stop after the first failure on that property.
 
 ```csharp
-RuleFor(x => x.Name)
-    .NotEmpty()
-    .MinimumLength(2)
-    .MaximumLength(100)
-    .WithMessage("Name must be between 2 and 100 characters.");
+// All three rules evaluated; all failures reported
+[NotEmpty]
+[MinLength(2)]
+[MaxLength(100)]
+public string Name { get; set; } = "";
+
+// Stop after first failure — e.g. NotEmpty fires, MinLength/MaxLength skipped
+[StopOnFirstFailure]
+[NotEmpty]
+[MinLength(2)]
+[MaxLength(100)]
+public string Code { get; set; } = "";
 ```
 
 ---
 
-## 4. Custom Validators ⬜
+## 4. Custom Validators ✅
 
 ### 4.1 Predicate (`Must`) ✅
 
-Attribute-based (no fluent API): `[Must(nameof(MethodName))]` where the model has `bool MethodName(PropertyType value)`.
+`[Must(nameof(MethodName))]` calls an instance method on the model with signature `bool MethodName(PropertyType value)`:
 
 ```csharp
-[Must(nameof(NameStartsWithA))]
-public string Name { get; set; }
-private bool NameStartsWithA(string value) => value.StartsWith("A", StringComparison.Ordinal);
+[Must(nameof(StartsWithA))]
+public string Name { get; set; } = "";
+
+private bool StartsWithA(string value) =>
+    value.StartsWith("A", StringComparison.Ordinal);
 ```
 
-### 4.2 Custom Method (multiple failures)
+### 4.2 Hand-Written Validator (`ValidatorFor<T>`) ✅
+
+For types you don't control (third-party or value types), implement `ValidatorFor<T>` directly:
 
 ```csharp
-RuleFor(x => x.Address).Custom((address, context) =>
+public class CoordinateValidator : ValidatorFor<Coordinate>
 {
-    if (!IsValid(address))
-        context.AddFailure("Address", "Invalid address format.");
-});
+    public override ValidationResult Validate(Coordinate c)
+    {
+        var failures = new List<ValidationFailure>();
+        if (c.Lat < -90 || c.Lat > 90)
+            failures.Add(new ValidationFailure
+            {
+                PropertyName = "Lat",
+                ErrorMessage = "Latitude must be between -90 and 90.",
+                ErrorCode = "LAT_RANGE"
+            });
+        return new ValidationResult(failures.ToArray());
+    }
+}
 ```
 
-### 4.3 `PropertyValidator<T, TProperty>` (reusable class)
+Wire it in with `[ValidateWith]` (see §8).
 
-Implement a strongly-typed validator class for complex logic that can be reused across multiple validators. Source generator emits the dispatch code.
+### 4.3 Multi-Failure Custom Logic ⬜
+
+Attribute-based hook for adding multiple failures from a single method — not yet implemented.
 
 ---
 
-## 5. Error Message Configuration ⬜
+## 5. Error Message Configuration ✅
 
-### 5.1 `WithMessage` ✅
+### 5.1 `Message` ✅
 
 Every validation attribute accepts a `Message` named parameter:
 
@@ -156,59 +189,52 @@ Every validation attribute accepts a `Message` named parameter:
 public int Age { get; set; }
 ```
 
-### 5.2 Placeholders (zero-alloc interpolation via source gen) ✅
+### 5.2 Placeholders ✅
 
-| Placeholder | Description | Status |
-|-------------|-------------|--------|
-| `{PropertyName}` | Display name of the property | ✅ |
-| `{ComparisonValue}` | Value used in comparison validators | ✅ |
-| `{MinLength}` / `{MaxLength}` | Used in length validators | ✅ |
-| `{From}` / `{To}` | Used in between validators | ✅ |
-| `{PropertyValue}` | Actual value that failed | ⬜ (requires runtime allocation) |
+Placeholders are resolved at code-gen time — no runtime allocation:
 
-All supported placeholders are resolved at code-gen time into string literals — no runtime allocation.
+| Placeholder | Applies to |
+|-------------|------------|
+| `{PropertyName}` | All validators |
+| `{ComparisonValue}` | Comparison validators (`GreaterThan`, `Equal`, etc.) |
+| `{MinLength}` / `{MaxLength}` | Length validators |
+| `{From}` / `{To}` | Between validators (`InclusiveBetween`, `ExclusiveBetween`) |
 
-### 5.3 `WithName` / `OverridePropertyName`
+`{PropertyValue}` (runtime value of the failing property) is ⬜ pending — requires runtime allocation.
 
-```csharp
-RuleFor(x => x.Forename).NotEmpty().WithName("First Name");
-```
+### 5.3 `ErrorCode` ✅
 
-### 5.4 `WithErrorCode` ✅
-
-Implemented as the named parameter `ErrorCode` on every validation attribute:
+Named parameter on every validation attribute:
 
 ```csharp
 [EmailAddress(ErrorCode = "ERR_EMAIL_INVALID")]
-public string Email { get; set; }
+public string Email { get; set; } = "";
 ```
 
-### 5.5 `WithSeverity` ✅
+Propagated through nested and collection validators.
 
-Implemented as the named parameter `Severity` on every validation attribute:
+### 5.4 `Severity` ✅
+
+Named parameter on every validation attribute. Levels: `Error` (default), `Warning`, `Info`:
 
 ```csharp
 [NotEmpty(Severity = Severity.Warning)]
-public string MiddleName { get; set; }
+public string MiddleName { get; set; } = "";
 ```
 
-Severity levels: `Error` (default), `Warning`, `Info`.
+Propagated through nested and collection validators.
 
-### 5.6 `WithState`
+### 5.5 `WithName` / Display Name Override ⬜
 
-Attach custom state to a failure without extra allocations (stored as a typed value, not `object`):
-
-```csharp
-RuleFor(x => x.Age).GreaterThan(0).WithState(x => new { x.Id });
-```
+Override the property name used in error messages — not yet implemented.
 
 ---
 
-## 6. Conditional Validation ⬜
+## 6. Conditional Validation ✅
 
 ### 6.1 `When` / `Unless` ✅
 
-Attribute-based (no fluent API): `When` and `Unless` are named params on every validation attribute. The referenced method is an instance method on the model with signature `bool MethodName()`.
+Named parameters on every validation attribute. Reference an instance method on the model with signature `bool MethodName()`:
 
 ```csharp
 [NotNull(When = nameof(ShippingRequired))]
@@ -216,262 +242,210 @@ public Address? ShippingAddress { get; set; }
 private bool ShippingRequired() => RequiresShipping;
 
 [MinLength(5, Unless = nameof(ShortNameOk))]
-public string Name { get; set; }
+public string Name { get; set; } = "";
 private bool ShortNameOk() => AllowShortName;
 ```
 
-### 6.2 Top-level `When` Block
+`When` / `Unless` compose correctly with `[StopOnFirstFailure]`: a skipped rule (condition false) does not trigger the stop.
 
-```csharp
-When(x => x.IsPreferredCustomer, () =>
-{
-    RuleFor(x => x.Discount).GreaterThan(0);
-    RuleFor(x => x.CreditCardNumber).NotNull();
-}).Otherwise(() =>
-{
-    RuleFor(x => x.Discount).Empty();
-});
-```
+### 6.2 Cross-Property Condition Block ⬜
 
-### 6.3 `WhenAsync` / `UnlessAsync`
-
-Async predicates for conditions that require I/O.
-
-### 6.4 `ApplyConditionTo`
-
-Controls whether a condition applies to `CurrentValidator` only or `AllValidators` in the chain (default: `AllValidators`).
+A single condition guard covering multiple properties — not yet implemented.
 
 ---
 
-## 7. Cascade Modes ⬜
+## 7. Cascade Modes ✅
 
-### 7.1 Rule-Level Cascade (`CascadeMode`) ✅
+### 7.1 Rule-Level Cascade ✅
 
-- `Continue` (default) — run all validators in the chain (no annotation needed)
-- `Stop` — opt in via `[StopOnFirstFailure]` on the property; stops at first failure within the chain
+- **Continue** (default) — all rules on a property run independently; all failures reported
+- **Stop** — opt in via `[StopOnFirstFailure]`; stops at the first failure on that property
 
 ```csharp
 [StopOnFirstFailure]
 [NotNull]
 [NotEmpty]
-public string Name { get; set; }
+[MinLength(3)]
+public string Username { get; set; } = "";
 ```
 
-### 7.2 Validator-Level Cascade (`ClassLevelCascadeMode`)
+### 7.2 Validator-Level Cascade ⬜
 
-- `Continue` (default) — run all rules
-- `Stop` — stop at first failing rule ("fail fast")
+Stop after the first *property* that produces a failure (fail-fast across properties) — not yet implemented.
 
-```csharp
-ClassLevelCascadeMode = CascadeMode.Stop;
-```
+### 7.3 Global Defaults ⬜
 
-### 7.3 Global Defaults
-
-Configurable at startup via `ValidatorOptions`.
+Configurable via `ValidatorOptions` — not yet implemented.
 
 ---
 
 ## 8. Complex Property Validation ✅
 
-Validate nested objects with their own validator:
+### Auto-detected nested validation ✅
+
+If a property's type also has `[Validate]`, the generator injects the nested validator via constructor and runs it automatically. Failures are prefixed with the property name:
 
 ```csharp
-RuleFor(x => x.Address).SetValidator(new AddressValidator());
+[Validate]
+public class Order
+{
+    [NotNull]
+    public Address? ShippingAddress { get; set; }  // → "ShippingAddress.Street", etc.
+}
+
+// Generated constructor:
+// OrderValidator(AddressValidator shippingAddressValidator) { ... }
 ```
+
+### Explicit validator override (`[ValidateWith]`) ✅
+
+Use `[ValidateWith(typeof(TValidator))]` for types you don't control or when you want to override the auto-detected validator:
+
+```csharp
+[Validate]
+public class Location
+{
+    [ValidateWith(typeof(CoordinateValidator))]
+    public Coordinate Point { get; set; } = new();
+}
+```
+
+The generator produces **ZV0011** (warning) if `[ValidateWith]` is redundant (type already has `[Validate]`) and **ZV0012** (error) if the validator type doesn't implement `ValidatorFor<T>` for the correct type.
 
 ---
 
 ## 9. Collection Validation ✅
 
-### 9.1 `RuleForEach`
-
-Apply rules to every element in a collection:
+Properties of type `IEnumerable<T>` (including arrays and `List<T>`) whose element type has `[Validate]` are automatically validated per element. Null collections and null elements are silently skipped. Failures use bracket-index notation:
 
 ```csharp
-RuleForEach(x => x.Orders).SetValidator(new OrderValidator());
-RuleForEach(x => x.Tags).NotEmpty().MaximumLength(50);
+[Validate]
+public class Cart
+{
+    public List<LineItem> Items { get; set; } = [];
+    // → "Items[0].Sku", "Items[2].Quantity", etc.
+}
 ```
 
-### 9.2 Index Customization
+`[ValidateWith]` also works on collection properties — specify the element validator type.
 
-Override how collection indices appear in property names in failure messages.
+### Index customization ⬜
+
+Override how indices appear in failure property names — not yet implemented.
 
 ---
 
 ## 10. RuleSets ⬜
 
-Group rules by name and execute selectively:
-
-```csharp
-RuleSet("Create", () =>
-{
-    RuleFor(x => x.Password).NotEmpty();
-});
-
-RuleSet("Update", () =>
-{
-    RuleFor(x => x.Id).NotEmpty();
-});
-```
-
-Execute specific sets:
-```csharp
-validator.Validate(model, options => options.IncludeRuleSets("Create"));
-validator.Validate(model, options => options.IncludeAllRuleSets());
-```
+Group rules by name and execute selectively (e.g., "Create" vs "Update") — not yet implemented.
 
 ---
 
 ## 11. Dependent Rules ⬜
 
-Run follow-up rules only when a preceding rule passes:
-
-```csharp
-RuleFor(x => x.Email)
-    .NotEmpty()
-    .DependentRules(() =>
-    {
-        RuleFor(x => x.Email).EmailAddress();
-    });
-```
+Run follow-up rules only when a preceding rule passes. In the attribute model, the natural equivalent would be `[StopOnFirstFailure]` (§3/§7.1) which stops the chain at the first failure. Cross-property dependency graphs are not yet implemented.
 
 ---
 
 ## 12. Inheritance / Polymorphic Validation ⬜
 
-Validate derived types with type-specific rules:
-
-```csharp
-RuleFor(x => x.Shape).SetInheritanceValidator(v =>
-{
-    v.Add<Circle>(new CircleValidator());
-    v.Add<Rectangle>(new RectangleValidator());
-});
-```
+Dispatch to a type-specific validator based on the runtime type of a property — not yet implemented.
 
 ---
 
 ## 13. Async Validation ⬜
 
-```csharp
-RuleFor(x => x.Username)
-    .MustAsync(async (username, ct) => await _repo.IsUniqueAsync(username, ct));
-```
-
-- Use `ValidateAsync` to execute async validators
-- `CustomAsync` for async custom validators
-- ASP.NET automatic model binding pipeline: **sync only** (framework limitation)
+`ValidateAsync` and async predicate support are out of scope for the current zero-alloc design. Async validators inherently require heap allocation (state machines, `Task`). ASP.NET Core model binding is sync-only anyway.
 
 ---
 
 ## 14. Rule Inclusion / Reuse ⬜
 
-Include all rules from another validator:
-
-```csharp
-Include(new BaseCustomerValidator());
-```
+Compose validators by including all rules from a base validator — not yet implemented.
 
 ---
 
 ## 15. Pre-Validation Hook ⬜
 
-Override `PreValidate` to short-circuit validation before rules run (e.g., null-model guard):
-
-```csharp
-protected override bool PreValidate(ValidationContext<Customer> context, ValidationResult result)
-{
-    if (context.InstanceToValidate is null)
-    {
-        result.Errors.Add(new ValidationFailure("", "Model must not be null."));
-        return false;
-    }
-    return true;
-}
-```
+Override a `PreValidate` method on the generated validator to short-circuit validation before any rules run (e.g., null-model guard) — not yet implemented.
 
 ---
 
 ## 16. Root Context Data ⬜
 
-Pass arbitrary data into the validation pipeline without changing the model:
-
-```csharp
-var context = new ValidationContext<Customer>(customer);
-context.RootContextData["CurrentUserId"] = userId;
-validator.Validate(context);
-```
-
-In zero-alloc design, this is passed as a typed parameter to avoid `object` boxing.
+Pass typed ambient data into the validation pipeline without changing the model signature — not yet implemented.
 
 ---
 
-## 17. Dependency Injection ⬜
+## 17. Dependency Injection ✅
 
-Validators integrate with **[ZInject](https://github.com/MarcelRoozekrans/ZInject)** — a compile-time DI source generator that eliminates runtime reflection and scanning.
+### ASP.NET Core auto-registration ✅
 
-Decorate validators with a lifetime attribute; ZInject generates the `IServiceCollection` registration automatically:
+`ZValidation.AspNetCore.Generator` auto-generates `AddZValidationAutoValidation()` which registers all validators as `Transient` and wires up an `IActionFilter` that validates action arguments and returns `422 UnprocessableEntity` + `ValidationProblemDetails` on failure:
+
+```csharp
+// Program.cs / Startup.cs
+services.AddZValidationAutoValidation();
+```
+
+### ZInject integration ✅
+
+For non-ASP.NET scenarios, decorate validators with a lifetime attribute; ZInject generates compile-time DI registration with no reflection:
 
 ```csharp
 [Scoped]
-public partial class CustomerValidator : ValidatorFor<Customer> { ... }
+public partial class CustomerValidator : ValidatorFor<Customer> { }
 
 [Transient]
-public partial class OrderValidator : ValidatorFor<Order> { ... }
-
-[Singleton]
-public partial class CountryValidator : ValidatorFor<Country> { ... }
+public partial class OrderValidator : ValidatorFor<Order> { }
 ```
-
-Supported lifetimes: `[Transient]`, `[Scoped]`, `[Singleton]`.
-
-ZInject registers each validator against its implemented interfaces and concrete type using `TryAdd` semantics. Resolution uses a generated type-switch — no dictionary lookups or reflection at runtime.
 
 ---
 
 ## 18. Localization ⬜
 
-- Override default error messages globally
-- Plug in custom resource providers
-- Support for multiple languages via resource files
-- Source generator can emit localized message resolvers at compile time
+Override default error messages globally and plug in resource-file providers — not yet implemented.
 
 ---
 
 ## 19. Test Extensions ✅
 
+`ZValidation.Testing` provides `ValidationAssert` for clean xUnit assertions:
+
 ```csharp
-// Assert a rule exists for a property
-validator.ShouldHaveValidationErrorFor(x => x.Name, "");
-validator.ShouldNotHaveValidationErrorFor(x => x.Name, "John");
+ValidationAssert.NoErrors(validator.Validate(model));
+ValidationAssert.HasError(result, "Email");
+ValidationAssert.HasErrorWithMessage(result, "Email", "Invalid email address.");
 ```
 
 ---
 
-## 20. Zero-Allocation Specifics ⬜
+## 20. Zero-Allocation Specifics
 
-Features enabled by source generation:
-
-| Feature | Description |
-|---------|-------------|
-| `Span<ValidationFailure>` results | Failures stored on stack or in pooled buffer — no heap list | ⬜ |
-| Source-generated dispatch | All rule calls inlined at compile time, no virtual dispatch or reflection | ⬜ |
-| Struct-based `ValidationFailure` | Failure type is a `readonly struct` to avoid heap allocation | ✅ |
-| Compile-time message formatting | Placeholder substitution compiled into efficient `string.Create` or interpolated string handlers | ⬜ |
-| `ref struct ValidationContext` | Context passed by reference, never heap-allocated | ✅ |
-| No boxing for `WithState<T>` | State is stored as a typed generic field, not `object` | ⬜ |
-| AOT / NativeAOT safe | No `Activator.CreateInstance`, no reflection-based rule discovery | ⬜ |
-| Pooled result buffers | Optional `ArrayPool<ValidationFailure>` integration for larger result sets | ⬜ |
+| Feature | Status |
+|---------|--------|
+| `readonly struct ValidationFailure` | ✅ |
+| `ref struct ValidationContext<T>` | ✅ |
+| Source-generated inline dispatch (no reflection) | ✅ |
+| Flat-path preallocated array (no heap allocation per call) | ✅ |
+| Compile-time placeholder substitution | ✅ |
+| Zero-alloc email validation | ✅ |
+| Zero-alloc decimal precision check (`decimal.GetBits()`) | ✅ |
+| `ReadOnlySpan<ValidationFailure>` result exposure | ✅ |
+| `Span<ValidationFailure>` / `stackalloc` for mixed-path | ⬜ (mixed-path still uses `List<T>`) |
+| `ArrayPool<ValidationFailure>` for large result sets | ⬜ |
+| `{PropertyValue}` placeholder (runtime value) | ⬜ (requires allocation) |
+| AOT / NativeAOT safe | ✅ (no `Activator.CreateInstance`, no reflection) |
 
 ---
 
-## 21. ASP.NET Core Integration ⬜
+## 21. ASP.NET Core Integration ✅
 
-- Auto-validate models in controllers via `IActionFilter`
-- Return `ValidationProblemDetails` on failure
-- Integrates with `IValidateOptions<T>` for options validation
-- Source-generated registration extension methods
+- Auto-validates action arguments via a source-generated `IActionFilter`
+- Returns `422 UnprocessableEntity` + `ValidationProblemDetails` on failure
+- Source-generated `AddZValidationAutoValidation()` extension method registers all validators and the filter
+- Validators resolved from `IServiceProvider` (DI-friendly)
+- `IValidateOptions<T>` integration ⬜ (not yet implemented)
 
 ---
 
@@ -481,44 +455,23 @@ ZValidation enforces correctness and zero-allocation constraints at compile time
 
 | Package | Purpose |
 |---------|---------|
-| `ZeroAlloc.Analyzers` | Detects allocation patterns (boxing, closures, LINQ, etc.) that violate zero-alloc constraints |
-| `Meziantou.Analyzer` | General correctness, performance, and API usage rules |
-| `Roslynator.Analyzers` | Code quality, style, and refactoring diagnostics |
-| `ErrorProne.NET.CoreAnalyzers` | Catches common correctness mistakes (e.g., unused results, exception handling) |
-| `ErrorProne.NET.Structs` | Enforces safe `struct` usage — detects defensive copies, missing `readonly`, etc. |
-| `NetFabric.Hyperlinq.Analyzer` | Identifies LINQ usage that should be replaced with zero-allocation enumeration |
+| `ZeroAlloc.Analyzers` | Detects allocation patterns (boxing, closures, LINQ, etc.) |
+| `Meziantou.Analyzer` | General correctness, performance, and API usage |
+| `Roslynator.Analyzers` | Code quality and style |
+| `ErrorProne.NET.CoreAnalyzers` | Common correctness mistakes (unused results, exception handling) |
+| `ErrorProne.NET.Structs` | Safe `struct` usage — defensive copies, missing `readonly` |
+| `NetFabric.Hyperlinq.Analyzer` | LINQ patterns that should use zero-allocation enumeration |
 
-```xml
-<ItemGroup>
-  <PackageReference Include="ZeroAlloc.Analyzers">
-    <PrivateAssets>all</PrivateAssets>
-    <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-  </PackageReference>
-  <PackageReference Include="Meziantou.Analyzer" Version="3.0.19">
-    <PrivateAssets>all</PrivateAssets>
-    <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-  </PackageReference>
-  <PackageReference Include="Roslynator.Analyzers" Version="4.15.0">
-    <PrivateAssets>all</PrivateAssets>
-    <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-  </PackageReference>
-  <PackageReference Include="ErrorProne.NET.CoreAnalyzers" Version="0.1.2">
-    <PrivateAssets>all</PrivateAssets>
-    <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-  </PackageReference>
-  <PackageReference Include="ErrorProne.NET.Structs" Version="0.1.2">
-    <PrivateAssets>all</PrivateAssets>
-    <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-  </PackageReference>
-  <PackageReference Include="NetFabric.Hyperlinq.Analyzer" Version="2.3.0">
-    <PrivateAssets>all</PrivateAssets>
-    <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
-  </PackageReference>
-</ItemGroup>
-```
+In addition, `ZValidation.Generator` emits its own diagnostics:
+
+| Code | Severity | Description |
+|------|----------|-------------|
+| ZV0011 | Warning | `[ValidateWith]` is redundant — property type already has `[Validate]` |
+| ZV0012 | Error | `[ValidateWith]` validator type does not implement `ValidatorFor<T>` for the property type |
 
 ---
 
 ## Out of Scope (for now)
 
-- Blazor integration (future milestone)
+- Blazor integration
+- Async validation (conflicts with zero-alloc design goal)
