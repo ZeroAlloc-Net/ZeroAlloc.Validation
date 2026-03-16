@@ -18,4 +18,17 @@ public class IsEnumNameTests
     {
         ValidationAssert.HasError(_validator.Validate(new EnumNameModel { LightName = "Purple" }), "LightName");
     }
+
+    [Fact]
+    public void LowercaseName_Fails_CaseSensitive()
+    {
+        // System.Enum.IsDefined uses case-sensitive comparison for string input
+        ValidationAssert.HasError(_validator.Validate(new EnumNameModel { LightName = "red" }), "LightName");
+    }
+
+    [Fact]
+    public void UppercaseName_Fails()
+    {
+        ValidationAssert.HasError(_validator.Validate(new EnumNameModel { LightName = "RED" }), "LightName");
+    }
 }

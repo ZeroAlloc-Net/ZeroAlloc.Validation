@@ -109,4 +109,34 @@ public class CollectionValidationTests
             .First(f => string.Equals(f.PropertyName, "Items[0].Sku", StringComparison.Ordinal));
         Assert.Equal("SKU_REQUIRED", failure.ErrorCode);
     }
+
+    [Fact]
+    public void Null_Items_In_Collection_AreSkipped()
+    {
+        // Generator emits: if (varItem is not null) { validate } — null items are skipped
+        var cart = new Cart
+        {
+            CustomerId = "C-001",
+            Items = new System.Collections.Generic.List<LineItem> { null!, new LineItem { Sku = "ABC", Quantity = 1 }, null! }
+        };
+        ValidationAssert.NoErrors(_validator.Validate(cart));
+    }
+
+    [Fact]
+    public void Null_Item_IndexContinues_AfterNullItem()
+    {
+        // Null items still increment the index counter
+        var cart = new Cart
+        {
+            CustomerId = "C-001",
+            Items = new System.Collections.Generic.List<LineItem>
+            {
+                null!,                                         // index 0 — skipped
+                null!,                                         // index 1 — skipped
+                new LineItem { Sku = "", Quantity = 1 }        // index 2 — fails
+            }
+        };
+        var result = _validator.Validate(cart);
+        ValidationAssert.HasError(result, "Items[2].Sku");
+    }
 }
