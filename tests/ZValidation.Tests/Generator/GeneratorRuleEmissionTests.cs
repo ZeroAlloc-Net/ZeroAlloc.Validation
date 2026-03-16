@@ -988,6 +988,20 @@ public class GeneratorRuleEmissionTests
         Assert.DoesNotContain("Severity", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_EscapesSpecialChars_InErrorCode()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Item { [NotEmpty(ErrorCode = "CODE\"WITH\"QUOTES")] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("CODE\\\"WITH\\\"QUOTES", generated, StringComparison.Ordinal);
+    }
+
     private static System.Collections.Generic.IReadOnlyList<Diagnostic> RunGeneratorGetDiagnostics(string source)
     {
         var systemRuntime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();

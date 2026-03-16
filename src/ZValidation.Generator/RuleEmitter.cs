@@ -318,14 +318,14 @@ internal static class RuleEmitter
         var errorCode = GetErrorCode(attr);
         var severityValue = GetSeverityValue(attr);
 
-        var sb2 = new StringBuilder();
-        sb2.Append($"new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\"");
+        var sb = new StringBuilder();
+        sb.Append($"new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\"");
         if (errorCode is not null)
-            sb2.Append($", ErrorCode = \"{EscapeString(errorCode)}\"");
+            sb.Append($", ErrorCode = \"{EscapeString(errorCode)}\"");
         if (severityValue != 0)
-            sb2.Append($", Severity = {SeverityToLiteral(severityValue)}");
-        sb2.Append(" }");
-        return sb2.ToString();
+            sb.Append($", Severity = {SeverityToLiteral(severityValue)}");
+        sb.Append(" }");
+        return sb.ToString();
     }
 
     private static object? GetArg(AttributeData attr, int index)
