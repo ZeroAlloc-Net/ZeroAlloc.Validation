@@ -272,7 +272,7 @@ Configurable at startup via `ValidatorOptions`.
 
 ---
 
-## 8. Complex Property Validation ⬜
+## 8. Complex Property Validation ✅
 
 Validate nested objects with their own validator:
 
@@ -282,7 +282,7 @@ RuleFor(x => x.Address).SetValidator(new AddressValidator());
 
 ---
 
-## 9. Collection Validation ⬜
+## 9. Collection Validation ✅
 
 ### 9.1 `RuleForEach`
 
