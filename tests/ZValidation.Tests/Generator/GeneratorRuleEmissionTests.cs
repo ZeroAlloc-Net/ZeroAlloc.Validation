@@ -1205,7 +1205,7 @@ public class GeneratorRuleEmissionTests
     [Fact]
     public void Generator_PropertyValue_NonNullableValueType_EmitsInterpolatedAccess()
     {
-        // int property → {instance.Age} (no null check needed)
+        // int property → Convert.ToString with InvariantCulture for locale-safe formatting
         var source = """
             using ZValidation;
             namespace TestModels;
@@ -1213,7 +1213,7 @@ public class GeneratorRuleEmissionTests
             public class Foo { [GreaterThan(0, Message = "Must be > 0, got {PropertyValue}.")] public int Age { get; set; } }
             """;
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("{instance.Age}", generated, StringComparison.Ordinal);
+        Assert.Contains("{System.Convert.ToString(instance.Age, System.Globalization.CultureInfo.InvariantCulture)}", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1233,7 +1233,7 @@ public class GeneratorRuleEmissionTests
     [Fact]
     public void Generator_PropertyValue_NullableValueType_EmitsNullableToString()
     {
-        // int? property → {instance.Score?.ToString() ?? "null"}
+        // int? property → null-guarded Convert.ToString with InvariantCulture
         var source = """
             using ZValidation;
             namespace TestModels;
@@ -1241,7 +1241,7 @@ public class GeneratorRuleEmissionTests
             public class Foo { [GreaterThan(0, Message = "Got {PropertyValue}.")] public int? Score { get; set; } }
             """;
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("instance.Score?.ToString()", generated, StringComparison.Ordinal);
+        Assert.Contains("instance.Score is null ? \"null\" : System.Convert.ToString(instance.Score.Value, System.Globalization.CultureInfo.InvariantCulture)", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1257,8 +1257,8 @@ public class GeneratorRuleEmissionTests
         var generated = RunGeneratorGetSource(source);
         // {PropertyName} is substituted at code-gen time → "Age" appears as literal
         Assert.Contains("Age must be > 0, got ", generated, StringComparison.Ordinal);
-        // {PropertyValue} becomes interpolation hole
-        Assert.Contains("{instance.Age}", generated, StringComparison.Ordinal);
+        // {PropertyValue} becomes interpolation hole with invariant-culture formatting
+        Assert.Contains("{System.Convert.ToString(instance.Age, System.Globalization.CultureInfo.InvariantCulture)}", generated, StringComparison.Ordinal);
     }
 
     [Fact]

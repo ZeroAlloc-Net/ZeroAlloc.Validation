@@ -474,13 +474,16 @@ internal static class RuleEmitter
         var type = prop.Type;
 
         // Nullable value type: int?, double?, etc.
+        // Note: global:: alias qualifier is not valid inside C# interpolated string holes,
+        // so we use unqualified System.* names here (always available in generated code).
         if (type is INamedTypeSymbol named && named.IsGenericType
             && string.Equals(named.OriginalDefinition.ToDisplayString(), "System.Nullable<T>", StringComparison.Ordinal))
-            return $"{access}?.ToString() ?? \"null\"";
+            return $"({access} is null ? \"null\" : System.Convert.ToString({access}.Value, System.Globalization.CultureInfo.InvariantCulture))";
 
         // Non-nullable value type: int, double, bool, enum, struct, etc.
+        // Use Convert.ToString with InvariantCulture to ensure consistent decimal formatting regardless of thread locale.
         if (type.IsValueType)
-            return access; // C# interpolation calls ToString() implicitly
+            return $"System.Convert.ToString({access}, System.Globalization.CultureInfo.InvariantCulture)";
 
         // string
         if (type.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String)

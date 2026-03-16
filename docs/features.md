@@ -191,16 +191,13 @@ public int Age { get; set; }
 
 ### 5.2 Placeholders ✅
 
-Placeholders are resolved at code-gen time — no runtime allocation:
-
-| Placeholder | Applies to |
-|-------------|------------|
-| `{PropertyName}` | All validators |
-| `{ComparisonValue}` | Comparison validators (`GreaterThan`, `Equal`, etc.) |
-| `{MinLength}` / `{MaxLength}` | Length validators |
-| `{From}` / `{To}` | Between validators (`InclusiveBetween`, `ExclusiveBetween`) |
-
-`{PropertyValue}` (runtime value of the failing property) is ⬜ pending — requires runtime allocation.
+| Placeholder | Applies to | Status |
+|-------------|------------|--------|
+| `{PropertyName}` | All validators | ✅ |
+| `{ComparisonValue}` | Comparison validators (`GreaterThan`, `Equal`, etc.) | ✅ |
+| `{MinLength}` / `{MaxLength}` | Length validators | ✅ |
+| `{From}` / `{To}` | Between validators (`InclusiveBetween`, `ExclusiveBetween`) | ✅ |
+| `{PropertyValue}` | Actual value that failed (failure-path allocation) | ✅ |
 
 ### 5.3 `ErrorCode` ✅
 
@@ -434,7 +431,7 @@ ValidationAssert.HasErrorWithMessage(result, "Email", "Invalid email address.");
 | `ReadOnlySpan<ValidationFailure>` result exposure | ✅ |
 | `Span<ValidationFailure>` / `stackalloc` for mixed-path | ⬜ (mixed-path still uses `List<T>`) |
 | `ArrayPool<ValidationFailure>` for large result sets | ⬜ |
-| `{PropertyValue}` placeholder (runtime value) | ⬜ (requires allocation) |
+| `{PropertyValue}` placeholder (runtime value, failure-path only) | ✅ |
 | AOT / NativeAOT safe | ✅ (no `Activator.CreateInstance`, no reflection) |
 
 ---
