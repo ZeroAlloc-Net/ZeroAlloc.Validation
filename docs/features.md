@@ -172,9 +172,24 @@ public class CoordinateValidator : ValidatorFor<Coordinate>
 
 Wire it in with `[ValidateWith]` (see §8).
 
-### 4.3 Multi-Failure Custom Logic ⬜
+### 4.3 `[CustomValidation]` ✅
 
-Attribute-based hook for adding multiple failures from a single method — not yet implemented.
+Attribute on an instance method for cross-property multi-failure custom logic. The method is called after all property rules and nested validators. Multiple methods allowed, called in declaration order.
+
+```csharp
+[CustomValidation]
+private IEnumerable<ValidationFailure> ValidateBusinessRules()
+{
+    if (RequiresPromo && string.IsNullOrEmpty(PromoCode))
+        yield return new ValidationFailure
+        {
+            PropertyName = nameof(PromoCode),
+            ErrorMessage = "A promo code is required."
+        };
+}
+```
+
+Required signature: `IEnumerable<ValidationFailure> MethodName()`. **ZV0013** (error) if the signature is wrong.
 
 ---
 
@@ -387,9 +402,21 @@ Compose validators by including all rules from a base validator — not yet impl
 
 ---
 
-## 15. Pre-Validation Hook ⬜
+## 15. `[SkipWhen]` ✅
 
-Override a `PreValidate` method on the generated validator to short-circuit validation before any rules run (e.g., null-model guard) — not yet implemented.
+Class-level attribute to skip all validation when a condition is true. Returns an empty valid result immediately — before any rules, nested validators, or `[CustomValidation]` methods run.
+
+```csharp
+[Validate]
+[SkipWhen(nameof(ShouldSkipValidation))]
+public class Order
+{
+    [NotEmpty]
+    public string Reference { get; set; } = "";
+
+    private bool ShouldSkipValidation() => IsDraft;
+}
+```
 
 ---
 
@@ -454,8 +481,8 @@ ValidationAssert.HasErrorWithMessage(result, "Email", "Invalid email address.");
 | Zero-alloc email validation | ✅ |
 | Zero-alloc decimal precision check (`decimal.GetBits()`) | ✅ |
 | `ReadOnlySpan<ValidationFailure>` result exposure | ✅ |
-| `Span<ValidationFailure>` / `stackalloc` for mixed-path | ⬜ (mixed-path still uses `List<T>`) |
-| `ArrayPool<ValidationFailure>` for large result sets | ⬜ |
+| `ArrayPool<ValidationFailure>` for mixed-path via `FailureBuffer` | ✅ |
+| `ArrayPool<ValidationFailure>` for large result sets via `FailureBuffer` | ✅ |
 | `{PropertyValue}` placeholder (runtime value, failure-path only) | ✅ |
 | AOT / NativeAOT safe | ✅ (no `Activator.CreateInstance`, no reflection) |
 
