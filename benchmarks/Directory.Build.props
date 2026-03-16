@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- TreatWarningsAsErrors intentionally omitted: BenchmarkDotNet may have obsolete warnings -->
+  </PropertyGroup>
+</Project>
