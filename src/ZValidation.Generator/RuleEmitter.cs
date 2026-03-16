@@ -123,7 +123,7 @@ internal static class RuleEmitter
                 var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
 
                 sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
-                sb.AppendLine($"            failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }});");
+                sb.AppendLine($"            failures.Add({BuildFailureInitializer(propName, message, attr)});");
             }
             sb.AppendLine();
         }
@@ -210,7 +210,7 @@ internal static class RuleEmitter
                 var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
 
                 sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
-                sb.AppendLine($"            buffer[count++] = new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
+                sb.AppendLine($"            buffer[count++] = {BuildFailureInitializer(propName, message, attr)};");
             }
             sb.AppendLine();
         }
@@ -287,6 +287,45 @@ internal static class RuleEmitter
             if (string.Equals(named.Key, "Unless", StringComparison.Ordinal) && named.Value.Value is string s)
                 return s;
         return null;
+    }
+
+    private static string? GetErrorCode(AttributeData attr)
+    {
+        foreach (var named in attr.NamedArguments)
+            if (string.Equals(named.Key, "ErrorCode", StringComparison.Ordinal) && named.Value.Value is string s)
+                return s;
+        return null;
+    }
+
+    // Returns 0 = Error (default), 1 = Warning, 2 = Info.
+    private static int GetSeverityValue(AttributeData attr)
+    {
+        foreach (var named in attr.NamedArguments)
+            if (string.Equals(named.Key, "Severity", StringComparison.Ordinal) && named.Value.Value is int i)
+                return i;
+        return 0;
+    }
+
+    private static string SeverityToLiteral(int severityValue) => severityValue switch
+    {
+        1 => "global::ZValidation.Severity.Warning",
+        2 => "global::ZValidation.Severity.Info",
+        _ => "global::ZValidation.Severity.Error"
+    };
+
+    private static string BuildFailureInitializer(string propName, string message, AttributeData attr)
+    {
+        var errorCode = GetErrorCode(attr);
+        var severityValue = GetSeverityValue(attr);
+
+        var sb2 = new StringBuilder();
+        sb2.Append($"new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\"");
+        if (errorCode is not null)
+            sb2.Append($", ErrorCode = \"{EscapeString(errorCode)}\"");
+        if (severityValue != 0)
+            sb2.Append($", Severity = {SeverityToLiteral(severityValue)}");
+        sb2.Append(" }");
+        return sb2.ToString();
     }
 
     private static object? GetArg(AttributeData attr, int index)

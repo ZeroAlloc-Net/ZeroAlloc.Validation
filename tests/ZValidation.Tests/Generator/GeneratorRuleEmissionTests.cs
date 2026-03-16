@@ -932,6 +932,62 @@ public class GeneratorRuleEmissionTests
         Assert.Contains(diagnostics, d => string.Equals(d.Id, "ZV0012", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Generator_EmitsErrorCode_InFailureInitializer()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Item { [NotEmpty(ErrorCode = "NAME_REQUIRED")] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("ErrorCode = \"NAME_REQUIRED\"", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsSeverity_Warning_InFailureInitializer()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Item { [NotEmpty(Severity = Severity.Warning)] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("global::ZValidation.Severity.Warning", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_OmitsErrorCode_WhenNull()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Item { [NotEmpty] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.DoesNotContain("ErrorCode", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_OmitsSeverity_WhenError()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Item { [NotEmpty] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.DoesNotContain("Severity", generated, StringComparison.Ordinal);
+    }
+
     private static System.Collections.Generic.IReadOnlyList<Diagnostic> RunGeneratorGetDiagnostics(string source)
     {
         var systemRuntime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
