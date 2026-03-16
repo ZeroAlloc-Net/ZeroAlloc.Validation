@@ -836,6 +836,65 @@ public class GeneratorRuleEmissionTests
         Assert.Contains("_billingValidator", orderSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_ValidateWith_SingleProperty_UsesSpecifiedValidatorType()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            public class Money { public decimal Amount { get; set; } }
+            [Validate]
+            public class MoneyValidator : ValidatorFor<Money>
+            {
+                public override global::ZValidation.ValidationResult Validate(Money instance) =>
+                    new(new global::ZValidation.ValidationFailure[0]);
+            }
+            [Validate]
+            public class Invoice
+            {
+                [ValidateWith(typeof(MoneyValidator))]
+                public Money Total { get; set; } = new();
+            }
+            """;
+
+        var invoiceSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("InvoiceValidator", StringComparison.Ordinal));
+
+        Assert.Contains("MoneyValidator", invoiceSource, StringComparison.Ordinal);
+        Assert.Contains("_totalValidator", invoiceSource, StringComparison.Ordinal);
+        Assert.Contains("\"Total.\" +", invoiceSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_ValidateWith_CollectionProperty_UsesSpecifiedValidatorType()
+    {
+        var source = """
+            using ZValidation;
+            using System.Collections.Generic;
+            namespace TestModels;
+            public class Tag { public string Name { get; set; } = ""; }
+            [Validate]
+            public class TagValidator : ValidatorFor<Tag>
+            {
+                public override global::ZValidation.ValidationResult Validate(Tag instance) =>
+                    new(new global::ZValidation.ValidationFailure[0]);
+            }
+            [Validate]
+            public class Article
+            {
+                [ValidateWith(typeof(TagValidator))]
+                public List<Tag> Tags { get; set; } = new();
+            }
+            """;
+
+        var articleSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("ArticleValidator", StringComparison.Ordinal));
+
+        Assert.Contains("TagValidator", articleSource, StringComparison.Ordinal);
+        Assert.Contains("_tagsValidator", articleSource, StringComparison.Ordinal);
+        Assert.Contains("\"Tags[\" +", articleSource, StringComparison.Ordinal);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.

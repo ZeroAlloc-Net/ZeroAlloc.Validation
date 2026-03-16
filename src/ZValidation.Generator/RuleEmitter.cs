@@ -9,6 +9,7 @@ namespace ZValidation.Generator;
 internal static class RuleEmitter
 {
     private const string ValidateAttributeFqn = "ZValidation.ValidateAttribute";
+    private const string ValidateWithAttributeFqn = "ZValidation.ValidateWithAttribute";
 
     private const string NotNullFqn               = "ZValidation.NotNullAttribute";
     private const string NotEmptyFqn              = "ZValidation.NotEmptyAttribute";
@@ -390,10 +391,26 @@ internal static class RuleEmitter
     private static string EscapeString(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
+    private static INamedTypeSymbol? GetValidateWithType(IPropertySymbol prop)
+    {
+        foreach (var attr in prop.GetAttributes())
+        {
+            if (!string.Equals(attr.AttributeClass?.ToDisplayString(), ValidateWithAttributeFqn, StringComparison.Ordinal))
+                continue;
+            if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is INamedTypeSymbol t)
+                return t;
+        }
+        return null;
+    }
+
     private static IEnumerable<IPropertySymbol> GetNestedValidateProperties(INamedTypeSymbol classSymbol) =>
         classSymbol.GetMembers()
             .OfType<IPropertySymbol>()
-            .Where(p => p.Type is INamedTypeSymbol t && HasValidateAttribute(t));
+            // First arm: type has [Validate] (auto-compose) — also covers the overlap where [ValidateWith] is present on a [Validate] type; [ValidateWith] wins in CollectNestedValidatorFields.
+            // Second arm: [ValidateWith] on a non-collection property whose type has no [Validate].
+            .Where(p =>
+                (p.Type is INamedTypeSymbol t && HasValidateAttribute(t))
+                || (GetValidateWithType(p) is not null && GetCollectionElementType(p) is null));
 
     private static bool HasValidateAttribute(INamedTypeSymbol typeSymbol) =>
         typeSymbol.GetAttributes()
@@ -427,9 +444,17 @@ internal static class RuleEmitter
     private static IEnumerable<(IPropertySymbol Property, INamedTypeSymbol ElementType)> GetCollectionValidateProperties(INamedTypeSymbol classSymbol) =>
         classSymbol.GetMembers()
             .OfType<IPropertySymbol>()
-            .Select(p => (Property: p, ElementType: GetCollectionElementType(p) as INamedTypeSymbol))
-            .Where(x => x.ElementType is not null && HasValidateAttribute(x.ElementType!))
-            .Select(x => (x.Property, x.ElementType!));
+            .Select(p =>
+            {
+                var elemType = GetCollectionElementType(p) as INamedTypeSymbol;
+                if (elemType is not null && HasValidateAttribute(elemType))
+                    return ((IPropertySymbol, INamedTypeSymbol)?)(p, elemType);
+                if (elemType is not null && GetValidateWithType(p) is not null)
+                    return (p, elemType);
+                return null;
+            })
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value);
 
     public static System.Collections.Generic.List<(string FieldName, string ParamName, string QualifiedValidatorType)>
         CollectNestedValidatorFields(INamedTypeSymbol classSymbol)
@@ -441,8 +466,18 @@ internal static class RuleEmitter
 
             string? qualifiedType = null;
 
+            // [ValidateWith] takes priority over auto-detect for both scalar and collection properties.
+            // For collections, the specified type is the element validator — GetCollectionElementType is not needed here.
+            var validateWithType = GetValidateWithType(prop);
+            if (validateWithType is not null)
+            {
+                var ns2 = validateWithType.ContainingNamespace?.ToDisplayString();
+                qualifiedType = IsGlobalOrEmpty(ns2)
+                    ? $"global::{validateWithType.Name}"
+                    : $"global::{ns2}.{validateWithType.Name}";
+            }
             // Single nested type with [Validate]
-            if (prop.Type is INamedTypeSymbol nestedNamed && HasValidateAttribute(nestedNamed))
+            else if (prop.Type is INamedTypeSymbol nestedNamed && HasValidateAttribute(nestedNamed))
             {
                 var ns = nestedNamed.ContainingNamespace?.ToDisplayString();
                 qualifiedType = IsGlobalOrEmpty(ns)
