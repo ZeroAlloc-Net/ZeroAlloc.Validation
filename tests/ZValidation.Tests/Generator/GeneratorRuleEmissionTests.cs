@@ -1439,4 +1439,39 @@ public class GeneratorRuleEmissionTests
         var generated = RunGeneratorGetSource(source);
         Assert.DoesNotContain("FailureBuffer", generated, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Generator_SkipWhen_EmitsGuardAtTopOfValidate()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            [SkipWhen(nameof(ShouldSkip))]
+            public class M
+            {
+                [NotEmpty]
+                public string Name { get; set; } = "";
+                private bool ShouldSkip() => true;
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("instance.ShouldSkip()", generated, StringComparison.Ordinal);
+        Assert.Contains("Array.Empty", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_NoSkipWhen_NoGuardEmitted()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class M { [NotEmpty] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.DoesNotContain("ShouldSkip", generated, StringComparison.Ordinal);
+    }
 }

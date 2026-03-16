@@ -12,6 +12,7 @@ internal static class RuleEmitter
     private const string ValidateWithAttributeFqn = "ZValidation.ValidateWithAttribute";
     private const string StopOnFirstFailureFqn = "ZValidation.StopOnFirstFailureAttribute";
     private const string DisplayNameAttributeFqn = "ZValidation.DisplayNameAttribute";
+    private const string SkipWhenAttributeFqn = "ZValidation.SkipWhenAttribute";
 
     private const string NotNullFqn               = "ZValidation.NotNullAttribute";
     private const string NotEmptyFqn              = "ZValidation.NotEmptyAttribute";
@@ -57,6 +58,14 @@ internal static class RuleEmitter
 
     public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance")
     {
+        var skipWhenMethod = GetSkipWhenMethod(classSymbol);
+        if (skipWhenMethod is not null)
+        {
+            sb.AppendLine($"        if ({modelParamName}.{skipWhenMethod}())");
+            sb.AppendLine($"            return new global::ZValidation.ValidationResult(global::System.Array.Empty<global::ZValidation.ValidationFailure>());");
+            sb.AppendLine();
+        }
+
         var byProperty = CollectPropertyRules(classSymbol);
         var nestedProperties = GetNestedValidateProperties(classSymbol).ToList();
         var collectionProperties = GetCollectionValidateProperties(classSymbol).ToList();
@@ -434,6 +443,18 @@ internal static class RuleEmitter
         foreach (var attr in prop.GetAttributes())
         {
             if (!string.Equals(attr.AttributeClass?.ToDisplayString(), DisplayNameAttributeFqn, StringComparison.Ordinal))
+                continue;
+            if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is string s)
+                return s;
+        }
+        return null;
+    }
+
+    private static string? GetSkipWhenMethod(INamedTypeSymbol classSymbol)
+    {
+        foreach (var attr in classSymbol.GetAttributes())
+        {
+            if (!string.Equals(attr.AttributeClass?.ToDisplayString(), SkipWhenAttributeFqn, StringComparison.Ordinal))
                 continue;
             if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is string s)
                 return s;
