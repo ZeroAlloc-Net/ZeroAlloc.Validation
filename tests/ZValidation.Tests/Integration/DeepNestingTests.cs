@@ -46,4 +46,18 @@ public class DeepNestingTests
         ValidationAssert.HasError(result, "Zone.PostalCode.Code");
         Assert.Equal(2, result.Failures.Length);
     }
+
+    [Fact]
+    public void ThreeLevel_Failure_PreservesErrorCode()
+    {
+        var depot = new Depot
+        {
+            Id = "D-01",
+            Zone = new DeliveryZone { Name = "North", PostalCode = new PostalCode { Code = "" } }
+        };
+        var result = _validator.Validate(depot);
+        var failure = result.Failures.ToArray()
+            .First(f => string.Equals(f.PropertyName, "Zone.PostalCode.Code", StringComparison.Ordinal));
+        Assert.Equal("CODE_REQUIRED", failure.ErrorCode);
+    }
 }

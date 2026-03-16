@@ -1,5 +1,6 @@
 using System.Linq;
 using Xunit;
+using ZValidation;
 using ZValidation.Testing;
 
 namespace ZValidation.Tests.Integration;
@@ -98,5 +99,35 @@ public class NestedValidationTests
         var result = _validator.Validate(order);
         ValidationAssert.HasError(result, "ShippingAddress.Street");
         Assert.DoesNotContain(result.Failures.ToArray(), f => string.Equals(f.PropertyName, "ShippingAddress", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Nested_Failure_PreservesErrorCode()
+    {
+        var order = new Order
+        {
+            Reference = "ORD-001",
+            ShippingAddress = new Address { Street = "123 Main St", City = "Springfield" },
+            BillingAddress = new Address { Street = "", City = "Shelbyville" }
+        };
+        var result = _validator.Validate(order);
+        var failure = result.Failures.ToArray()
+            .First(f => string.Equals(f.PropertyName, "BillingAddress.Street", StringComparison.Ordinal));
+        Assert.Equal("STREET_REQUIRED", failure.ErrorCode);
+    }
+
+    [Fact]
+    public void Nested_Failure_PreservesSeverity()
+    {
+        var order = new Order
+        {
+            Reference = "ORD-001",
+            ShippingAddress = new Address { Street = "123 Main St", City = "Springfield" },
+            BillingAddress = new Address { Street = "456 Oak", City = "" }
+        };
+        var result = _validator.Validate(order);
+        var failure = result.Failures.ToArray()
+            .First(f => string.Equals(f.PropertyName, "BillingAddress.City", StringComparison.Ordinal));
+        Assert.Equal(Severity.Warning, failure.Severity);
     }
 }

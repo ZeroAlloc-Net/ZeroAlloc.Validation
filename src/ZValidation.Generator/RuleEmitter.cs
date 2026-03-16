@@ -150,7 +150,7 @@ internal static class RuleEmitter
             sb.AppendLine("        {");
             sb.AppendLine($"            var nestedResult = _{camelN}Validator.Validate({modelParamName}.{propName});");
             sb.AppendLine("            foreach (ref readonly var f in nestedResult.Failures)");
-            sb.AppendLine($"                failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
+            sb.AppendLine($"                failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
             sb.AppendLine("        }");
             sb.AppendLine();
         }
@@ -177,7 +177,7 @@ internal static class RuleEmitter
             sb.AppendLine("                {");
             sb.AppendLine($"                    var {varName}Result = _{camelC}Validator.Validate({varName}Item);");
             sb.AppendLine($"                    foreach (ref readonly var f in {varName}Result.Failures)");
-            sb.AppendLine($"                        failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
+            sb.AppendLine($"                        failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
             sb.AppendLine("                }");
             sb.AppendLine($"                {varName}Idx++;");
             sb.AppendLine("            }");

@@ -95,4 +95,18 @@ public class CollectionValidationTests
         ValidationAssert.HasError(result, "Items[0].Sku");
         Assert.Equal(2, result.Failures.Length);
     }
+
+    [Fact]
+    public void Collection_Failure_PreservesErrorCode()
+    {
+        var cart = new Cart
+        {
+            CustomerId = "C-001",
+            Items = [ new LineItem { Sku = "", Quantity = 1 } ]
+        };
+        var result = _validator.Validate(cart);
+        var failure = result.Failures.ToArray()
+            .First(f => string.Equals(f.PropertyName, "Items[0].Sku", StringComparison.Ordinal));
+        Assert.Equal("SKU_REQUIRED", failure.ErrorCode);
+    }
 }

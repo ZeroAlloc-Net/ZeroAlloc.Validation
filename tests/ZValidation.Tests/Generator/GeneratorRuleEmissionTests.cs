@@ -1050,6 +1050,45 @@ public class GeneratorRuleEmissionTests
         Assert.Contains("CODE\\\"WITH\\\"QUOTES", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_NestedPropagation_ForwardsErrorCodeAndSeverity()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Inner { [NotEmpty(ErrorCode = "E1", Severity = Severity.Warning)] public string Val { get; set; } = ""; }
+            [Validate]
+            public class Outer { public Inner Child { get; set; } = new(); }
+            """;
+
+        var outerSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("OuterValidator", StringComparison.Ordinal));
+
+        Assert.Contains("f.ErrorCode", outerSource, StringComparison.Ordinal);
+        Assert.Contains("f.Severity", outerSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_CollectionPropagation_ForwardsErrorCodeAndSeverity()
+    {
+        var source = """
+            using ZValidation;
+            using System.Collections.Generic;
+            namespace TestModels;
+            [Validate]
+            public class Item { [NotEmpty(ErrorCode = "E1")] public string Name { get; set; } = ""; }
+            [Validate]
+            public class Bag { public List<Item> Items { get; set; } = new(); }
+            """;
+
+        var bagSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("BagValidator", StringComparison.Ordinal));
+
+        Assert.Contains("f.ErrorCode", bagSource, StringComparison.Ordinal);
+        Assert.Contains("f.Severity", bagSource, StringComparison.Ordinal);
+    }
+
     private static int CountOccurrences(string text, string value)
     {
         int count = 0;
