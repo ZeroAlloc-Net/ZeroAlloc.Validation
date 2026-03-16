@@ -5,6 +5,9 @@ using ZValidation.Testing;
 
 namespace ZValidation.Tests.Integration;
 
+// Note: a null-guard path test (Null_Point_IsSkipped) is intentionally omitted.
+// Location.Point is non-nullable, so exercising the null guard requires a null! cast.
+// The guard is tested indirectly via NestedValidationTests on nullable Address properties.
 public class ValidateWithTests
 {
     private readonly LocationValidator _validator = new(new CoordinateValidator());
