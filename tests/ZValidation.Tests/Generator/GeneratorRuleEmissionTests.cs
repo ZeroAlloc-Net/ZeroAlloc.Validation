@@ -1201,4 +1201,79 @@ public class GeneratorRuleEmissionTests
         var driver = CSharpGeneratorDriver.Create(generator).RunGenerators(compilation);
         return driver.GetRunResult().GeneratedTrees.Select(t => t.ToString()).ToList();
     }
+
+    [Fact]
+    public void Generator_PropertyValue_NonNullableValueType_EmitsInterpolatedAccess()
+    {
+        // int property → {instance.Age} (no null check needed)
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [GreaterThan(0, Message = "Must be > 0, got {PropertyValue}.")] public int Age { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("{instance.Age}", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_PropertyValue_String_EmitsNullCoalesce()
+    {
+        // string property → {instance.Name ?? "null"}
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [MaxLength(5, Message = "Got {PropertyValue}.")] public string Name { get; set; } = ""; }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("instance.Name ?? \"null\"", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_PropertyValue_NullableValueType_EmitsNullableToString()
+    {
+        // int? property → {instance.Score?.ToString() ?? "null"}
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [GreaterThan(0, Message = "Got {PropertyValue}.")] public int? Score { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("instance.Score?.ToString()", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_PropertyValue_MixedWithCompileTimePlaceholders()
+    {
+        // Both {PropertyName} (compile-time) and {PropertyValue} (runtime) in same message
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [GreaterThan(0, Message = "{PropertyName} must be > 0, got {PropertyValue}.")] public int Age { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        // {PropertyName} is substituted at code-gen time → "Age" appears as literal
+        Assert.Contains("Age must be > 0, got ", generated, StringComparison.Ordinal);
+        // {PropertyValue} becomes interpolation hole
+        Assert.Contains("{instance.Age}", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_PropertyValue_NotInMessage_EmitsPlainStringLiteral()
+    {
+        // Regression guard: no {PropertyValue} → no interpolated string emitted
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Foo { [GreaterThan(0, Message = "Must be positive.")] public int Age { get; set; } }
+            """;
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("\"Must be positive.\"", generated, StringComparison.Ordinal);
+        // Should NOT be an interpolated string
+        Assert.DoesNotContain("$\"Must be positive.\"", generated, StringComparison.Ordinal);
+    }
 }
