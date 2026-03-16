@@ -123,13 +123,14 @@ internal static class RuleEmitter
                 var message = ResolveMessage(attr, fqn, propName) ?? GetDefaultMessage(fqn, attr, propName);
                 var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
                 var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
+                var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
                 var whenMethod   = GetWhen(attr);
                 var unlessMethod = GetUnless(attr);
                 var whenGuard    = whenMethod   is null ? "" : $"{modelParamName}.{whenMethod}() && ";
                 var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
 
                 sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
-                sb.AppendLine($"            failures.Add({BuildFailureInitializer(propName, message, attr)});");
+                sb.AppendLine($"            failures.Add({BuildFailureInitializer(propName, message, attr, propertyValueExpr)});");
             }
             sb.AppendLine();
         }
@@ -213,13 +214,14 @@ internal static class RuleEmitter
                 var message = ResolveMessage(attr, fqn, propName) ?? GetDefaultMessage(fqn, attr, propName);
                 var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
                 var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
+                var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
                 var whenMethod   = GetWhen(attr);
                 var unlessMethod = GetUnless(attr);
                 var whenGuard    = whenMethod   is null ? "" : $"{modelParamName}.{whenMethod}() && ";
                 var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
 
                 sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
-                sb.AppendLine($"            buffer[count++] = {BuildFailureInitializer(propName, message, attr)};");
+                sb.AppendLine($"            buffer[count++] = {BuildFailureInitializer(propName, message, attr, propertyValueExpr)};");
             }
             sb.AppendLine();
         }
@@ -322,13 +324,37 @@ internal static class RuleEmitter
         _ => "global::ZValidation.Severity.Error"
     };
 
-    private static string BuildFailureInitializer(string propName, string message, AttributeData attr)
+    private static string BuildFailureInitializer(string propName, string message, AttributeData attr, string? propertyValueExpr = null)
     {
         var errorCode = GetErrorCode(attr);
         var severityValue = GetSeverityValue(attr);
 
+        string errorMessageExpr;
+        if (propertyValueExpr is not null)
+        {
+            // Split on {PropertyValue}, escape static parts for interpolated string, join with the expression hole.
+            var parts = message.Split(new[] { "{PropertyValue}" }, System.StringSplitOptions.None);
+            var msgSb = new StringBuilder("$\"");
+            for (int i = 0; i < parts.Length; i++)
+            {
+                msgSb.Append(EscapeStringForInterpolation(parts[i]));
+                if (i < parts.Length - 1)
+                {
+                    msgSb.Append('{');
+                    msgSb.Append(propertyValueExpr);
+                    msgSb.Append('}');
+                }
+            }
+            msgSb.Append('"');
+            errorMessageExpr = msgSb.ToString();
+        }
+        else
+        {
+            errorMessageExpr = $"\"{EscapeString(message)}\"";
+        }
+
         var sb = new StringBuilder();
-        sb.Append($"new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\"");
+        sb.Append($"new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = {errorMessageExpr}");
         if (errorCode is not null)
             sb.Append($", ErrorCode = \"{EscapeString(errorCode)}\"");
         if (severityValue != 0)
@@ -438,6 +464,35 @@ internal static class RuleEmitter
 
     private static string EscapeString(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+    private static bool HasPropertyValuePlaceholder(string message) =>
+        message.IndexOf("{PropertyValue}", StringComparison.Ordinal) >= 0;
+
+    private static string BuildPropertyValueExpr(IPropertySymbol prop, string modelParamName)
+    {
+        var access = $"{modelParamName}.{prop.Name}";
+        var type = prop.Type;
+
+        // Nullable value type: int?, double?, etc.
+        if (type is INamedTypeSymbol named && named.IsGenericType
+            && string.Equals(named.OriginalDefinition.ToDisplayString(), "System.Nullable<T>", StringComparison.Ordinal))
+            return $"{access}?.ToString() ?? \"null\"";
+
+        // Non-nullable value type: int, double, bool, enum, struct, etc.
+        if (type.IsValueType)
+            return access; // C# interpolation calls ToString() implicitly
+
+        // string
+        if (type.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String)
+            return $"{access} ?? \"null\"";
+
+        // Any other reference type
+        return $"{access}?.ToString() ?? \"null\"";
+    }
+
+    // Like EscapeString but also escapes { and } for use in a C# interpolated string literal static part.
+    private static string EscapeStringForInterpolation(string s) =>
+        EscapeString(s).Replace("{", "{{").Replace("}", "}}");
 
     private static INamedTypeSymbol? GetValidateWithType(IPropertySymbol prop)
     {
