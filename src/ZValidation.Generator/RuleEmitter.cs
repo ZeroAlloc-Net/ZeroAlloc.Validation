@@ -137,6 +137,10 @@ internal static class RuleEmitter
 
             if (directProp is null && nestedProp is null && collProp is null) continue;
 
+            // All validation for this property (direct rules + nested + collection) is treated as
+            // one group. A single snapshot covers all three so that a null-check failure on a
+            // nested property also suppresses the nested validator call result — consistent with
+            // FluentValidation's per-property cascade semantics.
             sb.AppendLine($"        int _b{groupIdx} = failures.Count;");
 
             if (directProp is not null && directRules is not null)
