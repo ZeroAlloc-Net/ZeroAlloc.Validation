@@ -174,16 +174,22 @@ All supported placeholders are resolved at code-gen time into string literals �
 RuleFor(x => x.Forename).NotEmpty().WithName("First Name");
 ```
 
-### 5.4 `WithErrorCode`
+### 5.4 `WithErrorCode` ✅
+
+Implemented as the named parameter `ErrorCode` on every validation attribute:
 
 ```csharp
-RuleFor(x => x.Email).EmailAddress().WithErrorCode("ERR_EMAIL_INVALID");
+[EmailAddress(ErrorCode = "ERR_EMAIL_INVALID")]
+public string Email { get; set; }
 ```
 
-### 5.5 `WithSeverity`
+### 5.5 `WithSeverity` ✅
+
+Implemented as the named parameter `Severity` on every validation attribute:
 
 ```csharp
-RuleFor(x => x.MiddleName).NotEmpty().WithSeverity(Severity.Warning);
+[NotEmpty(Severity = Severity.Warning)]
+public string MiddleName { get; set; }
 ```
 
 Severity levels: `Error` (default), `Warning`, `Info`.
@@ -239,13 +245,16 @@ Controls whether a condition applies to `CurrentValidator` only or `AllValidator
 
 ## 7. Cascade Modes ⬜
 
-### 7.1 Rule-Level Cascade (`CascadeMode`)
+### 7.1 Rule-Level Cascade (`CascadeMode`) ✅
 
-- `Continue` (default) — run all validators in the chain
-- `Stop` — stop at first failure within the chain
+- `Continue` (default) — run all validators in the chain (no annotation needed)
+- `Stop` — opt in via `[StopOnFirstFailure]` on the property; stops at first failure within the chain
 
 ```csharp
-RuleFor(x => x.Name).Cascade(CascadeMode.Stop).NotNull().NotEmpty();
+[StopOnFirstFailure]
+[NotNull]
+[NotEmpty]
+public string Name { get; set; }
 ```
 
 ### 7.2 Validator-Level Cascade (`ClassLevelCascadeMode`)
