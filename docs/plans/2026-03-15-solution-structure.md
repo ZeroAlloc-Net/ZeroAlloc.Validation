@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Scaffold the ZValidation solution with all projects, references, multi-targeting, and analyzer wiring in place — ready for feature implementation.
+**Goal:** Scaffold the ZeroAlloc.Validation solution with all projects, references, multi-targeting, and analyzer wiring in place — ready for feature implementation.
 
-**Architecture:** Flat `src/` + `tests/` layout. `ZValidation.Generator` (netstandard2.0) is a Roslyn incremental source generator bundled into the `ZValidation` NuGet as an analyzer. All consumer-facing projects multi-target `net8.0;net9.0;net10.0`. `ZValidation.Testing` has no test framework dependency.
+**Architecture:** Flat `src/` + `tests/` layout. `ZeroAlloc.Validation.Generator` (netstandard2.0) is a Roslyn incremental source generator bundled into the `ZeroAlloc.Validation` NuGet as an analyzer. All consumer-facing projects multi-target `net8.0;net9.0;net10.0`. `ZeroAlloc.Validation.Testing` has no test framework dependency.
 
 **Tech Stack:** .NET 10 SDK, C# 13, Roslyn incremental source generators, xUnit 2, NUnit 4, MSTest 3, ZInject (source-gen DI).
 
@@ -19,18 +19,18 @@ See [docs/plans/2026-03-15-solution-structure-design.md](2026-03-15-solution-str
 ### Task 1: Create the solution file and folder structure
 
 **Files:**
-- Create: `ZValidation.sln`
+- Create: `ZeroAlloc.Validation.sln`
 - Create: `src/` (empty folder placeholder)
 - Create: `tests/` (empty folder placeholder)
 
 **Step 1: Create the solution**
 
 ```bash
-cd /c/Projects/Prive/ZValidation
-dotnet new sln -n ZValidation
+cd /c/Projects/Prive/ZeroAlloc.Validation
+dotnet new sln -n ZeroAlloc.Validation
 ```
 
-Expected: `ZValidation.sln` created.
+Expected: `ZeroAlloc.Validation.sln` created.
 
 **Step 2: Create top-level folders**
 
@@ -42,30 +42,30 @@ mkdir -p src tests docs/plans
 
 ```bash
 git init
-git add ZValidation.sln docs/
+git add ZeroAlloc.Validation.sln docs/
 git commit -m "chore: init solution"
 ```
 
 ---
 
-### Task 2: Create `ZValidation.Generator` project
+### Task 2: Create `ZeroAlloc.Validation.Generator` project
 
-This must be created first because `ZValidation` (core) will reference it.
+This must be created first because `ZeroAlloc.Validation` (core) will reference it.
 
 **Files:**
-- Create: `src/ZValidation.Generator/ZValidation.Generator.csproj`
-- Create: `src/ZValidation.Generator/ValidatorGenerator.cs`
+- Create: `src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj`
+- Create: `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs`
 
 **Step 1: Scaffold the project**
 
 ```bash
-dotnet new classlib -n ZValidation.Generator -o src/ZValidation.Generator --framework netstandard2.0
-rm src/ZValidation.Generator/Class1.cs
+dotnet new classlib -n ZeroAlloc.Validation.Generator -o src/ZeroAlloc.Validation.Generator --framework netstandard2.0
+rm src/ZeroAlloc.Validation.Generator/Class1.cs
 ```
 
 **Step 2: Replace the csproj with generator-specific setup**
 
-Replace `src/ZValidation.Generator/ZValidation.Generator.csproj` with:
+Replace `src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj` with:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -88,12 +88,12 @@ Replace `src/ZValidation.Generator/ZValidation.Generator.csproj` with:
 
 **Step 3: Create the generator entry point**
 
-Create `src/ZValidation.Generator/ValidatorGenerator.cs`:
+Create `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs`:
 
 ```csharp
 using Microsoft.CodeAnalysis;
 
-namespace ZValidation.Generator;
+namespace ZeroAlloc.Validation.Generator;
 
 [Generator]
 public sealed class ValidatorGenerator : IIncrementalGenerator
@@ -108,13 +108,13 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 **Step 4: Add to solution**
 
 ```bash
-dotnet sln add src/ZValidation.Generator/ZValidation.Generator.csproj
+dotnet sln add src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj
 ```
 
 **Step 5: Build to verify**
 
 ```bash
-dotnet build src/ZValidation.Generator/ZValidation.Generator.csproj
+dotnet build src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj
 ```
 
 Expected: Build succeeded, 0 errors.
@@ -122,32 +122,32 @@ Expected: Build succeeded, 0 errors.
 **Step 6: Commit**
 
 ```bash
-git add src/ZValidation.Generator/
-git commit -m "feat: scaffold ZValidation.Generator (Roslyn incremental generator)"
+git add src/ZeroAlloc.Validation.Generator/
+git commit -m "feat: scaffold ZeroAlloc.Validation.Generator (Roslyn incremental generator)"
 ```
 
 ---
 
-### Task 3: Create `ZValidation` core project
+### Task 3: Create `ZeroAlloc.Validation` core project
 
 **Files:**
-- Create: `src/ZValidation/ZValidation.csproj`
-- Create: `src/ZValidation/Core/ValidationFailure.cs`
-- Create: `src/ZValidation/Core/ValidationResult.cs`
-- Create: `src/ZValidation/Core/ValidationContext.cs`
-- Create: `src/ZValidation/Core/ValidatorFor.cs`
+- Create: `src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj`
+- Create: `src/ZeroAlloc.Validation/Core/ValidationFailure.cs`
+- Create: `src/ZeroAlloc.Validation/Core/ValidationResult.cs`
+- Create: `src/ZeroAlloc.Validation/Core/ValidationContext.cs`
+- Create: `src/ZeroAlloc.Validation/Core/ValidatorFor.cs`
 
 **Step 1: Scaffold the project**
 
 ```bash
-dotnet new classlib -n ZValidation -o src/ZValidation
-rm src/ZValidation/Class1.cs
-mkdir -p src/ZValidation/Core src/ZValidation/Rules
+dotnet new classlib -n ZeroAlloc.Validation -o src/ZeroAlloc.Validation
+rm src/ZeroAlloc.Validation/Class1.cs
+mkdir -p src/ZeroAlloc.Validation/Core src/ZeroAlloc.Validation/Rules
 ```
 
 **Step 2: Replace the csproj**
 
-Replace `src/ZValidation/ZValidation.csproj` with:
+Replace `src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj` with:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -183,7 +183,7 @@ Replace `src/ZValidation/ZValidation.csproj` with:
 
   <!-- Bundle the source generator into this NuGet package -->
   <ItemGroup>
-    <ProjectReference Include="..\ZValidation.Generator\ZValidation.Generator.csproj"
+    <ProjectReference Include="..\ZeroAlloc.Validation.Generator\ZeroAlloc.Validation.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
@@ -193,10 +193,10 @@ Replace `src/ZValidation/ZValidation.csproj` with:
 
 **Step 3: Create `ValidationFailure`**
 
-Create `src/ZValidation/Core/ValidationFailure.cs`:
+Create `src/ZeroAlloc.Validation/Core/ValidationFailure.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public readonly struct ValidationFailure
 {
@@ -211,10 +211,10 @@ public enum Severity { Error, Warning, Info }
 
 **Step 4: Create `ValidationResult`**
 
-Create `src/ZValidation/Core/ValidationResult.cs`:
+Create `src/ZeroAlloc.Validation/Core/ValidationResult.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public readonly struct ValidationResult
 {
@@ -232,10 +232,10 @@ public readonly struct ValidationResult
 
 **Step 5: Create `ValidationContext`**
 
-Create `src/ZValidation/Core/ValidationContext.cs`:
+Create `src/ZeroAlloc.Validation/Core/ValidationContext.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public ref struct ValidationContext<T>
 {
@@ -250,10 +250,10 @@ public ref struct ValidationContext<T>
 
 **Step 6: Create `ValidatorFor<T>`**
 
-Create `src/ZValidation/Core/ValidatorFor.cs`:
+Create `src/ZeroAlloc.Validation/Core/ValidatorFor.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public abstract partial class ValidatorFor<T>
 {
@@ -264,8 +264,8 @@ public abstract partial class ValidatorFor<T>
 **Step 7: Add to solution and build**
 
 ```bash
-dotnet sln add src/ZValidation/ZValidation.csproj
-dotnet build src/ZValidation/ZValidation.csproj
+dotnet sln add src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj
+dotnet build src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj
 ```
 
 Expected: Build succeeded, 0 errors.
@@ -273,30 +273,30 @@ Expected: Build succeeded, 0 errors.
 **Step 8: Commit**
 
 ```bash
-git add src/ZValidation/
-git commit -m "feat: scaffold ZValidation core types"
+git add src/ZeroAlloc.Validation/
+git commit -m "feat: scaffold ZeroAlloc.Validation core types"
 ```
 
 ---
 
-### Task 4: Create `ZValidation.AspNetCore` project
+### Task 4: Create `ZeroAlloc.Validation.AspNetCore` project
 
 **Files:**
-- Create: `src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj`
-- Create: `src/ZValidation.AspNetCore/Integration/.gitkeep`
+- Create: `src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj`
+- Create: `src/ZeroAlloc.Validation.AspNetCore/Integration/.gitkeep`
 
 **Step 1: Scaffold the project**
 
 ```bash
-dotnet new classlib -n ZValidation.AspNetCore -o src/ZValidation.AspNetCore
-rm src/ZValidation.AspNetCore/Class1.cs
-mkdir -p src/ZValidation.AspNetCore/Integration
-touch src/ZValidation.AspNetCore/Integration/.gitkeep
+dotnet new classlib -n ZeroAlloc.Validation.AspNetCore -o src/ZeroAlloc.Validation.AspNetCore
+rm src/ZeroAlloc.Validation.AspNetCore/Class1.cs
+mkdir -p src/ZeroAlloc.Validation.AspNetCore/Integration
+touch src/ZeroAlloc.Validation.AspNetCore/Integration/.gitkeep
 ```
 
 **Step 2: Replace the csproj**
 
-Replace `src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj` with:
+Replace `src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj` with:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -313,7 +313,7 @@ Replace `src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj` with:
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ZValidation\ZValidation.csproj" />
+    <ProjectReference Include="..\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj" />
   </ItemGroup>
 
 </Project>
@@ -322,8 +322,8 @@ Replace `src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj` with:
 **Step 3: Add to solution and build**
 
 ```bash
-dotnet sln add src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj
-dotnet build src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj
+dotnet sln add src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj
+dotnet build src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj
 ```
 
 Expected: Build succeeded, 0 errors.
@@ -331,28 +331,28 @@ Expected: Build succeeded, 0 errors.
 **Step 4: Commit**
 
 ```bash
-git add src/ZValidation.AspNetCore/
-git commit -m "feat: scaffold ZValidation.AspNetCore project"
+git add src/ZeroAlloc.Validation.AspNetCore/
+git commit -m "feat: scaffold ZeroAlloc.Validation.AspNetCore project"
 ```
 
 ---
 
-### Task 5: Create `ZValidation.Testing` project
+### Task 5: Create `ZeroAlloc.Validation.Testing` project
 
 **Files:**
-- Create: `src/ZValidation.Testing/ZValidation.Testing.csproj`
-- Create: `src/ZValidation.Testing/ValidationAssert.cs`
+- Create: `src/ZeroAlloc.Validation.Testing/ZeroAlloc.Validation.Testing.csproj`
+- Create: `src/ZeroAlloc.Validation.Testing/ValidationAssert.cs`
 
 **Step 1: Scaffold the project**
 
 ```bash
-dotnet new classlib -n ZValidation.Testing -o src/ZValidation.Testing
-rm src/ZValidation.Testing/Class1.cs
+dotnet new classlib -n ZeroAlloc.Validation.Testing -o src/ZeroAlloc.Validation.Testing
+rm src/ZeroAlloc.Validation.Testing/Class1.cs
 ```
 
 **Step 2: Replace the csproj**
 
-Replace `src/ZValidation.Testing/ZValidation.Testing.csproj` with:
+Replace `src/ZeroAlloc.Validation.Testing/ZeroAlloc.Validation.Testing.csproj` with:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -365,7 +365,7 @@ Replace `src/ZValidation.Testing/ZValidation.Testing.csproj` with:
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ZValidation\ZValidation.csproj" />
+    <ProjectReference Include="..\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj" />
   </ItemGroup>
 
 </Project>
@@ -373,10 +373,10 @@ Replace `src/ZValidation.Testing/ZValidation.Testing.csproj` with:
 
 **Step 3: Create `ValidationAssert`**
 
-Create `src/ZValidation.Testing/ValidationAssert.cs`:
+Create `src/ZeroAlloc.Validation.Testing/ValidationAssert.cs`:
 
 ```csharp
-namespace ZValidation.Testing;
+namespace ZeroAlloc.Validation.Testing;
 
 public static class ValidationAssert
 {
@@ -405,8 +405,8 @@ public sealed class ValidationAssertException(string message) : Exception(messag
 **Step 4: Add to solution and build**
 
 ```bash
-dotnet sln add src/ZValidation.Testing/ZValidation.Testing.csproj
-dotnet build src/ZValidation.Testing/ZValidation.Testing.csproj
+dotnet sln add src/ZeroAlloc.Validation.Testing/ZeroAlloc.Validation.Testing.csproj
+dotnet build src/ZeroAlloc.Validation.Testing/ZeroAlloc.Validation.Testing.csproj
 ```
 
 Expected: Build succeeded, 0 errors.
@@ -414,27 +414,27 @@ Expected: Build succeeded, 0 errors.
 **Step 5: Commit**
 
 ```bash
-git add src/ZValidation.Testing/
-git commit -m "feat: scaffold ZValidation.Testing with framework-agnostic assertions"
+git add src/ZeroAlloc.Validation.Testing/
+git commit -m "feat: scaffold ZeroAlloc.Validation.Testing with framework-agnostic assertions"
 ```
 
 ---
 
-### Task 6: Create `ZValidation.Tests` (xUnit)
+### Task 6: Create `ZeroAlloc.Validation.Tests` (xUnit)
 
 **Files:**
-- Create: `tests/ZValidation.Tests/ZValidation.Tests.csproj`
-- Create: `tests/ZValidation.Tests/ValidationResultTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj`
+- Create: `tests/ZeroAlloc.Validation.Tests/ValidationResultTests.cs`
 
 **Step 1: Scaffold the project**
 
 ```bash
-dotnet new xunit -n ZValidation.Tests -o tests/ZValidation.Tests
+dotnet new xunit -n ZeroAlloc.Validation.Tests -o tests/ZeroAlloc.Validation.Tests
 ```
 
 **Step 2: Replace the csproj**
 
-Replace `tests/ZValidation.Tests/ZValidation.Tests.csproj` with:
+Replace `tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj` with:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -457,8 +457,8 @@ Replace `tests/ZValidation.Tests/ZValidation.Tests.csproj` with:
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ZValidation\ZValidation.csproj" />
-    <ProjectReference Include="..\..\src\ZValidation.Testing\ZValidation.Testing.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Testing\ZeroAlloc.Validation.Testing.csproj" />
   </ItemGroup>
 
 </Project>
@@ -466,13 +466,13 @@ Replace `tests/ZValidation.Tests/ZValidation.Tests.csproj` with:
 
 **Step 3: Write the first failing test**
 
-Delete the generated `UnitTest1.cs` and create `tests/ZValidation.Tests/ValidationResultTests.cs`:
+Delete the generated `UnitTest1.cs` and create `tests/ZeroAlloc.Validation.Tests/ValidationResultTests.cs`:
 
 ```csharp
-using ZValidation;
-using ZValidation.Testing;
+using ZeroAlloc.Validation;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests;
+namespace ZeroAlloc.Validation.Tests;
 
 public class ValidationResultTests
 {
@@ -511,8 +511,8 @@ public class ValidationResultTests
 **Step 4: Add to solution and run tests**
 
 ```bash
-dotnet sln add tests/ZValidation.Tests/ZValidation.Tests.csproj
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet sln add tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
 Expected: 4 tests pass.
@@ -520,28 +520,28 @@ Expected: 4 tests pass.
 **Step 5: Commit**
 
 ```bash
-git add tests/ZValidation.Tests/
+git add tests/ZeroAlloc.Validation.Tests/
 git commit -m "test: add xUnit test project with ValidationResult smoke tests"
 ```
 
 ---
 
-### Task 7: Create `ZValidation.Tests.NUnit`
+### Task 7: Create `ZeroAlloc.Validation.Tests.NUnit`
 
 **Files:**
-- Create: `tests/ZValidation.Tests.NUnit/ZValidation.Tests.NUnit.csproj`
-- Create: `tests/ZValidation.Tests.NUnit/ValidationAssertCompatTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests.NUnit/ZeroAlloc.Validation.Tests.NUnit.csproj`
+- Create: `tests/ZeroAlloc.Validation.Tests.NUnit/ValidationAssertCompatTests.cs`
 
 **Step 1: Scaffold the project**
 
 ```bash
-dotnet new nunit -n ZValidation.Tests.NUnit -o tests/ZValidation.Tests.NUnit
-rm tests/ZValidation.Tests.NUnit/UnitTest1.cs
+dotnet new nunit -n ZeroAlloc.Validation.Tests.NUnit -o tests/ZeroAlloc.Validation.Tests.NUnit
+rm tests/ZeroAlloc.Validation.Tests.NUnit/UnitTest1.cs
 ```
 
 **Step 2: Replace the csproj**
 
-Replace `tests/ZValidation.Tests.NUnit/ZValidation.Tests.NUnit.csproj` with:
+Replace `tests/ZeroAlloc.Validation.Tests.NUnit/ZeroAlloc.Validation.Tests.NUnit.csproj` with:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -561,8 +561,8 @@ Replace `tests/ZValidation.Tests.NUnit/ZValidation.Tests.NUnit.csproj` with:
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ZValidation\ZValidation.csproj" />
-    <ProjectReference Include="..\..\src\ZValidation.Testing\ZValidation.Testing.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Testing\ZeroAlloc.Validation.Testing.csproj" />
   </ItemGroup>
 
 </Project>
@@ -570,14 +570,14 @@ Replace `tests/ZValidation.Tests.NUnit/ZValidation.Tests.NUnit.csproj` with:
 
 **Step 3: Write compat test**
 
-Create `tests/ZValidation.Tests.NUnit/ValidationAssertCompatTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests.NUnit/ValidationAssertCompatTests.cs`:
 
 ```csharp
 using NUnit.Framework;
-using ZValidation;
-using ZValidation.Testing;
+using ZeroAlloc.Validation;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.NUnit;
+namespace ZeroAlloc.Validation.Tests.NUnit;
 
 [TestFixture]
 public class ValidationAssertCompatTests
@@ -602,8 +602,8 @@ public class ValidationAssertCompatTests
 **Step 4: Add to solution and run tests**
 
 ```bash
-dotnet sln add tests/ZValidation.Tests.NUnit/ZValidation.Tests.NUnit.csproj
-dotnet test tests/ZValidation.Tests.NUnit/ZValidation.Tests.NUnit.csproj
+dotnet sln add tests/ZeroAlloc.Validation.Tests.NUnit/ZeroAlloc.Validation.Tests.NUnit.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests.NUnit/ZeroAlloc.Validation.Tests.NUnit.csproj
 ```
 
 Expected: 2 tests pass.
@@ -611,28 +611,28 @@ Expected: 2 tests pass.
 **Step 5: Commit**
 
 ```bash
-git add tests/ZValidation.Tests.NUnit/
+git add tests/ZeroAlloc.Validation.Tests.NUnit/
 git commit -m "test: add NUnit compat test project"
 ```
 
 ---
 
-### Task 8: Create `ZValidation.Tests.MSTest`
+### Task 8: Create `ZeroAlloc.Validation.Tests.MSTest`
 
 **Files:**
-- Create: `tests/ZValidation.Tests.MSTest/ZValidation.Tests.MSTest.csproj`
-- Create: `tests/ZValidation.Tests.MSTest/ValidationAssertCompatTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests.MSTest/ZeroAlloc.Validation.Tests.MSTest.csproj`
+- Create: `tests/ZeroAlloc.Validation.Tests.MSTest/ValidationAssertCompatTests.cs`
 
 **Step 1: Scaffold the project**
 
 ```bash
-dotnet new mstest -n ZValidation.Tests.MSTest -o tests/ZValidation.Tests.MSTest
-rm tests/ZValidation.Tests.MSTest/UnitTest1.cs
+dotnet new mstest -n ZeroAlloc.Validation.Tests.MSTest -o tests/ZeroAlloc.Validation.Tests.MSTest
+rm tests/ZeroAlloc.Validation.Tests.MSTest/UnitTest1.cs
 ```
 
 **Step 2: Replace the csproj**
 
-Replace `tests/ZValidation.Tests.MSTest/ZValidation.Tests.MSTest.csproj` with:
+Replace `tests/ZeroAlloc.Validation.Tests.MSTest/ZeroAlloc.Validation.Tests.MSTest.csproj` with:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -652,8 +652,8 @@ Replace `tests/ZValidation.Tests.MSTest/ZValidation.Tests.MSTest.csproj` with:
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ZValidation\ZValidation.csproj" />
-    <ProjectReference Include="..\..\src\ZValidation.Testing\ZValidation.Testing.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Testing\ZeroAlloc.Validation.Testing.csproj" />
   </ItemGroup>
 
 </Project>
@@ -661,14 +661,14 @@ Replace `tests/ZValidation.Tests.MSTest/ZValidation.Tests.MSTest.csproj` with:
 
 **Step 3: Write compat test**
 
-Create `tests/ZValidation.Tests.MSTest/ValidationAssertCompatTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests.MSTest/ValidationAssertCompatTests.cs`:
 
 ```csharp
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using ZValidation;
-using ZValidation.Testing;
+using ZeroAlloc.Validation;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.MSTest;
+namespace ZeroAlloc.Validation.Tests.MSTest;
 
 [TestClass]
 public class ValidationAssertCompatTests
@@ -693,8 +693,8 @@ public class ValidationAssertCompatTests
 **Step 4: Add to solution and run tests**
 
 ```bash
-dotnet sln add tests/ZValidation.Tests.MSTest/ZValidation.Tests.MSTest.csproj
-dotnet test tests/ZValidation.Tests.MSTest/ZValidation.Tests.MSTest.csproj
+dotnet sln add tests/ZeroAlloc.Validation.Tests.MSTest/ZeroAlloc.Validation.Tests.MSTest.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests.MSTest/ZeroAlloc.Validation.Tests.MSTest.csproj
 ```
 
 Expected: 2 tests pass.
@@ -702,7 +702,7 @@ Expected: 2 tests pass.
 **Step 5: Commit**
 
 ```bash
-git add tests/ZValidation.Tests.MSTest/
+git add tests/ZeroAlloc.Validation.Tests.MSTest/
 git commit -m "test: add MSTest compat test project"
 ```
 
@@ -713,7 +713,7 @@ git commit -m "test: add MSTest compat test project"
 **Step 1: Build entire solution**
 
 ```bash
-dotnet build ZValidation.sln
+dotnet build ZeroAlloc.Validation.sln
 ```
 
 Expected: Build succeeded across all projects and all TFMs, 0 errors.
@@ -721,7 +721,7 @@ Expected: Build succeeded across all projects and all TFMs, 0 errors.
 **Step 2: Run all tests**
 
 ```bash
-dotnet test ZValidation.sln
+dotnet test ZeroAlloc.Validation.sln
 ```
 
 Expected: All tests pass across `net8.0`, `net9.0`, `net10.0`.
@@ -740,6 +740,6 @@ git commit -m "chore: verify full solution build and all tests green"
 At this point the solution scaffold is complete:
 - All 7 projects created and wired up
 - Multi-targeting `net8.0;net9.0;net10.0` on all runtime projects
-- Generator bundled as analyzer in `ZValidation`
+- Generator bundled as analyzer in `ZeroAlloc.Validation`
 - All analyzers applied to core project
 - Smoke tests passing across all three test frameworks

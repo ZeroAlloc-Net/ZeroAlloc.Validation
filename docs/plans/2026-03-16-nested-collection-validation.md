@@ -6,13 +6,13 @@
 
 **Architecture:** Auto-compose already works using `new ValidatorName()` inline. This plan replaces that with constructor-injected fields (Task 1), adds `[ValidateWith(typeof(T))]` for third-party types (Task 2), and adds two Roslyn diagnostics (Task 3).
 
-**Tech Stack:** Roslyn `IIncrementalGenerator` (netstandard2.0), `SourceProductionContext.ReportDiagnostic`, xUnit, ZValidation attribute-based design.
+**Tech Stack:** Roslyn `IIncrementalGenerator` (netstandard2.0), `SourceProductionContext.ReportDiagnostic`, xUnit, ZeroAlloc.Validation attribute-based design.
 
 ---
 
 ## Context
 
-The generator (`src/ZValidation.Generator/RuleEmitter.cs`) already:
+The generator (`src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`) already:
 - Detects properties whose type has `[Validate]` → auto-composes nested validation
 - Detects collection properties whose element type has `[Validate]` → collection validation
 - Emits dot-notation (`ShippingAddress.Street`) and bracket-notation (`Items[0].Sku`) paths
@@ -29,11 +29,11 @@ The generator (`src/ZValidation.Generator/RuleEmitter.cs`) already:
 ## Task 1: Constructor Injection
 
 **Files:**
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `src/ZValidation.Generator/ValidatorGenerator.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
-- Modify: `tests/ZValidation.Tests/Integration/NestedValidationTests.cs`
-- Modify: `tests/ZValidation.Tests/Integration/CollectionValidationTests.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/NestedValidationTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/CollectionValidationTests.cs`
 
 ### Step 1: Write four failing generator tests
 
@@ -44,7 +44,7 @@ Add these tests to `GeneratorRuleEmissionTests.cs` before the `RunGeneratorGetSo
 public void Generator_EmitsConstructorParam_ForNestedValidateType()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate] public class Address { [NotEmpty] public string Street { get; set; } = ""; }
         [Validate] public class Customer { public Address Home { get; set; } = new(); }
@@ -61,7 +61,7 @@ public void Generator_EmitsConstructorParam_ForNestedValidateType()
 public void Generator_EmitsConstructorParam_ForCollectionOfValidateType()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         using System.Collections.Generic;
         namespace TestModels;
         [Validate] public class Item { [NotEmpty] public string Name { get; set; } = ""; }
@@ -79,7 +79,7 @@ public void Generator_EmitsConstructorParam_ForCollectionOfValidateType()
 public void Generator_NoConstructor_WhenNoNestedProperties()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate] public class Plain { [NotEmpty] public string Name { get; set; } = ""; }
         """;
@@ -93,7 +93,7 @@ public void Generator_NoConstructor_WhenNoNestedProperties()
 public void Generator_TwoNestedProperties_SameType_TwoDistinctParams()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate] public class Address { [NotEmpty] public string Street { get; set; } = ""; }
         [Validate] public class Order
@@ -114,7 +114,7 @@ public void Generator_TwoNestedProperties_SameType_TwoDistinctParams()
 ### Step 2: Run tests to confirm they fail
 
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "EmitsConstructorParam|NoConstructor|TwoNestedProperties" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "EmitsConstructorParam|NoConstructor|TwoNestedProperties" -v minimal
 ```
 
 Expected: 4 tests fail (no constructor is emitted yet).
@@ -124,7 +124,7 @@ Expected: 4 tests fail (no constructor is emitted yet).
 Add a new public static method at the bottom of `RuleEmitter` (before the closing `}`):
 
 ```csharp
-private const string ValidateWithAttributeFqn = "ZValidation.ValidateWithAttribute";
+private const string ValidateWithAttributeFqn = "ZeroAlloc.Validation.ValidateWithAttribute";
 
 /// <summary>
 /// Returns field info for every property that requires a nested validator via constructor injection.
@@ -231,7 +231,7 @@ if (nestedFields.Count > 0)
 ### Step 6: Run the 4 new generator tests to confirm they pass
 
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "EmitsConstructorParam|NoConstructor|TwoNestedProperties" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "EmitsConstructorParam|NoConstructor|TwoNestedProperties" -v minimal
 ```
 
 Expected: all 4 pass.
@@ -241,14 +241,14 @@ Expected: all 4 pass.
 The tests `Generator_EmitsNestedValidation_WithDotPrefix` and `Generator_EmitsCollectionValidation_WithBracketIndex` assert on `AddressValidator` / `LineItemValidator` appearing in the output — they will still pass because field declarations still reference those types. But the tests that assert `new ... ()` is absent need updating. Run the full generator suite to see which fail:
 
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "GeneratorRuleEmissionTests" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "GeneratorRuleEmissionTests" -v minimal
 ```
 
 Fix any failing tests (likely none — the existing tests assert presence of type names, not on `new()`).
 
 ### Step 8: Update integration test constructors
 
-`tests/ZValidation.Tests/Integration/NestedValidationTests.cs` — change:
+`tests/ZeroAlloc.Validation.Tests/Integration/NestedValidationTests.cs` — change:
 ```csharp
 private readonly OrderValidator _validator = new();
 ```
@@ -259,7 +259,7 @@ private readonly OrderValidator _validator = new(new AddressValidator(), new Add
 
 (`Order` has `ShippingAddress` and `BillingAddress`, both `Address` type → two `AddressValidator` params.)
 
-`tests/ZValidation.Tests/Integration/CollectionValidationTests.cs` — change:
+`tests/ZeroAlloc.Validation.Tests/Integration/CollectionValidationTests.cs` — change:
 ```csharp
 private readonly CartValidator _validator = new();
 ```
@@ -273,7 +273,7 @@ private readonly CartValidator _validator = new(new LineItemValidator());
 ### Step 9: Run the full test suite
 
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 
 Expected: all tests pass (should be 155 — 151 existing + 4 new).
@@ -281,11 +281,11 @@ Expected: all tests pass (should be 155 — 151 existing + 4 new).
 ### Step 10: Commit
 
 ```bash
-git add src/ZValidation.Generator/RuleEmitter.cs
-git add src/ZValidation.Generator/ValidatorGenerator.cs
-git add tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
-git add tests/ZValidation.Tests/Integration/NestedValidationTests.cs
-git add tests/ZValidation.Tests/Integration/CollectionValidationTests.cs
+git add src/ZeroAlloc.Validation.Generator/RuleEmitter.cs
+git add src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs
+git add tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/NestedValidationTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/CollectionValidationTests.cs
 git commit -m "feat: use constructor injection for nested validator fields"
 ```
 
@@ -294,18 +294,18 @@ git commit -m "feat: use constructor injection for nested validator fields"
 ## Task 2: `[ValidateWith]` Attribute
 
 **Files:**
-- Create: `src/ZValidation/Attributes/ValidateWithAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `src/ZValidation.Generator/ValidatorGenerator.cs`
-- Test: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
-- Test: `tests/ZValidation.Tests/Integration/` (new model + test file)
+- Create: `src/ZeroAlloc.Validation/Attributes/ValidateWithAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs`
+- Test: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Test: `tests/ZeroAlloc.Validation.Tests/Integration/` (new model + test file)
 
 ### Step 1: Create the attribute
 
-Create `src/ZValidation/Attributes/ValidateWithAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/ValidateWithAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 /// <summary>
 /// Specifies an explicit validator type for a property whose type does not carry [Validate].
@@ -328,13 +328,13 @@ Add to `GeneratorRuleEmissionTests.cs`:
 public void Generator_ValidateWith_UsesSpecifiedValidatorType()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace ThirdParty { public class Money { public decimal Amount { get; set; } } }
         namespace TestModels;
         [Validate] public class MoneyValidator : ValidatorFor<ThirdParty.Money>
         {
-            public override global::ZValidation.ValidationResult Validate(ThirdParty.Money instance) =>
-                new(new global::ZValidation.ValidationFailure[0]);
+            public override global::ZeroAlloc.Validation.ValidationResult Validate(ThirdParty.Money instance) =>
+                new(new global::ZeroAlloc.Validation.ValidationFailure[0]);
         }
         [Validate] public class Invoice
         {
@@ -354,14 +354,14 @@ public void Generator_ValidateWith_UsesSpecifiedValidatorType()
 public void Generator_ValidateWith_Collection_UsesSpecifiedValidatorType()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         using System.Collections.Generic;
         namespace ThirdParty { public class Tag { public string Name { get; set; } = ""; } }
         namespace TestModels;
         [Validate] public class TagValidator : ValidatorFor<ThirdParty.Tag>
         {
-            public override global::ZValidation.ValidationResult Validate(ThirdParty.Tag instance) =>
-                new(new global::ZValidation.ValidationFailure[0]);
+            public override global::ZeroAlloc.Validation.ValidationResult Validate(ThirdParty.Tag instance) =>
+                new(new global::ZeroAlloc.Validation.ValidationFailure[0]);
         }
         [Validate] public class Article
         {
@@ -380,7 +380,7 @@ public void Generator_ValidateWith_Collection_UsesSpecifiedValidatorType()
 
 Run to confirm they fail:
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "ValidateWith" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "ValidateWith" -v minimal
 ```
 
 ### Step 3: Update `CollectNestedValidatorFields` in `RuleEmitter.cs`
@@ -454,7 +454,7 @@ private static IEnumerable<(IPropertySymbol Property, INamedTypeSymbol ElementTy
 ### Step 4: Run tests
 
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "ValidateWith" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "ValidateWith" -v minimal
 ```
 
 Expected: both new tests pass.
@@ -462,7 +462,7 @@ Expected: both new tests pass.
 ### Step 5: Run full suite
 
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 
 Expected: all tests pass.
@@ -470,8 +470,8 @@ Expected: all tests pass.
 ### Step 6: Commit
 
 ```bash
-git add src/ZValidation/Attributes/ValidateWithAttribute.cs
-git add src/ZValidation.Generator/RuleEmitter.cs
+git add src/ZeroAlloc.Validation/Attributes/ValidateWithAttribute.cs
+git add src/ZeroAlloc.Validation.Generator/RuleEmitter.cs
 git commit -m "feat: add [ValidateWith] attribute for explicit nested validator override"
 ```
 
@@ -480,8 +480,8 @@ git commit -m "feat: add [ValidateWith] attribute for explicit nested validator 
 ## Task 3: Analyzers ZV0011 and ZV0012
 
 **Files:**
-- Modify: `src/ZValidation.Generator/ValidatorGenerator.cs`
-- Test: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs`
+- Test: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 ### Overview
 
@@ -499,7 +499,7 @@ Add to `GeneratorRuleEmissionTests.cs`:
 public void Analyzer_ZV0011_Fires_WhenValidateWithOnAlreadyValidatedType()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate] public class Address { [NotEmpty] public string Street { get; set; } = ""; }
         [Validate] public class Customer
@@ -517,7 +517,7 @@ public void Analyzer_ZV0011_Fires_WhenValidateWithOnAlreadyValidatedType()
 public void Analyzer_ZV0012_Fires_WhenValidateWithTypeDoesNotMatchProperty()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate] public class Address { [NotEmpty] public string Street { get; set; } = ""; }
         [Validate] public class Name    { [NotEmpty] public string Value  { get; set; } = ""; }
@@ -558,7 +558,7 @@ private static System.Collections.Generic.IReadOnlyList<Diagnostic> RunGenerator
 
 Run to confirm they fail:
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Analyzer_ZV" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Analyzer_ZV" -v minimal
 ```
 
 ### Step 2: Add diagnostic descriptors to `ValidatorGenerator.cs`
@@ -570,7 +570,7 @@ private static readonly DiagnosticDescriptor ZV0011 = new(
     id: "ZV0011",
     title: "Redundant [ValidateWith] attribute",
     messageFormat: "Property '{0}' has [ValidateWith] but its type '{1}' already has [Validate]. Remove [ValidateWith] to use the auto-generated validator.",
-    category: "ZValidation",
+    category: "ZeroAlloc.Validation",
     defaultSeverity: DiagnosticSeverity.Warning,
     isEnabledByDefault: true);
 
@@ -578,7 +578,7 @@ private static readonly DiagnosticDescriptor ZV0012 = new(
     id: "ZV0012",
     title: "Invalid [ValidateWith] validator type",
     messageFormat: "Validator type '{0}' specified via [ValidateWith] on property '{1}' does not implement ValidatorFor<{2}>.",
-    category: "ZValidation",
+    category: "ZeroAlloc.Validation",
     defaultSeverity: DiagnosticSeverity.Error,
     isEnabledByDefault: true);
 ```
@@ -588,8 +588,8 @@ private static readonly DiagnosticDescriptor ZV0012 = new(
 In `ValidatorGenerator.Emit`, before calling `RuleEmitter.EmitValidateBody`, iterate over properties and check conditions:
 
 ```csharp
-private const string ValidateWithFqn = "ZValidation.ValidateWithAttribute";
-private const string ValidatorForFqn = "ZValidation.ValidatorFor<T>";
+private const string ValidateWithFqn = "ZeroAlloc.Validation.ValidateWithAttribute";
+private const string ValidatorForFqn = "ZeroAlloc.Validation.ValidatorFor<T>";
 
 // Check each property for ZV0011 and ZV0012
 foreach (var member in classSymbol.GetMembers())
@@ -631,12 +631,12 @@ foreach (var member in classSymbol.GetMembers())
         bool implementsValidatorFor = specifiedType.AllInterfaces.Any(iface =>
             iface.IsGenericType
             && string.Equals(iface.OriginalDefinition.ToDisplayString(),
-                "ZValidation.ValidatorFor<T>", StringComparison.Ordinal)
+                "ZeroAlloc.Validation.ValidatorFor<T>", StringComparison.Ordinal)
             && iface.TypeArguments.Length == 1
             && SymbolEqualityComparer.Default.Equals(iface.TypeArguments[0], expectedModelType))
             || (specifiedType.BaseType is { IsGenericType: true } baseType
             && string.Equals(baseType.OriginalDefinition.ToDisplayString(),
-                "ZValidation.ValidatorFor<T>", StringComparison.Ordinal)
+                "ZeroAlloc.Validation.ValidatorFor<T>", StringComparison.Ordinal)
             && baseType.TypeArguments.Length == 1
             && SymbolEqualityComparer.Default.Equals(baseType.TypeArguments[0], expectedModelType));
 
@@ -659,7 +659,7 @@ internal static ITypeSymbol? GetCollectionElementTypePublic(IPropertySymbol prop
 ### Step 4: Run the diagnostic tests
 
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Analyzer_ZV" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Analyzer_ZV" -v minimal
 ```
 
 Expected: both pass.
@@ -667,7 +667,7 @@ Expected: both pass.
 ### Step 5: Run full suite
 
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 
 Expected: all tests pass.
@@ -675,9 +675,9 @@ Expected: all tests pass.
 ### Step 6: Commit
 
 ```bash
-git add src/ZValidation.Generator/ValidatorGenerator.cs
-git add src/ZValidation.Generator/RuleEmitter.cs
-git add tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs
+git add src/ZeroAlloc.Validation.Generator/RuleEmitter.cs
+git add tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add ZV0011/ZV0012 diagnostics for [ValidateWith] attribute validation"
 ```
 

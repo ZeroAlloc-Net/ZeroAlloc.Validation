@@ -15,30 +15,30 @@
 Design doc: `docs/plans/2026-03-15-complex-property-validation-design.md`
 
 Key existing files:
-- `src/ZValidation.Generator/RuleEmitter.cs` — `EmitValidateBody(StringBuilder, INamedTypeSymbol)` — **modify this**
-- `src/ZValidation.Generator/ValidatorGenerator.cs` — `Emit(SourceProductionContext, INamedTypeSymbol)` — no changes needed
-- `src/ZValidation/Attributes/ValidateAttribute.cs` — `ZValidation.ValidateAttribute`
-- `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs` — existing generator unit tests
-- `tests/ZValidation.Tests/Integration/EndToEndTests.cs` — existing e2e tests
+- `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs` — `EmitValidateBody(StringBuilder, INamedTypeSymbol)` — **modify this**
+- `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs` — `Emit(SourceProductionContext, INamedTypeSymbol)` — no changes needed
+- `src/ZeroAlloc.Validation/Attributes/ValidateAttribute.cs` — `ZeroAlloc.Validation.ValidateAttribute`
+- `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs` — existing generator unit tests
+- `tests/ZeroAlloc.Validation.Tests/Integration/EndToEndTests.cs` — existing e2e tests
 
 ---
 
 ### Task 1: Detect nested `[Validate]` properties in `RuleEmitter`
 
 **Files:**
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write the failing test**
 
-Add to `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`:
+Add to `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`:
 
 ```csharp
 [Fact]
 public void Generator_UsesListForModelWithNestedValidateType()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
 
         [Validate]
@@ -91,7 +91,7 @@ private static IReadOnlyList<string> RunGeneratorGetSources(string source)
 **Step 2: Run to verify fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_UsesListForModelWithNestedValidateType"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_UsesListForModelWithNestedValidateType"
 ```
 
 Expected: FAIL — currently both validators use the fixed array.
@@ -101,7 +101,7 @@ Expected: FAIL — currently both validators use the fixed array.
 Add these private helpers inside `RuleEmitter`:
 
 ```csharp
-private const string ValidateAttributeFqn = "ZValidation.ValidateAttribute";
+private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
 
 private static bool HasNestedValidateProperties(INamedTypeSymbol classSymbol) =>
     classSymbol.GetMembers()
@@ -121,7 +121,7 @@ private static bool HasValidateAttribute(INamedTypeSymbol typeSymbol) =>
 **Step 4: Run to verify fails (helpers added but not wired yet)**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_UsesListForModelWithNestedValidateType"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_UsesListForModelWithNestedValidateType"
 ```
 
 Expected: Still FAIL — `EmitValidateBody` not yet changed.
@@ -129,7 +129,7 @@ Expected: Still FAIL — `EmitValidateBody` not yet changed.
 **Step 5: Commit helpers only**
 
 ```bash
-git add src/ZValidation.Generator/RuleEmitter.cs tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation.Generator/RuleEmitter.cs tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add nested [Validate] detection helpers to RuleEmitter"
 ```
 
@@ -138,7 +138,7 @@ git commit -m "feat: add nested [Validate] detection helpers to RuleEmitter"
 ### Task 2: Switch to `List<ValidationFailure>` when nested properties exist
 
 **Files:**
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
 
 **Step 1: The test from Task 1 is still failing — fix it now**
 
@@ -165,7 +165,7 @@ public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymb
     if (hasNested)
     {
         // Use List<> — nested validator failure count unknown at compile time
-        sb.AppendLine("        var failures = new System.Collections.Generic.List<global::ZValidation.ValidationFailure>();");
+        sb.AppendLine("        var failures = new System.Collections.Generic.List<global::ZeroAlloc.Validation.ValidationFailure>();");
         sb.AppendLine();
 
         // Direct rules — use failures.Add(...)
@@ -183,7 +183,7 @@ public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymb
                 var condition = BuildCondition(fqn, attr, propAccess);
 
                 sb.AppendLine($"{prefix} ({condition})");
-                sb.AppendLine($"            failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }});");
+                sb.AppendLine($"            failures.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }});");
             }
             sb.AppendLine();
         }
@@ -199,17 +199,17 @@ public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymb
             sb.AppendLine("        {");
             sb.AppendLine($"            var nestedResult = new {validatorName}().Validate({modelParamName}.{propName});");
             sb.AppendLine("            foreach (var f in nestedResult.Failures)");
-            sb.AppendLine($"                failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
+            sb.AppendLine($"                failures.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
             sb.AppendLine("        }");
             sb.AppendLine();
         }
 
-        sb.AppendLine("        return new global::ZValidation.ValidationResult(failures.ToArray());");
+        sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult(failures.ToArray());");
     }
     else
     {
         // Flat model — keep existing fixed array path
-        sb.AppendLine($"        var buffer = new global::ZValidation.ValidationFailure[{totalDirectRules}];");
+        sb.AppendLine($"        var buffer = new global::ZeroAlloc.Validation.ValidationFailure[{totalDirectRules}];");
         sb.AppendLine("        int count = 0;");
         sb.AppendLine();
 
@@ -227,12 +227,12 @@ public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymb
                 var condition = BuildCondition(fqn, attr, propAccess);
 
                 sb.AppendLine($"{prefix} ({condition})");
-                sb.AppendLine($"            buffer[count++] = new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
+                sb.AppendLine($"            buffer[count++] = new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
             }
             sb.AppendLine();
         }
 
-        sb.AppendLine("        return new global::ZValidation.ValidationResult(buffer[..count].ToArray());");
+        sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult(buffer[..count].ToArray());");
     }
 }
 ```
@@ -240,7 +240,7 @@ public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymb
 **Step 2: Run to verify passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_UsesListForModelWithNestedValidateType"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_UsesListForModelWithNestedValidateType"
 ```
 
 Expected: PASS.
@@ -248,7 +248,7 @@ Expected: PASS.
 **Step 3: Run all tests to check no regressions**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
 Expected: All tests pass.
@@ -256,7 +256,7 @@ Expected: All tests pass.
 **Step 4: Commit**
 
 ```bash
-git add src/ZValidation.Generator/RuleEmitter.cs
+git add src/ZeroAlloc.Validation.Generator/RuleEmitter.cs
 git commit -m "feat: switch to List<ValidationFailure> for models with nested [Validate] properties"
 ```
 
@@ -265,7 +265,7 @@ git commit -m "feat: switch to List<ValidationFailure> for models with nested [V
 ### Task 3: Verify nested failures are dot-prefixed
 
 **Files:**
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write the failing test**
 
@@ -276,7 +276,7 @@ Add to `GeneratorRuleEmissionTests.cs`:
 public void Generator_EmitsNestedValidation_WithDotPrefix()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
 
         [Validate]
@@ -306,7 +306,7 @@ public void Generator_SkipsNestedValidation_WhenPropertyIsNull()
 {
     // The generated code must have the null guard
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
 
         [Validate]
@@ -326,7 +326,7 @@ public void Generator_SkipsNestedValidation_WhenPropertyIsNull()
 **Step 2: Run to verify**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsNestedValidation"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsNestedValidation"
 ```
 
 Expected: Both PASS (implementation was done in Task 2).
@@ -334,7 +334,7 @@ Expected: Both PASS (implementation was done in Task 2).
 **Step 3: Commit**
 
 ```bash
-git add tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "test: add generator tests for nested validation dot-prefix and null guard"
 ```
 
@@ -343,13 +343,13 @@ git commit -m "test: add generator tests for nested validation dot-prefix and nu
 ### Task 4: End-to-end integration tests
 
 **Files:**
-- Modify: `tests/ZValidation.Tests/Integration/EndToEndTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/EndToEndTests.cs`
 
 Add a nested model and integration tests to the existing file.
 
 **Step 1: Add the nested model and tests**
 
-Add to `tests/ZValidation.Tests/Integration/EndToEndTests.cs`:
+Add to `tests/ZeroAlloc.Validation.Tests/Integration/EndToEndTests.cs`:
 
 ```csharp
 [Validate]
@@ -459,15 +459,15 @@ public class NestedValidationTests
 **Step 2: Build to verify generator produces `OrderValidator` and `AddressValidator`**
 
 ```bash
-dotnet build tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet build tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
-Expected: 0 errors. If `OrderValidator` is not found, inspect generated files in `tests/ZValidation.Tests/obj/Debug/net10.0/generated/`.
+Expected: 0 errors. If `OrderValidator` is not found, inspect generated files in `tests/ZeroAlloc.Validation.Tests/obj/Debug/net10.0/generated/`.
 
 **Step 3: Run integration tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "NestedValidationTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "NestedValidationTests"
 ```
 
 Expected: All 5 tests pass.
@@ -475,7 +475,7 @@ Expected: All 5 tests pass.
 **Step 4: Run all tests**
 
 ```bash
-dotnet test ZValidation.slnx
+dotnet test ZeroAlloc.Validation.slnx
 ```
 
 Expected: All tests pass.
@@ -483,7 +483,7 @@ Expected: All tests pass.
 **Step 5: Commit**
 
 ```bash
-git add tests/ZValidation.Tests/Integration/EndToEndTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/EndToEndTests.cs
 git commit -m "test: add end-to-end integration tests for nested property validation"
 ```
 
@@ -494,7 +494,7 @@ git commit -m "test: add end-to-end integration tests for nested property valida
 **Step 1: Full solution build**
 
 ```bash
-dotnet build ZValidation.slnx
+dotnet build ZeroAlloc.Validation.slnx
 ```
 
 Expected: 0 errors, 0 warnings.
@@ -502,7 +502,7 @@ Expected: 0 errors, 0 warnings.
 **Step 2: Full test run**
 
 ```bash
-dotnet test ZValidation.slnx
+dotnet test ZeroAlloc.Validation.slnx
 ```
 
 Expected: All tests pass across net8.0, net9.0, net10.0.

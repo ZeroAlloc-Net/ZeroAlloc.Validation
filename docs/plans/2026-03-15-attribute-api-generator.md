@@ -15,29 +15,29 @@
 Design doc: `docs/plans/2026-03-15-attribute-api-generator-design.md`
 
 Existing files to know:
-- `src/ZValidation/Core/ValidationFailure.cs` — `readonly struct ValidationFailure { PropertyName, ErrorMessage, ErrorCode?, Severity }`
-- `src/ZValidation/Core/ValidationResult.cs` — `readonly struct ValidationResult(ValidationFailure[])` with `IsValid` and `ReadOnlySpan<ValidationFailure> Failures`
-- `src/ZValidation/Core/ValidatorFor.cs` — `abstract partial class ValidatorFor<T> { abstract ValidationResult Validate(T); }`
-- `src/ZValidation.Generator/ValidatorGenerator.cs` — stub `IIncrementalGenerator` with empty `Initialize`
-- `tests/ZValidation.Tests/` — xUnit project referencing `ZValidation` and `ZValidation.Testing`
+- `src/ZeroAlloc.Validation/Core/ValidationFailure.cs` — `readonly struct ValidationFailure { PropertyName, ErrorMessage, ErrorCode?, Severity }`
+- `src/ZeroAlloc.Validation/Core/ValidationResult.cs` — `readonly struct ValidationResult(ValidationFailure[])` with `IsValid` and `ReadOnlySpan<ValidationFailure> Failures`
+- `src/ZeroAlloc.Validation/Core/ValidatorFor.cs` — `abstract partial class ValidatorFor<T> { abstract ValidationResult Validate(T); }`
+- `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs` — stub `IIncrementalGenerator` with empty `Initialize`
+- `tests/ZeroAlloc.Validation.Tests/` — xUnit project referencing `ZeroAlloc.Validation` and `ZeroAlloc.Validation.Testing`
 
 ---
 
 ### Task 1: `ValidationAttribute` base class and `[Validate]` marker
 
 **Files:**
-- Create: `src/ZValidation/Attributes/ValidationAttribute.cs`
-- Create: `src/ZValidation/Attributes/ValidateAttribute.cs`
-- Test: `tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/ValidationAttribute.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/ValidateAttribute.cs`
+- Test: `tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs`
 
 **Step 1: Write the failing test**
 
-Create `tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs`:
 
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Attributes;
+namespace ZeroAlloc.Validation.Tests.Attributes;
 
 public class AttributeDeclarationTests
 {
@@ -63,17 +63,17 @@ public class AttributeDeclarationTests
 **Step 2: Run test to verify it fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "AttributeDeclarationTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "AttributeDeclarationTests"
 ```
 
 Expected: FAIL — `ValidateAttribute` and `NotEmptyAttribute` not defined.
 
 **Step 3: Create `ValidationAttribute` base**
 
-Create `src/ZValidation/Attributes/ValidationAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/ValidationAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = true)]
 public abstract class ValidationAttribute : Attribute
@@ -84,10 +84,10 @@ public abstract class ValidationAttribute : Attribute
 
 **Step 4: Create `[Validate]` marker**
 
-Create `src/ZValidation/Attributes/ValidateAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/ValidateAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
 public sealed class ValidateAttribute : Attribute { }
@@ -96,7 +96,7 @@ public sealed class ValidateAttribute : Attribute { }
 **Step 5: Run test to verify it passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "AttributeDeclarationTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "AttributeDeclarationTests"
 ```
 
 Expected: 2 of 2 pass (NotEmptyAttribute test will still fail — that's fine, it's tested in Task 2).
@@ -106,7 +106,7 @@ Actually: remove the `NotEmptyAttribute` test for now — add it in Task 2. Keep
 **Step 6: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/ tests/ZValidation.Tests/Attributes/
+git add src/ZeroAlloc.Validation/Attributes/ tests/ZeroAlloc.Validation.Tests/Attributes/
 git commit -m "feat: add ValidationAttribute base and [Validate] marker"
 ```
 
@@ -115,13 +115,13 @@ git commit -m "feat: add ValidationAttribute base and [Validate] marker"
 ### Task 2: Null / Empty attributes — `[NotNull]` and `[NotEmpty]`
 
 **Files:**
-- Create: `src/ZValidation/Attributes/NotNullAttribute.cs`
-- Create: `src/ZValidation/Attributes/NotEmptyAttribute.cs`
-- Modify: `tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/NotNullAttribute.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/NotEmptyAttribute.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs`
 
 **Step 1: Write the failing test**
 
-Add to `tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs`:
+Add to `tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs`:
 
 ```csharp
 [Fact]
@@ -156,27 +156,27 @@ private class NullModel
 **Step 2: Run to verify fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "AttributeDeclarationTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "AttributeDeclarationTests"
 ```
 
 Expected: FAIL — `NotNullAttribute`, `NotEmptyAttribute` not defined.
 
 **Step 3: Create `NotNullAttribute`**
 
-Create `src/ZValidation/Attributes/NotNullAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/NotNullAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class NotNullAttribute : ValidationAttribute { }
 ```
 
 **Step 4: Create `NotEmptyAttribute`**
 
-Create `src/ZValidation/Attributes/NotEmptyAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/NotEmptyAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class NotEmptyAttribute : ValidationAttribute { }
 ```
@@ -184,7 +184,7 @@ public sealed class NotEmptyAttribute : ValidationAttribute { }
 **Step 5: Run to verify passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "AttributeDeclarationTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "AttributeDeclarationTests"
 ```
 
 Expected: All pass.
@@ -192,7 +192,7 @@ Expected: All pass.
 **Step 6: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/ tests/ZValidation.Tests/Attributes/
+git add src/ZeroAlloc.Validation/Attributes/ tests/ZeroAlloc.Validation.Tests/Attributes/
 git commit -m "feat: add [NotNull] and [NotEmpty] validation attributes"
 ```
 
@@ -201,28 +201,28 @@ git commit -m "feat: add [NotNull] and [NotEmpty] validation attributes"
 ### Task 3: String length attributes — `[MinLength]` and `[MaxLength]`
 
 **Files:**
-- Create: `src/ZValidation/Attributes/MinLengthAttribute.cs`
-- Create: `src/ZValidation/Attributes/MaxLengthAttribute.cs`
-- Modify: `tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/MinLengthAttribute.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/MaxLengthAttribute.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs`
 
-> **Note:** `MinLengthAttribute` and `MaxLengthAttribute` also exist in `System.ComponentModel.DataAnnotations`. These live in the `ZValidation` namespace. If a model file uses both, it must qualify with `ZValidation.MaxLengthAttribute` explicitly. This is acceptable — users of this library should not mix DataAnnotations and ZValidation.
+> **Note:** `MinLengthAttribute` and `MaxLengthAttribute` also exist in `System.ComponentModel.DataAnnotations`. These live in the `ZeroAlloc.Validation` namespace. If a model file uses both, it must qualify with `ZeroAlloc.Validation.MaxLengthAttribute` explicitly. This is acceptable — users of this library should not mix DataAnnotations and ZeroAlloc.Validation.
 
 **Step 1: Write the failing tests**
 
-Add to `tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs`:
+Add to `tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs`:
 
 ```csharp
 [Fact]
 public void MinLengthAttribute_StoresMinValue()
 {
-    var attr = new ZValidation.MinLengthAttribute(3);
+    var attr = new ZeroAlloc.Validation.MinLengthAttribute(3);
     Assert.Equal(3, attr.Min);
 }
 
 [Fact]
 public void MaxLengthAttribute_StoresMaxValue()
 {
-    var attr = new ZValidation.MaxLengthAttribute(100);
+    var attr = new ZeroAlloc.Validation.MaxLengthAttribute(100);
     Assert.Equal(100, attr.Max);
 }
 ```
@@ -230,17 +230,17 @@ public void MaxLengthAttribute_StoresMaxValue()
 **Step 2: Run to verify fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "AttributeDeclarationTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "AttributeDeclarationTests"
 ```
 
 Expected: FAIL.
 
 **Step 3: Create `MinLengthAttribute`**
 
-Create `src/ZValidation/Attributes/MinLengthAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/MinLengthAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class MinLengthAttribute(int min) : ValidationAttribute
 {
@@ -250,10 +250,10 @@ public sealed class MinLengthAttribute(int min) : ValidationAttribute
 
 **Step 4: Create `MaxLengthAttribute`**
 
-Create `src/ZValidation/Attributes/MaxLengthAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/MaxLengthAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class MaxLengthAttribute(int max) : ValidationAttribute
 {
@@ -264,7 +264,7 @@ public sealed class MaxLengthAttribute(int max) : ValidationAttribute
 **Step 5: Run to verify passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "AttributeDeclarationTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "AttributeDeclarationTests"
 ```
 
 Expected: All pass.
@@ -272,7 +272,7 @@ Expected: All pass.
 **Step 6: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/ tests/ZValidation.Tests/Attributes/
+git add src/ZeroAlloc.Validation/Attributes/ tests/ZeroAlloc.Validation.Tests/Attributes/
 git commit -m "feat: add [MinLength] and [MaxLength] validation attributes"
 ```
 
@@ -281,14 +281,14 @@ git commit -m "feat: add [MinLength] and [MaxLength] validation attributes"
 ### Task 4: Comparison attributes — `[GreaterThan]`, `[LessThan]`, `[InclusiveBetween]`
 
 **Files:**
-- Create: `src/ZValidation/Attributes/GreaterThanAttribute.cs`
-- Create: `src/ZValidation/Attributes/LessThanAttribute.cs`
-- Create: `src/ZValidation/Attributes/InclusiveBetweenAttribute.cs`
-- Modify: `tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/GreaterThanAttribute.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/LessThanAttribute.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/InclusiveBetweenAttribute.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs`
 
 **Step 1: Write the failing tests**
 
-Add to `tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs`:
+Add to `tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs`:
 
 ```csharp
 [Fact]
@@ -317,17 +317,17 @@ public void InclusiveBetweenAttribute_StoresMinAndMax()
 **Step 2: Run to verify fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "AttributeDeclarationTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "AttributeDeclarationTests"
 ```
 
 Expected: FAIL.
 
 **Step 3: Create the three comparison attributes**
 
-Create `src/ZValidation/Attributes/GreaterThanAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/GreaterThanAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class GreaterThanAttribute(double value) : ValidationAttribute
 {
@@ -335,10 +335,10 @@ public sealed class GreaterThanAttribute(double value) : ValidationAttribute
 }
 ```
 
-Create `src/ZValidation/Attributes/LessThanAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/LessThanAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class LessThanAttribute(double value) : ValidationAttribute
 {
@@ -346,10 +346,10 @@ public sealed class LessThanAttribute(double value) : ValidationAttribute
 }
 ```
 
-Create `src/ZValidation/Attributes/InclusiveBetweenAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/InclusiveBetweenAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class InclusiveBetweenAttribute(double min, double max) : ValidationAttribute
 {
@@ -361,7 +361,7 @@ public sealed class InclusiveBetweenAttribute(double min, double max) : Validati
 **Step 4: Run to verify passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "AttributeDeclarationTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "AttributeDeclarationTests"
 ```
 
 Expected: All pass.
@@ -369,7 +369,7 @@ Expected: All pass.
 **Step 5: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/ tests/ZValidation.Tests/Attributes/
+git add src/ZeroAlloc.Validation/Attributes/ tests/ZeroAlloc.Validation.Tests/Attributes/
 git commit -m "feat: add [GreaterThan], [LessThan], [InclusiveBetween] validation attributes"
 ```
 
@@ -378,19 +378,19 @@ git commit -m "feat: add [GreaterThan], [LessThan], [InclusiveBetween] validatio
 ### Task 5: Format attributes — `[EmailAddress]` and `[Matches]`
 
 **Files:**
-- Create: `src/ZValidation/Attributes/EmailAddressAttribute.cs`
-- Create: `src/ZValidation/Attributes/MatchesAttribute.cs`
-- Modify: `tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/EmailAddressAttribute.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/MatchesAttribute.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs`
 
 **Step 1: Write the failing tests**
 
-Add to `tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs`:
+Add to `tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs`:
 
 ```csharp
 [Fact]
 public void EmailAddressAttribute_CanBeCreated()
 {
-    var attr = new ZValidation.EmailAddressAttribute();
+    var attr = new ZeroAlloc.Validation.EmailAddressAttribute();
     Assert.Null(attr.Message);
 }
 
@@ -402,32 +402,32 @@ public void MatchesAttribute_StoresPattern()
 }
 ```
 
-> **Note:** `EmailAddressAttribute` also exists in `System.ComponentModel.DataAnnotations`. Use `ZValidation.EmailAddressAttribute` explicitly in tests to avoid ambiguity.
+> **Note:** `EmailAddressAttribute` also exists in `System.ComponentModel.DataAnnotations`. Use `ZeroAlloc.Validation.EmailAddressAttribute` explicitly in tests to avoid ambiguity.
 
 **Step 2: Run to verify fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "AttributeDeclarationTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "AttributeDeclarationTests"
 ```
 
 Expected: FAIL.
 
 **Step 3: Create `EmailAddressAttribute`**
 
-Create `src/ZValidation/Attributes/EmailAddressAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/EmailAddressAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class EmailAddressAttribute : ValidationAttribute { }
 ```
 
 **Step 4: Create `MatchesAttribute`**
 
-Create `src/ZValidation/Attributes/MatchesAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/MatchesAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class MatchesAttribute(string pattern) : ValidationAttribute
 {
@@ -438,7 +438,7 @@ public sealed class MatchesAttribute(string pattern) : ValidationAttribute
 **Step 5: Run to verify passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "AttributeDeclarationTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "AttributeDeclarationTests"
 ```
 
 Expected: All pass.
@@ -446,7 +446,7 @@ Expected: All pass.
 **Step 6: Build entire solution to confirm no regressions**
 
 ```bash
-dotnet build ZValidation.slnx
+dotnet build ZeroAlloc.Validation.slnx
 ```
 
 Expected: 0 errors, 0 warnings.
@@ -454,7 +454,7 @@ Expected: 0 errors, 0 warnings.
 **Step 7: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/ tests/ZValidation.Tests/Attributes/
+git add src/ZeroAlloc.Validation/Attributes/ tests/ZeroAlloc.Validation.Tests/Attributes/
 git commit -m "feat: add [EmailAddress] and [Matches] validation attributes"
 ```
 
@@ -463,22 +463,22 @@ git commit -m "feat: add [EmailAddress] and [Matches] validation attributes"
 ### Task 6: Generator — discover `[Validate]` classes
 
 **Files:**
-- Modify: `src/ZValidation.Generator/ValidatorGenerator.cs`
-- Create: `src/ZValidation.Generator/ValidatorGeneratorTests.cs` (generator unit test helper — see below)
-- Test: `tests/ZValidation.Tests/Generator/GeneratorDiscoveryTests.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs`
+- Create: `src/ZeroAlloc.Validation.Generator/ValidatorGeneratorTests.cs` (generator unit test helper — see below)
+- Test: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorDiscoveryTests.cs`
 
 The generator uses Roslyn's incremental pipeline. This task wires up the discovery step only — no code emission yet.
 
 **Step 1: Write the failing test**
 
-Create `tests/ZValidation.Tests/Generator/GeneratorDiscoveryTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorDiscoveryTests.cs`:
 
 ```csharp
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using ZValidation.Generator;
+using ZeroAlloc.Validation.Generator;
 
-namespace ZValidation.Tests.Generator;
+namespace ZeroAlloc.Validation.Tests.Generator;
 
 public class GeneratorDiscoveryTests
 {
@@ -486,7 +486,7 @@ public class GeneratorDiscoveryTests
     public void Generator_ProducesOutput_ForValidateClass()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
 
             namespace TestModels;
 
@@ -538,7 +538,7 @@ public class GeneratorDiscoveryTests
 }
 ```
 
-Add `Microsoft.CodeAnalysis.CSharp` reference to `tests/ZValidation.Tests/ZValidation.Tests.csproj`:
+Add `Microsoft.CodeAnalysis.CSharp` reference to `tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj`:
 
 ```xml
 <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
@@ -547,25 +547,25 @@ Add `Microsoft.CodeAnalysis.CSharp` reference to `tests/ZValidation.Tests/ZValid
 **Step 2: Run to verify fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "GeneratorDiscoveryTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "GeneratorDiscoveryTests"
 ```
 
 Expected: FAIL — generator produces no output.
 
 **Step 3: Implement discovery in the generator**
 
-Replace the body of `src/ZValidation.Generator/ValidatorGenerator.cs`:
+Replace the body of `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs`:
 
 ```csharp
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace ZValidation.Generator;
+namespace ZeroAlloc.Validation.Generator;
 
 [Generator]
 public sealed class ValidatorGenerator : IIncrementalGenerator
 {
-    private const string ValidateAttributeFqn = "ZValidation.ValidateAttribute";
+    private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -590,7 +590,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 **Step 4: Run to verify passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "GeneratorDiscoveryTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "GeneratorDiscoveryTests"
 ```
 
 Expected: Both tests pass.
@@ -598,7 +598,7 @@ Expected: Both tests pass.
 **Step 5: Commit**
 
 ```bash
-git add src/ZValidation.Generator/ tests/ZValidation.Tests/Generator/
+git add src/ZeroAlloc.Validation.Generator/ tests/ZeroAlloc.Validation.Tests/Generator/
 git commit -m "feat: generator discovers [Validate] classes via incremental pipeline"
 ```
 
@@ -607,19 +607,19 @@ git commit -m "feat: generator discovers [Validate] classes via incremental pipe
 ### Task 7: Generator — emit validator class shell
 
 **Files:**
-- Modify: `src/ZValidation.Generator/ValidatorGenerator.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorDiscoveryTests.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorDiscoveryTests.cs`
 
 **Step 1: Write the failing test**
 
-Add to `tests/ZValidation.Tests/Generator/GeneratorDiscoveryTests.cs`:
+Add to `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorDiscoveryTests.cs`:
 
 ```csharp
 [Fact]
 public void Generator_EmitsValidatorClass_InSameNamespace()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
 
         [Validate]
@@ -642,7 +642,7 @@ public void Generator_EmitsValidatorClass_InSameNamespace()
 **Step 2: Run to verify fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsValidatorClass"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsValidatorClass"
 ```
 
 Expected: FAIL — generated output is just `// placeholder`.
@@ -665,7 +665,7 @@ private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymb
     sb.AppendLine("// <auto-generated />");
     sb.AppendLine("#nullable enable");
     sb.AppendLine();
-    sb.AppendLine("using ZValidation;");
+    sb.AppendLine("using ZeroAlloc.Validation;");
     sb.AppendLine();
 
     if (namespaceName is not null)
@@ -676,10 +676,10 @@ private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymb
 
     sb.AppendLine($"public sealed partial class {validatorName} : ValidatorFor<{modelName}>");
     sb.AppendLine("{");
-    sb.AppendLine($"    public override global::ZValidation.ValidationResult Validate({modelName} instance)");
+    sb.AppendLine($"    public override global::ZeroAlloc.Validation.ValidationResult Validate({modelName} instance)");
     sb.AppendLine("    {");
     sb.AppendLine("        // TODO: rule emission (Task 8)");
-    sb.AppendLine("        return new global::ZValidation.ValidationResult([]);");
+    sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult([]);");
     sb.AppendLine("    }");
     sb.AppendLine("}");
 
@@ -690,7 +690,7 @@ private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymb
 **Step 4: Run to verify passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "GeneratorDiscoveryTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "GeneratorDiscoveryTests"
 ```
 
 Expected: All pass.
@@ -698,7 +698,7 @@ Expected: All pass.
 **Step 5: Commit**
 
 ```bash
-git add src/ZValidation.Generator/
+git add src/ZeroAlloc.Validation.Generator/
 git commit -m "feat: generator emits validator class shell with correct namespace and base type"
 ```
 
@@ -707,20 +707,20 @@ git commit -m "feat: generator emits validator class shell with correct namespac
 ### Task 8: Generator — emit `Validate()` rule body
 
 **Files:**
-- Modify: `src/ZValidation.Generator/ValidatorGenerator.cs`
-- Create: `src/ZValidation.Generator/RuleEmitter.cs`
-- Create: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs`
+- Create: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write the failing integration tests**
 
-Create `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`:
 
 ```csharp
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using ZValidation.Generator;
+using ZeroAlloc.Validation.Generator;
 
-namespace ZValidation.Tests.Generator;
+namespace ZeroAlloc.Validation.Tests.Generator;
 
 public class GeneratorRuleEmissionTests
 {
@@ -728,7 +728,7 @@ public class GeneratorRuleEmissionTests
     public void Generator_EmitsNotEmpty_Check()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace TestModels;
             [Validate]
             public class Person { [NotEmpty] public string Name { get; set; } = ""; }
@@ -743,7 +743,7 @@ public class GeneratorRuleEmissionTests
     public void Generator_EmitsMaxLength_Check()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace TestModels;
             [Validate]
             public class Person { [MaxLength(50)] public string Name { get; set; } = ""; }
@@ -757,7 +757,7 @@ public class GeneratorRuleEmissionTests
     public void Generator_EmitsGreaterThan_Check()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace TestModels;
             [Validate]
             public class Person { [GreaterThan(0)] public int Age { get; set; } }
@@ -771,7 +771,7 @@ public class GeneratorRuleEmissionTests
     public void Generator_EmitsStopAtFirstFailure_AsElseIf()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace TestModels;
             [Validate]
             public class Person
@@ -790,7 +790,7 @@ public class GeneratorRuleEmissionTests
     public void Generator_EmitsStackalloc_SizedToRuleCount()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace TestModels;
             [Validate]
             public class Person
@@ -830,32 +830,32 @@ public class GeneratorRuleEmissionTests
 **Step 2: Run to verify fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "GeneratorRuleEmissionTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "GeneratorRuleEmissionTests"
 ```
 
 Expected: FAIL — generated body is still the TODO stub.
 
 **Step 3: Create `RuleEmitter` helper**
 
-Create `src/ZValidation.Generator/RuleEmitter.cs`:
+Create `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`:
 
 ```csharp
 using Microsoft.CodeAnalysis;
 using System.Text;
 
-namespace ZValidation.Generator;
+namespace ZeroAlloc.Validation.Generator;
 
 internal static class RuleEmitter
 {
-    private const string NotNullFqn          = "ZValidation.NotNullAttribute";
-    private const string NotEmptyFqn         = "ZValidation.NotEmptyAttribute";
-    private const string MinLengthFqn        = "ZValidation.MinLengthAttribute";
-    private const string MaxLengthFqn        = "ZValidation.MaxLengthAttribute";
-    private const string GreaterThanFqn      = "ZValidation.GreaterThanAttribute";
-    private const string LessThanFqn         = "ZValidation.LessThanAttribute";
-    private const string InclusiveBetweenFqn = "ZValidation.InclusiveBetweenAttribute";
-    private const string EmailAddressFqn     = "ZValidation.EmailAddressAttribute";
-    private const string MatchesFqn          = "ZValidation.MatchesAttribute";
+    private const string NotNullFqn          = "ZeroAlloc.Validation.NotNullAttribute";
+    private const string NotEmptyFqn         = "ZeroAlloc.Validation.NotEmptyAttribute";
+    private const string MinLengthFqn        = "ZeroAlloc.Validation.MinLengthAttribute";
+    private const string MaxLengthFqn        = "ZeroAlloc.Validation.MaxLengthAttribute";
+    private const string GreaterThanFqn      = "ZeroAlloc.Validation.GreaterThanAttribute";
+    private const string LessThanFqn         = "ZeroAlloc.Validation.LessThanAttribute";
+    private const string InclusiveBetweenFqn = "ZeroAlloc.Validation.InclusiveBetweenAttribute";
+    private const string EmailAddressFqn     = "ZeroAlloc.Validation.EmailAddressAttribute";
+    private const string MatchesFqn          = "ZeroAlloc.Validation.MatchesAttribute";
 
     /// <summary>
     /// Returns all rule attributes on a property in declaration order,
@@ -906,7 +906,7 @@ internal static class RuleEmitter
 
         int totalRules = byProperty.Sum(x => x.Rules.Count);
 
-        sb.AppendLine($"        Span<global::ZValidation.ValidationFailure> buffer = stackalloc global::ZValidation.ValidationFailure[{totalRules}];");
+        sb.AppendLine($"        Span<global::ZeroAlloc.Validation.ValidationFailure> buffer = stackalloc global::ZeroAlloc.Validation.ValidationFailure[{totalRules}];");
         sb.AppendLine("        int count = 0;");
         sb.AppendLine();
 
@@ -924,12 +924,12 @@ internal static class RuleEmitter
 
                 var condition = BuildCondition(fqn, attr, propAccess, prop.Type);
                 sb.AppendLine($"{prefix} ({condition})");
-                sb.AppendLine($"            buffer[count++] = new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
+                sb.AppendLine($"            buffer[count++] = new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
             }
             sb.AppendLine();
         }
 
-        sb.AppendLine("        return new global::ZValidation.ValidationResult(buffer[..count].ToArray());");
+        sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult(buffer[..count].ToArray());");
     }
 
     private static string? GetMessage(AttributeData attr)
@@ -952,7 +952,7 @@ internal static class RuleEmitter
             LessThanFqn         => $"System.Convert.ToDouble({access}) >= {(double)attr.ConstructorArguments[0].Value!}",
             InclusiveBetweenFqn =>
                 $"System.Convert.ToDouble({access}) < {(double)attr.ConstructorArguments[0].Value!} || System.Convert.ToDouble({access}) > {(double)attr.ConstructorArguments[1].Value!}",
-            EmailAddressFqn     => $"!ZValidationInternal.EmailValidator.IsValid({access})",
+            EmailAddressFqn     => $"!ZeroAlloc.Validation.Internal.EmailValidator.IsValid({access})",
             MatchesFqn          => $"!global::System.Text.RegularExpressions.Regex.IsMatch({access} ?? \"\", \"{EscapeString((string)attr.ConstructorArguments[0].Value!)}\") ",
             _                   => "false"
         };
@@ -977,14 +977,14 @@ internal static class RuleEmitter
 }
 ```
 
-**Step 4: Create `EmailValidator` internal helper in `ZValidation`**
+**Step 4: Create `EmailValidator` internal helper in `ZeroAlloc.Validation`**
 
-The generator emits calls to `ZValidationInternal.EmailValidator.IsValid()` — a zero-alloc email check (no regex). Create it in the core library:
+The generator emits calls to `ZeroAlloc.Validation.Internal.EmailValidator.IsValid()` — a zero-alloc email check (no regex). Create it in the core library:
 
-Create `src/ZValidation/Internal/EmailValidator.cs`:
+Create `src/ZeroAlloc.Validation/Internal/EmailValidator.cs`:
 
 ```csharp
-namespace ZValidationInternal;
+namespace ZeroAlloc.Validation.Internal;
 
 internal static class EmailValidator
 {
@@ -1019,7 +1019,7 @@ private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymb
     sb.AppendLine("// <auto-generated />");
     sb.AppendLine("#nullable enable");
     sb.AppendLine();
-    sb.AppendLine("using ZValidation;");
+    sb.AppendLine("using ZeroAlloc.Validation;");
     sb.AppendLine();
 
     if (namespaceName is not null)
@@ -1030,7 +1030,7 @@ private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymb
 
     sb.AppendLine($"public sealed partial class {validatorName} : ValidatorFor<{modelName}>");
     sb.AppendLine("{");
-    sb.AppendLine($"    public override global::ZValidation.ValidationResult Validate({modelName} instance)");
+    sb.AppendLine($"    public override global::ZeroAlloc.Validation.ValidationResult Validate({modelName} instance)");
     sb.AppendLine("    {");
 
     RuleEmitter.EmitValidateBody(sb, classSymbol);
@@ -1045,7 +1045,7 @@ private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymb
 **Step 6: Run to verify generator tests pass**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "GeneratorRuleEmissionTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "GeneratorRuleEmissionTests"
 ```
 
 Expected: All 5 pass.
@@ -1053,7 +1053,7 @@ Expected: All 5 pass.
 **Step 7: Commit**
 
 ```bash
-git add src/ZValidation.Generator/ src/ZValidation/Internal/
+git add src/ZeroAlloc.Validation.Generator/ src/ZeroAlloc.Validation/Internal/
 git commit -m "feat: generator emits zero-alloc Validate() body with stackalloc buffer"
 ```
 
@@ -1064,29 +1064,29 @@ git commit -m "feat: generator emits zero-alloc Validate() body with stackalloc 
 Validate the full pipeline: model with attributes → generator runs at build time → validator works correctly.
 
 **Files:**
-- Create: `tests/ZValidation.Tests/Integration/EndToEndTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/EndToEndTests.cs`
 
-These tests use a model defined in the test project itself. Because `ZValidation.Tests` references `ZValidation` (which bundles the generator), the generator runs during the test project's build and produces `PersonValidator` automatically.
+These tests use a model defined in the test project itself. Because `ZeroAlloc.Validation.Tests` references `ZeroAlloc.Validation` (which bundles the generator), the generator runs during the test project's build and produces `PersonValidator` automatically.
 
 **Step 1: Write the failing integration tests**
 
-Create `tests/ZValidation.Tests/Integration/EndToEndTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Integration/EndToEndTests.cs`:
 
 ```csharp
-using ZValidation;
-using ZValidation.Testing;
+using ZeroAlloc.Validation;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 // The generator will emit PersonValidator for this model.
 [Validate]
 public class Person
 {
     [NotEmpty(Message = "Name is required.")]
-    [ZValidation.MaxLength(100)]
+    [ZeroAlloc.Validation.MaxLength(100)]
     public string Name { get; set; } = "";
 
-    [ZValidation.EmailAddress]
+    [ZeroAlloc.Validation.EmailAddress]
     public string Email { get; set; } = "";
 
     [GreaterThan(0)]
@@ -1165,7 +1165,7 @@ public class EndToEndTests
 **Step 2: Run to verify fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "EndToEndTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "EndToEndTests"
 ```
 
 Expected: FAIL (compilation error — `PersonValidator` not generated yet, or generator not fully wired).
@@ -1175,15 +1175,15 @@ Expected: FAIL (compilation error — `PersonValidator` not generated yet, or ge
 Run the build first to see generator output:
 
 ```bash
-dotnet build tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet build tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
-Inspect generated files in `tests/ZValidation.Tests/obj/Debug/netX.X/generated/`. Fix any issues in `ValidatorGenerator.cs` or `RuleEmitter.cs`.
+Inspect generated files in `tests/ZeroAlloc.Validation.Tests/obj/Debug/netX.X/generated/`. Fix any issues in `ValidatorGenerator.cs` or `RuleEmitter.cs`.
 
 **Step 4: Run all tests**
 
 ```bash
-dotnet test ZValidation.slnx
+dotnet test ZeroAlloc.Validation.slnx
 ```
 
 Expected: All tests pass across all TFMs.
@@ -1191,7 +1191,7 @@ Expected: All tests pass across all TFMs.
 **Step 5: Commit**
 
 ```bash
-git add tests/ZValidation.Tests/Integration/
+git add tests/ZeroAlloc.Validation.Tests/Integration/
 git commit -m "test: add end-to-end integration tests for attribute-based validation"
 ```
 
@@ -1202,7 +1202,7 @@ git commit -m "test: add end-to-end integration tests for attribute-based valida
 **Step 1: Full solution build**
 
 ```bash
-dotnet build ZValidation.slnx
+dotnet build ZeroAlloc.Validation.slnx
 ```
 
 Expected: 0 errors, 0 warnings.
@@ -1210,7 +1210,7 @@ Expected: 0 errors, 0 warnings.
 **Step 2: Full test run**
 
 ```bash
-dotnet test ZValidation.slnx
+dotnet test ZeroAlloc.Validation.slnx
 ```
 
 Expected: All tests pass across net8.0, net9.0, net10.0.

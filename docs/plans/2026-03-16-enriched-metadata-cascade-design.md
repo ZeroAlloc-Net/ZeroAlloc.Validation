@@ -55,12 +55,12 @@ public string Name { get; set; }
 The generator reads `ErrorCode` and `Severity` from each attribute and emits them into the `ValidationFailure` initializer:
 
 ```csharp
-buffer[count++] = new global::ZValidation.ValidationFailure
+buffer[count++] = new global::ZeroAlloc.Validation.ValidationFailure
 {
     PropertyName = "Name",
     ErrorMessage = "...",
     ErrorCode = "NAME_REQUIRED",       // omitted when null
-    Severity = global::ZValidation.Severity.Error,  // omitted when Error (default)
+    Severity = global::ZeroAlloc.Validation.Severity.Error,  // omitted when Error (default)
 };
 ```
 

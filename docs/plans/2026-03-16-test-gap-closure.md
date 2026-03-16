@@ -4,9 +4,9 @@
 
 **Goal:** Close all identified test gaps: fix the nested/collection metadata propagation bug and add missing integration and generator emission tests.
 
-**Architecture:** Four independent tasks. Task 1 is a bug fix in `RuleEmitter.cs` + regression tests. Tasks 2–4 are pure test additions — no production code changes. All tests are xUnit, following the existing patterns in `tests/ZValidation.Tests/`.
+**Architecture:** Four independent tasks. Task 1 is a bug fix in `RuleEmitter.cs` + regression tests. Tasks 2–4 are pure test additions — no production code changes. All tests are xUnit, following the existing patterns in `tests/ZeroAlloc.Validation.Tests/`.
 
-**Tech Stack:** C# xUnit, Roslyn source generator in-memory compilation (for generator tests), `ValidationAssert` helper from `ZValidation.Testing`.
+**Tech Stack:** C# xUnit, Roslyn source generator in-memory compilation (for generator tests), `ValidationAssert` helper from `ZeroAlloc.Validation.Testing`.
 
 ---
 
@@ -15,14 +15,14 @@
 **Context:** `EmitNestedValidators` and `EmitCollectionValidators` in `RuleEmitter.cs` reconstruct `ValidationFailure` objects when propagating failures from child validators. They only copy `PropertyName` and `ErrorMessage` — `ErrorCode` and `Severity` are silently dropped.
 
 **Files:**
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Integration/Address.cs`
-- Modify: `tests/ZValidation.Tests/Integration/LineItem.cs`
-- Modify: `tests/ZValidation.Tests/Integration/PostalCode.cs`
-- Modify: `tests/ZValidation.Tests/Integration/NestedValidationTests.cs`
-- Modify: `tests/ZValidation.Tests/Integration/CollectionValidationTests.cs`
-- Modify: `tests/ZValidation.Tests/Integration/DeepNestingTests.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/Address.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/LineItem.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/PostalCode.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/NestedValidationTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/CollectionValidationTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/DeepNestingTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write the failing tests**
 
@@ -99,7 +99,7 @@ Add to `GeneratorRuleEmissionTests.cs`:
 public void Generator_NestedPropagation_ForwardsErrorCodeAndSeverity()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Inner { [NotEmpty(ErrorCode = "E1", Severity = Severity.Warning)] public string Val { get; set; } = ""; }
@@ -118,7 +118,7 @@ public void Generator_NestedPropagation_ForwardsErrorCodeAndSeverity()
 public void Generator_CollectionPropagation_ForwardsErrorCodeAndSeverity()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         using System.Collections.Generic;
         namespace TestModels;
         [Validate]
@@ -138,18 +138,18 @@ public void Generator_CollectionPropagation_ForwardsErrorCodeAndSeverity()
 **Step 2: Run tests to verify they fail**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "PreservesErrorCode|PreservesSeverity|ForwardsErrorCode" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "PreservesErrorCode|PreservesSeverity|ForwardsErrorCode" -v minimal
 ```
 
 Expected: 5 FAIL.
 
 **Step 3: Add ErrorCode + Severity to the inner models**
 
-Update `tests/ZValidation.Tests/Integration/Address.cs`:
+Update `tests/ZeroAlloc.Validation.Tests/Integration/Address.cs`:
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public class Address
@@ -162,11 +162,11 @@ public class Address
 }
 ```
 
-Update `tests/ZValidation.Tests/Integration/LineItem.cs`:
+Update `tests/ZeroAlloc.Validation.Tests/Integration/LineItem.cs`:
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public class LineItem
@@ -179,11 +179,11 @@ public class LineItem
 }
 ```
 
-Update `tests/ZValidation.Tests/Integration/PostalCode.cs`:
+Update `tests/ZeroAlloc.Validation.Tests/Integration/PostalCode.cs`:
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public class PostalCode
@@ -197,30 +197,30 @@ public class PostalCode
 
 Find the line (in `EmitNestedValidators`):
 ```csharp
-sb.AppendLine($"                failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
+sb.AppendLine($"                failures.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
 ```
 
 Replace with:
 ```csharp
-sb.AppendLine($"                failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
+sb.AppendLine($"                failures.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
 ```
 
 **Step 5: Fix EmitCollectionValidators in RuleEmitter.cs**
 
 Find the line (in `EmitCollectionValidators`):
 ```csharp
-sb.AppendLine($"                        failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
+sb.AppendLine($"                        failures.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
 ```
 
 Replace with:
 ```csharp
-sb.AppendLine($"                        failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
+sb.AppendLine($"                        failures.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
 ```
 
 **Step 6: Run the 5 new tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "PreservesErrorCode|PreservesSeverity|ForwardsErrorCode" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "PreservesErrorCode|PreservesSeverity|ForwardsErrorCode" -v minimal
 ```
 
 Expected: 5 PASS.
@@ -228,7 +228,7 @@ Expected: 5 PASS.
 **Step 7: Run full test suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 
 Expected: all pass.
@@ -236,14 +236,14 @@ Expected: all pass.
 **Step 8: Commit**
 
 ```bash
-git add src/ZValidation.Generator/RuleEmitter.cs \
-        tests/ZValidation.Tests/Integration/Address.cs \
-        tests/ZValidation.Tests/Integration/LineItem.cs \
-        tests/ZValidation.Tests/Integration/PostalCode.cs \
-        tests/ZValidation.Tests/Integration/NestedValidationTests.cs \
-        tests/ZValidation.Tests/Integration/CollectionValidationTests.cs \
-        tests/ZValidation.Tests/Integration/DeepNestingTests.cs \
-        tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation.Generator/RuleEmitter.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/Address.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/LineItem.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/PostalCode.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/NestedValidationTests.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/CollectionValidationTests.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/DeepNestingTests.cs \
+        tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "fix: propagate ErrorCode and Severity through nested/collection validators"
 ```
 
@@ -254,16 +254,16 @@ git commit -m "fix: propagate ErrorCode and Severity through nested/collection v
 **Context:** `[ValidateWith(typeof(T))]` has generator emission tests but zero integration tests. Need a third-party-style type (no `[Validate]`) with a hand-written validator, and a model using `[ValidateWith]`.
 
 **Files:**
-- Create: `tests/ZValidation.Tests/Integration/Coordinate.cs`
-- Create: `tests/ZValidation.Tests/Integration/CoordinateValidator.cs`
-- Create: `tests/ZValidation.Tests/Integration/Location.cs`
-- Create: `tests/ZValidation.Tests/Integration/ValidateWithTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/Coordinate.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/CoordinateValidator.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/Location.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/ValidateWithTests.cs`
 
 **Step 1: Create model and hand-written validator**
 
-`tests/ZValidation.Tests/Integration/Coordinate.cs`:
+`tests/ZeroAlloc.Validation.Tests/Integration/Coordinate.cs`:
 ```csharp
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 // Intentionally no [Validate] — simulates a third-party type you don't control.
 public class Coordinate
@@ -273,11 +273,11 @@ public class Coordinate
 }
 ```
 
-`tests/ZValidation.Tests/Integration/CoordinateValidator.cs`:
+`tests/ZeroAlloc.Validation.Tests/Integration/CoordinateValidator.cs`:
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 // Hand-written validator for a third-party type. NOT source-generated.
 public class CoordinateValidator : ValidatorFor<Coordinate>
@@ -304,11 +304,11 @@ public class CoordinateValidator : ValidatorFor<Coordinate>
 }
 ```
 
-`tests/ZValidation.Tests/Integration/Location.cs`:
+`tests/ZeroAlloc.Validation.Tests/Integration/Location.cs`:
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public class Location
@@ -323,14 +323,14 @@ public class Location
 
 **Step 2: Write the tests (they will fail until generator wires them up — it should already work)**
 
-`tests/ZValidation.Tests/Integration/ValidateWithTests.cs`:
+`tests/ZeroAlloc.Validation.Tests/Integration/ValidateWithTests.cs`:
 ```csharp
 using System;
 using System.Linq;
 using Xunit;
-using ZValidation.Testing;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 public class ValidateWithTests
 {
@@ -387,7 +387,7 @@ public class ValidateWithTests
 **Step 3: Run tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "ValidateWith" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "ValidateWith" -v minimal
 ```
 
 Expected: all PASS (the generator already handles [ValidateWith] — this just exercises it at runtime).
@@ -395,7 +395,7 @@ Expected: all PASS (the generator already handles [ValidateWith] — this just e
 **Step 4: Run full test suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 
 Expected: all pass.
@@ -403,10 +403,10 @@ Expected: all pass.
 **Step 5: Commit**
 
 ```bash
-git add tests/ZValidation.Tests/Integration/Coordinate.cs \
-        tests/ZValidation.Tests/Integration/CoordinateValidator.cs \
-        tests/ZValidation.Tests/Integration/Location.cs \
-        tests/ZValidation.Tests/Integration/ValidateWithTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/Coordinate.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/CoordinateValidator.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/Location.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/ValidateWithTests.cs
 git commit -m "test: add [ValidateWith] integration tests"
 ```
 
@@ -417,9 +417,9 @@ git commit -m "test: add [ValidateWith] integration tests"
 **Context:** `[Matches]` has no integration tests and no generator emission test. Also missing generator emission tests for `[EmailAddress]` and `[InclusiveBetween]`.
 
 **Files:**
-- Create: `tests/ZValidation.Tests/Integration/MatchesModel.cs`
-- Create: `tests/ZValidation.Tests/Integration/MatchesTests.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/MatchesModel.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/MatchesTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write the failing generator emission tests first**
 
@@ -429,7 +429,7 @@ Add to `GeneratorRuleEmissionTests.cs`:
 public void Generator_EmitsMatches_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [Matches(@"^\d{5}$")] public string Zip { get; set; } = ""; }
@@ -443,7 +443,7 @@ public void Generator_EmitsMatches_Check()
 public void Generator_EmitsEmailAddress_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [EmailAddress] public string Email { get; set; } = ""; }
@@ -456,7 +456,7 @@ public void Generator_EmitsEmailAddress_Check()
 public void Generator_EmitsInclusiveBetween_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [InclusiveBetween(1, 10)] public int Value { get; set; } }
@@ -470,18 +470,18 @@ public void Generator_EmitsInclusiveBetween_Check()
 **Step 2: Run generator tests to verify they pass (they should — generator already handles these)**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "EmitsMatches|EmitsEmailAddress|EmitsInclusiveBetween" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "EmitsMatches|EmitsEmailAddress|EmitsInclusiveBetween" -v minimal
 ```
 
 Expected: 3 PASS (verifying emission is correct).
 
 **Step 3: Create Matches integration model**
 
-`tests/ZValidation.Tests/Integration/MatchesModel.cs`:
+`tests/ZeroAlloc.Validation.Tests/Integration/MatchesModel.cs`:
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public class MatchesModel
@@ -496,12 +496,12 @@ public class MatchesModel
 
 **Step 4: Create Matches integration tests**
 
-`tests/ZValidation.Tests/Integration/MatchesTests.cs`:
+`tests/ZeroAlloc.Validation.Tests/Integration/MatchesTests.cs`:
 ```csharp
 using Xunit;
-using ZValidation.Testing;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 public class MatchesTests
 {
@@ -570,7 +570,7 @@ public class MatchesTests
 **Step 5: Run Matches tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "MatchesTests" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "MatchesTests" -v minimal
 ```
 
 Expected: all PASS.
@@ -578,7 +578,7 @@ Expected: all PASS.
 **Step 6: Run full test suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 
 Expected: all pass.
@@ -586,9 +586,9 @@ Expected: all pass.
 **Step 7: Commit**
 
 ```bash
-git add tests/ZValidation.Tests/Integration/MatchesModel.cs \
-        tests/ZValidation.Tests/Integration/MatchesTests.cs \
-        tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/MatchesModel.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/MatchesTests.cs \
+        tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "test: add Matches integration tests and missing generator emission tests"
 ```
 
@@ -603,12 +603,12 @@ git commit -m "test: add Matches integration tests and missing generator emissio
 4. `When`/`Unless` on nested properties (verify condition guards work on the parent model when propagating)
 
 **Files:**
-- Modify: `tests/ZValidation.Tests/Integration/CollectionValidationTests.cs`
-- Modify: `tests/ZValidation.Tests/Integration/IsEnumNameTests.cs`
-- Modify: `tests/ZValidation.Tests/Integration/CascadeModel.cs`
-- Modify: `tests/ZValidation.Tests/Integration/CascadeTests.cs`
-- Modify: `tests/ZValidation.Tests/Integration/ConditionalModel.cs`
-- Modify: `tests/ZValidation.Tests/Integration/ConditionalTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/CollectionValidationTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/IsEnumNameTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/CascadeModel.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/CascadeTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/ConditionalModel.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/ConditionalTests.cs`
 
 **Step 1: Add sparse collection test**
 
@@ -726,7 +726,7 @@ Add to `ConditionalModel.cs` (the model already tests When/Unless on simple prop
 public bool ValidateAddress { get; set; }
 
 [ValidateWith(typeof(AddressValidator))]
-[ZValidation.NotNull(When = nameof(IsAddressRequired))]
+[ZeroAlloc.Validation.NotNull(When = nameof(IsAddressRequired))]
 public Address? ConditionalAddress { get; set; }
 public bool IsAddressRequired() => ValidateAddress;
 ```
@@ -744,7 +744,7 @@ Skip the nested When/Unless test — the generator tests already cover the code 
 **Step 6: Run all new tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "NullItems|LowercaseName|MixedCase|WhenConditionFalse|WhenConditionTrue" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "NullItems|LowercaseName|MixedCase|WhenConditionFalse|WhenConditionTrue" -v minimal
 ```
 
 Expected: all PASS.
@@ -752,7 +752,7 @@ Expected: all PASS.
 **Step 7: Run full test suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 
 Expected: all pass.
@@ -760,9 +760,9 @@ Expected: all pass.
 **Step 8: Commit**
 
 ```bash
-git add tests/ZValidation.Tests/Integration/CollectionValidationTests.cs \
-        tests/ZValidation.Tests/Integration/IsEnumNameTests.cs \
-        tests/ZValidation.Tests/Integration/CascadeModel.cs \
-        tests/ZValidation.Tests/Integration/CascadeTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/CollectionValidationTests.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/IsEnumNameTests.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/CascadeModel.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/CascadeTests.cs
 git commit -m "test: close remaining test gaps (sparse collections, enum name case, cascade+when)"
 ```

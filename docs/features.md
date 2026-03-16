@@ -1,4 +1,4 @@
-# ZValidation Feature Specification
+# ZeroAlloc.Validation Feature Specification
 
 > A **code-generated, zero-allocation** validation library for .NET.
 
@@ -430,7 +430,7 @@ Pass typed ambient data into the validation pipeline without changing the model 
 
 ### ASP.NET Core auto-registration ✅
 
-`ZValidation.AspNetCore.Generator` auto-generates `AddZValidationAutoValidation()` which registers all validators as `Transient` and wires up an `IActionFilter` that validates action arguments and returns `422 UnprocessableEntity` + `ValidationProblemDetails` on failure:
+`ZeroAlloc.Validation.AspNetCore.Generator` auto-generates `AddZValidationAutoValidation()` which registers all validators as `Transient` and wires up an `IActionFilter` that validates action arguments and returns `422 UnprocessableEntity` + `ValidationProblemDetails` on failure:
 
 ```csharp
 // Program.cs / Startup.cs
@@ -459,7 +459,7 @@ Override default error messages globally and plug in resource-file providers —
 
 ## 19. Test Extensions ✅
 
-`ZValidation.Testing` provides `ValidationAssert` for clean xUnit assertions:
+`ZeroAlloc.Validation.Testing` provides `ValidationAssert` for clean xUnit assertions:
 
 ```csharp
 ValidationAssert.NoErrors(validator.Validate(model));
@@ -500,7 +500,7 @@ ValidationAssert.HasErrorWithMessage(result, "Email", "Invalid email address.");
 
 ## 22. Analyzers ✅
 
-ZValidation enforces correctness and zero-allocation constraints at compile time via a curated set of Roslyn analyzers. All are analyzer-only dependencies (no runtime impact).
+ZeroAlloc.Validation enforces correctness and zero-allocation constraints at compile time via a curated set of Roslyn analyzers. All are analyzer-only dependencies (no runtime impact).
 
 | Package | Purpose |
 |---------|---------|
@@ -511,7 +511,7 @@ ZValidation enforces correctness and zero-allocation constraints at compile time
 | `ErrorProne.NET.Structs` | Safe `struct` usage — defensive copies, missing `readonly` |
 | `NetFabric.Hyperlinq.Analyzer` | LINQ patterns that should use zero-allocation enumeration |
 
-In addition, `ZValidation.Generator` emits its own diagnostics:
+In addition, `ZeroAlloc.Validation.Generator` emits its own diagnostics:
 
 | Code | Severity | Description |
 |------|----------|-------------|

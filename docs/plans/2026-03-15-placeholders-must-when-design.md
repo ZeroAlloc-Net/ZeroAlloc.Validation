@@ -79,8 +79,8 @@ public int Age { get; set; }
 ### New attribute
 
 ```csharp
-// src/ZValidation/Attributes/MustAttribute.cs
-namespace ZValidation;
+// src/ZeroAlloc.Validation/Attributes/MustAttribute.cs
+namespace ZeroAlloc.Validation;
 
 public sealed class MustAttribute(string methodName) : ValidationAttribute
 {
@@ -98,7 +98,7 @@ bool MethodName(PropertyType value)
 
 ### Generator changes
 
-- FQN constant: `private const string MustFqn = "ZValidation.MustAttribute";`
+- FQN constant: `private const string MustFqn = "ZeroAlloc.Validation.MustAttribute";`
 - Register in `IsRuleAttribute`
 - `BuildCondition` case:
   ```csharp
@@ -128,7 +128,7 @@ public partial class Customer
 ### Attribute base class change
 
 ```csharp
-// src/ZValidation/Attributes/ValidationAttribute.cs
+// src/ZeroAlloc.Validation/Attributes/ValidationAttribute.cs
 public abstract class ValidationAttribute : Attribute
 {
     public string? Message { get; set; }

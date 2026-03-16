@@ -4,7 +4,7 @@
 
 **Goal:** Forward ZeroAlloc.Inject lifetime attributes from models to generated validators, and emit a source-generated ASP.NET Core action filter that auto-validates all `[Validate]` models.
 
-**Architecture:** Two independent additions: (1) core `ValidatorGenerator.cs` checks the model for `[Transient]`/`[Scoped]`/`[Singleton]` by FQN string and mirrors the attribute onto the generated validator class; (2) new `ZValidation.AspNetCore.Generator` project collects every `[Validate]` model in the compilation and emits a type-switch `ZValidationActionFilter` plus `AddZValidationAutoValidation` extension method — no reflection, fully AOT-safe.
+**Architecture:** Two independent additions: (1) core `ValidatorGenerator.cs` checks the model for `[Transient]`/`[Scoped]`/`[Singleton]` by FQN string and mirrors the attribute onto the generated validator class; (2) new `ZeroAlloc.Validation.AspNetCore.Generator` project collects every `[Validate]` model in the compilation and emits a type-switch `ZValidationActionFilter` plus `AddZValidationAutoValidation` extension method — no reflection, fully AOT-safe.
 
 **Tech Stack:** Roslyn `IIncrementalGenerator` (netstandard2.0), C# 12 pattern-matching switch expressions, `Microsoft.AspNetCore.Mvc.Testing` for integration tests, xunit.
 
@@ -13,8 +13,8 @@
 ## Task 1: DI lifetime forwarding in `ValidatorGenerator.cs`
 
 **Files:**
-- Modify: `src/ZValidation.Generator/ValidatorGenerator.cs`
-- Test: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs`
+- Test: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 ### Step 1: Write four failing tests
 
@@ -25,7 +25,7 @@ Add to the bottom of `GeneratorRuleEmissionTests.cs` (before `RunGeneratorGetSou
 public void Generator_ForwardsScoped_ToValidator()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace ZeroAlloc.Inject { public sealed class ScopedAttribute : System.Attribute {} }
         namespace TestModels;
         [Validate, global::ZeroAlloc.Inject.Scoped]
@@ -40,7 +40,7 @@ public void Generator_ForwardsScoped_ToValidator()
 public void Generator_ForwardsTransient_ToValidator()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace ZeroAlloc.Inject { public sealed class TransientAttribute : System.Attribute {} }
         namespace TestModels;
         [Validate, global::ZeroAlloc.Inject.Transient]
@@ -55,7 +55,7 @@ public void Generator_ForwardsTransient_ToValidator()
 public void Generator_ForwardsSingleton_ToValidator()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace ZeroAlloc.Inject { public sealed class SingletonAttribute : System.Attribute {} }
         namespace TestModels;
         [Validate, global::ZeroAlloc.Inject.Singleton]
@@ -70,7 +70,7 @@ public void Generator_ForwardsSingleton_ToValidator()
 public void Generator_NoLifetime_EmitsNoLifetimeAttribute()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Plain { [NotEmpty] public string Value { get; set; } = ""; }
@@ -84,7 +84,7 @@ public void Generator_NoLifetime_EmitsNoLifetimeAttribute()
 ### Step 2: Run tests to verify they fail
 
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_Forwards" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_Forwards" -v minimal
 ```
 Expected: 3 tests fail (no `ZeroAlloc.Inject` text in output), 1 test passes (NoLifetime already works).
 
@@ -114,38 +114,38 @@ The existing `sb.AppendLine($"public sealed partial class {validatorName} : Vali
 ### Step 4: Run tests to verify they pass
 
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_Forwards|Generator_NoLifetime" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_Forwards|Generator_NoLifetime" -v minimal
 ```
 Expected: all 4 tests pass.
 
 ### Step 5: Run full test suite
 
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 Expected: all 130 tests pass.
 
 ### Step 6: Commit
 
 ```bash
-git add src/ZValidation.Generator/ValidatorGenerator.cs
-git add tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs
+git add tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: forward ZeroAlloc.Inject lifetime attributes from model to generated validator"
 ```
 
 ---
 
-## Task 2: Create `ZValidation.AspNetCore.Generator` project
+## Task 2: Create `ZeroAlloc.Validation.AspNetCore.Generator` project
 
 **Files:**
-- Create: `src/ZValidation.AspNetCore.Generator/ZValidation.AspNetCore.Generator.csproj`
-- Create: `src/ZValidation.AspNetCore.Generator/AspNetCoreFilterEmitter.cs`
-- Create: `tests/ZValidation.Tests/Generator/AspNetCoreGeneratorTests.cs`
-- Modify: `ZValidation.slnx`
+- Create: `src/ZeroAlloc.Validation.AspNetCore.Generator/ZeroAlloc.Validation.AspNetCore.Generator.csproj`
+- Create: `src/ZeroAlloc.Validation.AspNetCore.Generator/AspNetCoreFilterEmitter.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Generator/AspNetCoreGeneratorTests.cs`
+- Modify: `ZeroAlloc.Validation.slnx`
 
 ### Step 1: Write failing tests
 
-Create `tests/ZValidation.Tests/Generator/AspNetCoreGeneratorTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Generator/AspNetCoreGeneratorTests.cs`:
 
 ```csharp
 using System;
@@ -154,9 +154,9 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Generator;
+namespace ZeroAlloc.Validation.Tests.Generator;
 
 public class AspNetCoreGeneratorTests
 {
@@ -164,7 +164,7 @@ public class AspNetCoreGeneratorTests
     public void Generator_EmitsDispatch_ForBothValidateModels()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace MyApp;
             [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
             [Validate] public class Order    { [NotEmpty] public string Ref  { get; set; } = ""; }
@@ -179,7 +179,7 @@ public class AspNetCoreGeneratorTests
     public void Generator_EmitsExtensionMethod_WithTryAddTransient_ForBothValidators()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace MyApp;
             [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
             [Validate] public class Order    { [NotEmpty] public string Ref  { get; set; } = ""; }
@@ -194,7 +194,7 @@ public class AspNetCoreGeneratorTests
     public void Generator_NonValidateType_NotPresentInDispatch()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace MyApp;
             [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
             public class NotAModel { public string X { get; set; } = ""; }
@@ -208,7 +208,7 @@ public class AspNetCoreGeneratorTests
     public void Generator_EmitsAddZValidationAutoValidation_ExtensionMethod()
     {
         var source = """
-            using ZValidation;
+            using ZeroAlloc.Validation;
             namespace MyApp;
             [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
             """;
@@ -236,20 +236,20 @@ public class AspNetCoreGeneratorTests
             ],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var generator = new ZValidation.AspNetCore.Generator.AspNetCoreFilterEmitter();
+        var generator = new ZeroAlloc.Validation.AspNetCore.Generator.AspNetCoreFilterEmitter();
         var driver = CSharpGeneratorDriver.Create(generator).RunGenerators(compilation);
         return driver.GetRunResult().GeneratedTrees.Select(t => t.ToString()).ToList();
     }
 }
 ```
 
-**Note:** This test will not compile until the generator project exists — that's expected. The test project already references `ZValidation.Generator` as a compile-time analyzer. Add a reference to the new generator using the same mechanism (see Step 3 and Task 3).
+**Note:** This test will not compile until the generator project exists — that's expected. The test project already references `ZeroAlloc.Validation.Generator` as a compile-time analyzer. Add a reference to the new generator using the same mechanism (see Step 3 and Task 3).
 
 For now, just create the file. The build will fail until Steps 2–4 are done.
 
 ### Step 2: Create the generator project file
 
-Create `src/ZValidation.AspNetCore.Generator/ZValidation.AspNetCore.Generator.csproj`:
+Create `src/ZeroAlloc.Validation.AspNetCore.Generator/ZeroAlloc.Validation.AspNetCore.Generator.csproj`:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -270,7 +270,7 @@ Create `src/ZValidation.AspNetCore.Generator/ZValidation.AspNetCore.Generator.cs
 
 ### Step 3: Create `AspNetCoreFilterEmitter.cs`
 
-Create `src/ZValidation.AspNetCore.Generator/AspNetCoreFilterEmitter.cs`:
+Create `src/ZeroAlloc.Validation.AspNetCore.Generator/AspNetCoreFilterEmitter.cs`:
 
 ```csharp
 using System.Collections.Immutable;
@@ -278,12 +278,12 @@ using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace ZValidation.AspNetCore.Generator;
+namespace ZeroAlloc.Validation.AspNetCore.Generator;
 
 [Generator]
 public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
 {
-    private const string ValidateAttributeFqn = "ZValidation.ValidateAttribute";
+    private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -342,7 +342,7 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         sb.AppendLine();
         sb.AppendLine("    public void OnActionExecuted(global::Microsoft.AspNetCore.Mvc.Filters.ActionExecutedContext context) { }");
         sb.AppendLine();
-        sb.AppendLine("    private global::ZValidation.ValidationResult? Dispatch(object? arg) => arg switch");
+        sb.AppendLine("    private global::ZeroAlloc.Validation.ValidationResult? Dispatch(object? arg) => arg switch");
         sb.AppendLine("    {");
 
         foreach (var model in models)
@@ -397,66 +397,66 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
 }
 ```
 
-### Step 4: Add the new generator to `ZValidation.Tests.csproj`
+### Step 4: Add the new generator to `ZeroAlloc.Validation.Tests.csproj`
 
-In `tests/ZValidation.Tests/ZValidation.Tests.csproj`, add inside the existing `<ItemGroup>` that has `ZValidation.Generator`:
+In `tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj`, add inside the existing `<ItemGroup>` that has `ZeroAlloc.Validation.Generator`:
 
 ```xml
-<ProjectReference Include="..\..\src\ZValidation.AspNetCore.Generator\ZValidation.AspNetCore.Generator.csproj"
+<ProjectReference Include="..\..\src\ZeroAlloc.Validation.AspNetCore.Generator\ZeroAlloc.Validation.AspNetCore.Generator.csproj"
                   OutputItemType="Analyzer"
                   ReferenceOutputAssembly="true" />
 ```
 
 (`ReferenceOutputAssembly="true"` so the test class can reference `AspNetCoreFilterEmitter` directly.)
 
-### Step 5: Add new projects to `ZValidation.slnx`
+### Step 5: Add new projects to `ZeroAlloc.Validation.slnx`
 
-In `ZValidation.slnx`, add inside `<Folder Name="/src/">`:
+In `ZeroAlloc.Validation.slnx`, add inside `<Folder Name="/src/">`:
 
 ```xml
-<Project Path="src/ZValidation.AspNetCore.Generator/ZValidation.AspNetCore.Generator.csproj" />
+<Project Path="src/ZeroAlloc.Validation.AspNetCore.Generator/ZeroAlloc.Validation.AspNetCore.Generator.csproj" />
 ```
 
 ### Step 6: Build and run the new generator tests
 
 ```
-dotnet build src/ZValidation.AspNetCore.Generator/ZValidation.AspNetCore.Generator.csproj
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "AspNetCoreGenerator" -v minimal
+dotnet build src/ZeroAlloc.Validation.AspNetCore.Generator/ZeroAlloc.Validation.AspNetCore.Generator.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "AspNetCoreGenerator" -v minimal
 ```
 Expected: all 4 generator tests pass.
 
 ### Step 7: Run the full test suite
 
 ```
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 Expected: all tests pass (no regressions).
 
 ### Step 8: Commit
 
 ```bash
-git add src/ZValidation.AspNetCore.Generator/
-git add tests/ZValidation.Tests/Generator/AspNetCoreGeneratorTests.cs
-git add tests/ZValidation.Tests/ZValidation.Tests.csproj
-git add ZValidation.slnx
-git commit -m "feat: add ZValidation.AspNetCore.Generator emitting action filter and DI extension method"
+git add src/ZeroAlloc.Validation.AspNetCore.Generator/
+git add tests/ZeroAlloc.Validation.Tests/Generator/AspNetCoreGeneratorTests.cs
+git add tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
+git add ZeroAlloc.Validation.slnx
+git commit -m "feat: add ZeroAlloc.Validation.AspNetCore.Generator emitting action filter and DI extension method"
 ```
 
 ---
 
-## Task 3: Wire `ZValidation.AspNetCore` to the new generator
+## Task 3: Wire `ZeroAlloc.Validation.AspNetCore` to the new generator
 
 **Files:**
-- Modify: `src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj`
-- Delete: `src/ZValidation.AspNetCore/Integration/ServiceCollectionExtensions.cs`
+- Modify: `src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj`
+- Delete: `src/ZeroAlloc.Validation.AspNetCore/Integration/ServiceCollectionExtensions.cs`
 
-### Step 1: Add generator reference to `ZValidation.AspNetCore.csproj`
+### Step 1: Add generator reference to `ZeroAlloc.Validation.AspNetCore.csproj`
 
-In `src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj`, add a new `<ItemGroup>` after the existing one:
+In `src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj`, add a new `<ItemGroup>` after the existing one:
 
 ```xml
 <ItemGroup>
-  <ProjectReference Include="..\ZValidation.AspNetCore.Generator\ZValidation.AspNetCore.Generator.csproj"
+  <ProjectReference Include="..\ZeroAlloc.Validation.AspNetCore.Generator\ZeroAlloc.Validation.AspNetCore.Generator.csproj"
                     OutputItemType="Analyzer"
                     ReferenceOutputAssembly="false" />
 </ItemGroup>
@@ -464,21 +464,21 @@ In `src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj`, add a new `<ItemG
 
 ### Step 2: Delete the empty stub
 
-Delete `src/ZValidation.AspNetCore/Integration/ServiceCollectionExtensions.cs`. The generated `ZValidationServiceCollectionExtensions.g.cs` replaces it.
+Delete `src/ZeroAlloc.Validation.AspNetCore/Integration/ServiceCollectionExtensions.cs`. The generated `ZValidationServiceCollectionExtensions.g.cs` replaces it.
 
 ### Step 3: Build to confirm generator is wired
 
 ```
-dotnet build src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj
+dotnet build src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj
 ```
 Expected: builds successfully. No source for `[Validate]` models exists in this library itself (the consumer's project has those), so the emitted filter will be empty — that is correct behaviour.
 
 ### Step 4: Commit
 
 ```bash
-git add src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj
-git rm src/ZValidation.AspNetCore/Integration/ServiceCollectionExtensions.cs
-git commit -m "feat: wire ZValidation.AspNetCore.Generator as analyzer into ZValidation.AspNetCore"
+git add src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj
+git rm src/ZeroAlloc.Validation.AspNetCore/Integration/ServiceCollectionExtensions.cs
+git commit -m "feat: wire ZeroAlloc.Validation.AspNetCore.Generator as analyzer into ZeroAlloc.Validation.AspNetCore"
 ```
 
 ---
@@ -486,16 +486,16 @@ git commit -m "feat: wire ZValidation.AspNetCore.Generator as analyzer into ZVal
 ## Task 4: Integration tests
 
 **Files:**
-- Create: `tests/ZValidation.Tests.AspNetCore/ZValidation.Tests.AspNetCore.csproj`
-- Create: `tests/ZValidation.Tests.AspNetCore/SampleModel.cs`
-- Create: `tests/ZValidation.Tests.AspNetCore/SampleController.cs`
-- Create: `tests/ZValidation.Tests.AspNetCore/TestApp.cs`
-- Create: `tests/ZValidation.Tests.AspNetCore/AutoValidationIntegrationTests.cs`
-- Modify: `ZValidation.slnx`
+- Create: `tests/ZeroAlloc.Validation.Tests.AspNetCore/ZeroAlloc.Validation.Tests.AspNetCore.csproj`
+- Create: `tests/ZeroAlloc.Validation.Tests.AspNetCore/SampleModel.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests.AspNetCore/SampleController.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests.AspNetCore/TestApp.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests.AspNetCore/AutoValidationIntegrationTests.cs`
+- Modify: `ZeroAlloc.Validation.slnx`
 
 ### Step 1: Create the project file
 
-Create `tests/ZValidation.Tests.AspNetCore/ZValidation.Tests.AspNetCore.csproj`:
+Create `tests/ZeroAlloc.Validation.Tests.AspNetCore/ZeroAlloc.Validation.Tests.AspNetCore.csproj`:
 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
@@ -522,12 +522,12 @@ Create `tests/ZValidation.Tests.AspNetCore/ZValidation.Tests.AspNetCore.csproj`:
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ZValidation\ZValidation.csproj" />
-    <ProjectReference Include="..\..\src\ZValidation.AspNetCore\ZValidation.AspNetCore.csproj" />
-    <ProjectReference Include="..\..\src\ZValidation.Generator\ZValidation.Generator.csproj"
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.AspNetCore\ZeroAlloc.Validation.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Generator\ZeroAlloc.Validation.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\ZValidation.AspNetCore.Generator\ZValidation.AspNetCore.Generator.csproj"
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.AspNetCore.Generator\ZeroAlloc.Validation.AspNetCore.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
@@ -537,12 +537,12 @@ Create `tests/ZValidation.Tests.AspNetCore/ZValidation.Tests.AspNetCore.csproj`:
 
 ### Step 2: Create the test model
 
-Create `tests/ZValidation.Tests.AspNetCore/SampleModel.cs`:
+Create `tests/ZeroAlloc.Validation.Tests.AspNetCore/SampleModel.cs`:
 
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.AspNetCore;
+namespace ZeroAlloc.Validation.Tests.AspNetCore;
 
 [Validate]
 public partial class SampleModel
@@ -554,12 +554,12 @@ public partial class SampleModel
 
 ### Step 3: Create the test controller
 
-Create `tests/ZValidation.Tests.AspNetCore/SampleController.cs`:
+Create `tests/ZeroAlloc.Validation.Tests.AspNetCore/SampleController.cs`:
 
 ```csharp
 using Microsoft.AspNetCore.Mvc;
 
-namespace ZValidation.Tests.AspNetCore;
+namespace ZeroAlloc.Validation.Tests.AspNetCore;
 
 [ApiController]
 [Route("sample")]
@@ -576,14 +576,14 @@ public class SampleController : ControllerBase
 
 ### Step 4: Create the test web application
 
-Create `tests/ZValidation.Tests.AspNetCore/TestApp.cs`:
+Create `tests/ZeroAlloc.Validation.Tests.AspNetCore/TestApp.cs`:
 
 ```csharp
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace ZValidation.Tests.AspNetCore;
+namespace ZeroAlloc.Validation.Tests.AspNetCore;
 
 public class TestApp
 {
@@ -607,7 +607,7 @@ public class TestApp
 
 ### Step 5: Write the integration tests
 
-Create `tests/ZValidation.Tests.AspNetCore/AutoValidationIntegrationTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests.AspNetCore/AutoValidationIntegrationTests.cs`:
 
 ```csharp
 using System.Net;
@@ -619,7 +619,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace ZValidation.Tests.AspNetCore;
+namespace ZeroAlloc.Validation.Tests.AspNetCore;
 
 public class AutoValidationIntegrationTests : IAsyncLifetime
 {
@@ -684,34 +684,34 @@ public class AutoValidationIntegrationTests : IAsyncLifetime
 }
 ```
 
-### Step 6: Add to `ZValidation.slnx`
+### Step 6: Add to `ZeroAlloc.Validation.slnx`
 
-In `ZValidation.slnx`, add inside `<Folder Name="/tests/">`:
+In `ZeroAlloc.Validation.slnx`, add inside `<Folder Name="/tests/">`:
 
 ```xml
-<Project Path="tests/ZValidation.Tests.AspNetCore/ZValidation.Tests.AspNetCore.csproj" />
+<Project Path="tests/ZeroAlloc.Validation.Tests.AspNetCore/ZeroAlloc.Validation.Tests.AspNetCore.csproj" />
 ```
 
 ### Step 7: Build and run the integration tests
 
 ```
-dotnet build tests/ZValidation.Tests.AspNetCore/ZValidation.Tests.AspNetCore.csproj
-dotnet test tests/ZValidation.Tests.AspNetCore/ZValidation.Tests.AspNetCore.csproj -v minimal
+dotnet build tests/ZeroAlloc.Validation.Tests.AspNetCore/ZeroAlloc.Validation.Tests.AspNetCore.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests.AspNetCore/ZeroAlloc.Validation.Tests.AspNetCore.csproj -v minimal
 ```
 Expected: all 5 tests pass across all 3 target frameworks.
 
 ### Step 8: Run the full solution build
 
 ```
-dotnet build ZValidation.slnx
+dotnet build ZeroAlloc.Validation.slnx
 ```
 Expected: zero warnings, zero errors.
 
 ### Step 9: Commit
 
 ```bash
-git add tests/ZValidation.Tests.AspNetCore/
-git add ZValidation.slnx
+git add tests/ZeroAlloc.Validation.Tests.AspNetCore/
+git add ZeroAlloc.Validation.slnx
 git commit -m "feat: add ASP.NET Core auto-validation integration tests"
 ```
 
@@ -721,13 +721,13 @@ git commit -m "feat: add ASP.NET Core auto-validation integration tests"
 
 | File | Action |
 |------|--------|
-| `src/ZValidation.Generator/ValidatorGenerator.cs` | Add lifetime FQN constants + emit attribute on validator |
-| `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs` | Add 4 lifetime forwarding tests |
-| `src/ZValidation.AspNetCore.Generator/ZValidation.AspNetCore.Generator.csproj` | New project |
-| `src/ZValidation.AspNetCore.Generator/AspNetCoreFilterEmitter.cs` | New generator |
-| `tests/ZValidation.Tests/Generator/AspNetCoreGeneratorTests.cs` | 4 generator output tests |
-| `tests/ZValidation.Tests/ZValidation.Tests.csproj` | Add generator reference |
-| `src/ZValidation.AspNetCore/ZValidation.AspNetCore.csproj` | Add generator analyzer reference |
-| `src/ZValidation.AspNetCore/Integration/ServiceCollectionExtensions.cs` | **Delete** (replaced by generated code) |
-| `tests/ZValidation.Tests.AspNetCore/` | New integration test project (5 files) |
-| `ZValidation.slnx` | Add 2 new projects |
+| `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs` | Add lifetime FQN constants + emit attribute on validator |
+| `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs` | Add 4 lifetime forwarding tests |
+| `src/ZeroAlloc.Validation.AspNetCore.Generator/ZeroAlloc.Validation.AspNetCore.Generator.csproj` | New project |
+| `src/ZeroAlloc.Validation.AspNetCore.Generator/AspNetCoreFilterEmitter.cs` | New generator |
+| `tests/ZeroAlloc.Validation.Tests/Generator/AspNetCoreGeneratorTests.cs` | 4 generator output tests |
+| `tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj` | Add generator reference |
+| `src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj` | Add generator analyzer reference |
+| `src/ZeroAlloc.Validation.AspNetCore/Integration/ServiceCollectionExtensions.cs` | **Delete** (replaced by generated code) |
+| `tests/ZeroAlloc.Validation.Tests.AspNetCore/` | New integration test project (5 files) |
+| `ZeroAlloc.Validation.slnx` | Add 2 new projects |

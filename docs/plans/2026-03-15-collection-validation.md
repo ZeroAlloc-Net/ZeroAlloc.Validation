@@ -15,18 +15,18 @@
 Design doc: `docs/plans/2026-03-15-collection-validation-design.md`
 
 Key existing files:
-- `src/ZValidation.Generator/RuleEmitter.cs` — **modify this** (`EmitValidateBody` + new helpers)
-- `src/ZValidation.Generator/ValidatorGenerator.cs` — no changes needed
-- `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs` — add generator unit tests
-- `tests/ZValidation.Tests/Integration/EndToEndTests.cs` — add integration tests
+- `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs` — **modify this** (`EmitValidateBody` + new helpers)
+- `src/ZeroAlloc.Validation.Generator/ValidatorGenerator.cs` — no changes needed
+- `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs` — add generator unit tests
+- `tests/ZeroAlloc.Validation.Tests/Integration/EndToEndTests.cs` — add integration tests
 
 ---
 
 ### Task 1: Detect collection properties with `[Validate]` element types
 
 **Files:**
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Update `RunGeneratorGetSources` to include `System.Collections.dll`**
 
@@ -62,7 +62,7 @@ Add to `GeneratorRuleEmissionTests.cs`:
 public void Generator_UsesListForModelWithCollectionOfValidateType()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         using System.Collections.Generic;
         namespace TestModels;
 
@@ -94,7 +94,7 @@ public void Generator_UsesListForModelWithCollectionOfValidateType()
 **Step 3: Run to verify it fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_UsesListForModelWithCollectionOfValidateType"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_UsesListForModelWithCollectionOfValidateType"
 ```
 
 Expected: FAIL — `Order` currently uses fixed array since no nested `[Validate]` object properties exist.
@@ -145,7 +145,7 @@ private static IEnumerable<(IPropertySymbol Property, INamedTypeSymbol ElementTy
 **Step 5: Run to verify still fails (helpers not wired yet)**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_UsesListForModelWithCollectionOfValidateType"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_UsesListForModelWithCollectionOfValidateType"
 ```
 
 Expected: Still FAIL — `EmitValidateBody` not yet changed.
@@ -153,7 +153,7 @@ Expected: Still FAIL — `EmitValidateBody` not yet changed.
 **Step 6: Commit**
 
 ```bash
-git add src/ZValidation.Generator/RuleEmitter.cs tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation.Generator/RuleEmitter.cs tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add collection [Validate] element detection helpers to RuleEmitter"
 ```
 
@@ -162,7 +162,7 @@ git commit -m "feat: add collection [Validate] element detection helpers to Rule
 ### Task 2: Emit collection validation loops in `EmitValidateBody`
 
 **Files:**
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
 
 **Step 1: Wire collection detection into `EmitValidateBody`**
 
@@ -176,7 +176,7 @@ bool hasNested = nestedProperties.Count > 0 || collectionProperties.Count > 0;
 
 **Step 2: Add the collection emission block inside the `if (hasNested)` branch**
 
-After the existing nested-validator block (after the closing `sb.AppendLine();` of the nested foreach) and before `sb.AppendLine("        return new global::ZValidation.ValidationResult(failures.ToArray());")`, add:
+After the existing nested-validator block (after the closing `sb.AppendLine();` of the nested foreach) and before `sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult(failures.ToArray());")`, add:
 
 ```csharp
 // Collection validators
@@ -200,7 +200,7 @@ foreach (var (collProp, elementType) in collectionProperties)
     sb.AppendLine("                {");
     sb.AppendLine($"                    var {varName}Result = new {qualifiedCollValidatorName}().Validate({varName}Item);");
     sb.AppendLine($"                    foreach (var f in {varName}Result.Failures)");
-    sb.AppendLine($"                        failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
+    sb.AppendLine($"                        failures.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
     sb.AppendLine("                }");
     sb.AppendLine($"                {varName}Idx++;");
     sb.AppendLine("            }");
@@ -212,7 +212,7 @@ foreach (var (collProp, elementType) in collectionProperties)
 **Step 3: Run to verify the Task 1 test now passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_UsesListForModelWithCollectionOfValidateType"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_UsesListForModelWithCollectionOfValidateType"
 ```
 
 Expected: PASS.
@@ -220,7 +220,7 @@ Expected: PASS.
 **Step 4: Run all tests to confirm no regressions**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
 Expected: All tests pass.
@@ -228,7 +228,7 @@ Expected: All tests pass.
 **Step 5: Commit**
 
 ```bash
-git add src/ZValidation.Generator/RuleEmitter.cs
+git add src/ZeroAlloc.Validation.Generator/RuleEmitter.cs
 git commit -m "feat: emit collection validation loops with bracket-indexed property names"
 ```
 
@@ -237,7 +237,7 @@ git commit -m "feat: emit collection validation loops with bracket-indexed prope
 ### Task 3: Generator tests for bracket notation, array support, and null guard
 
 **Files:**
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Add three tests**
 
@@ -246,7 +246,7 @@ git commit -m "feat: emit collection validation loops with bracket-indexed prope
 public void Generator_EmitsCollectionValidation_WithBracketIndex()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         using System.Collections.Generic;
         namespace TestModels;
 
@@ -270,7 +270,7 @@ public void Generator_EmitsCollectionValidation_WithBracketIndex()
 public void Generator_DetectsArrayOfValidateType()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
 
         [Validate]
@@ -291,7 +291,7 @@ public void Generator_DetectsArrayOfValidateType()
 public void Generator_EmitsNullGuard_ForCollectionProperty()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         using System.Collections.Generic;
         namespace TestModels;
 
@@ -312,7 +312,7 @@ public void Generator_EmitsNullGuard_ForCollectionProperty()
 **Step 2: Run to verify all pass**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsCollectionValidation|Generator_DetectsArray|Generator_EmitsNullGuard_ForCollection"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsCollectionValidation|Generator_DetectsArray|Generator_EmitsNullGuard_ForCollection"
 ```
 
 Expected: All 3 PASS.
@@ -320,7 +320,7 @@ Expected: All 3 PASS.
 **Step 3: Commit**
 
 ```bash
-git add tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "test: add generator tests for collection validation bracket notation and null guard"
 ```
 
@@ -329,7 +329,7 @@ git commit -m "test: add generator tests for collection validation bracket notat
 ### Task 4: End-to-end integration tests
 
 **Files:**
-- Modify: `tests/ZValidation.Tests/Integration/EndToEndTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/EndToEndTests.cs`
 
 Append the following models and test class at the end of the file:
 
@@ -450,15 +450,15 @@ public class CollectionValidationTests
 **Step 2: Build to verify `CartValidator` and `LineItemValidator` are generated**
 
 ```bash
-dotnet build tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet build tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
-Expected: 0 errors. If `CartValidator` is missing, inspect `tests/ZValidation.Tests/obj/Debug/net10.0/generated/`.
+Expected: 0 errors. If `CartValidator` is missing, inspect `tests/ZeroAlloc.Validation.Tests/obj/Debug/net10.0/generated/`.
 
 **Step 3: Run collection integration tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "CollectionValidationTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "CollectionValidationTests"
 ```
 
 Expected: All 6 tests pass.
@@ -466,7 +466,7 @@ Expected: All 6 tests pass.
 **Step 4: Run full suite**
 
 ```bash
-dotnet test ZValidation.slnx
+dotnet test ZeroAlloc.Validation.slnx
 ```
 
 Expected: All tests pass.
@@ -474,7 +474,7 @@ Expected: All tests pass.
 **Step 5: Commit**
 
 ```bash
-git add tests/ZValidation.Tests/Integration/EndToEndTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/EndToEndTests.cs
 git commit -m "test: add end-to-end integration tests for collection property validation"
 ```
 
@@ -485,7 +485,7 @@ git commit -m "test: add end-to-end integration tests for collection property va
 **Step 1: Full solution build**
 
 ```bash
-dotnet build ZValidation.slnx
+dotnet build ZeroAlloc.Validation.slnx
 ```
 
 Expected: 0 errors, 0 warnings.
@@ -493,7 +493,7 @@ Expected: 0 errors, 0 warnings.
 **Step 2: Full test run**
 
 ```bash
-dotnet test ZValidation.slnx
+dotnet test ZeroAlloc.Validation.slnx
 ```
 
 Expected: All tests pass across net8.0, net9.0, net10.0.

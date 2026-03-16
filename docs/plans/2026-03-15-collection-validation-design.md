@@ -58,11 +58,11 @@ public sealed partial class OrderValidator : ValidatorFor<Order>
 {
     public override ValidationResult Validate(Order instance)
     {
-        var failures = new System.Collections.Generic.List<global::ZValidation.ValidationFailure>();
+        var failures = new System.Collections.Generic.List<global::ZeroAlloc.Validation.ValidationFailure>();
 
         // Direct rules
         if (string.IsNullOrEmpty(instance.Reference))
-            failures.Add(new global::ZValidation.ValidationFailure { PropertyName = "Reference", ErrorMessage = "Reference must not be empty." });
+            failures.Add(new global::ZeroAlloc.Validation.ValidationFailure { PropertyName = "Reference", ErrorMessage = "Reference must not be empty." });
 
         // Collection — skipped if null, element skipped if null
         if (instance.LineItems is not null)
@@ -72,9 +72,9 @@ public sealed partial class OrderValidator : ValidatorFor<Order>
             {
                 if (_lineItemsItem is not null)
                 {
-                    var _lineItemsResult = new global::ZValidation.Tests.Integration.LineItemValidator().Validate(_lineItemsItem);
+                    var _lineItemsResult = new global::ZeroAlloc.Validation.Tests.Integration.LineItemValidator().Validate(_lineItemsItem);
                     foreach (var f in _lineItemsResult.Failures)
-                        failures.Add(new global::ZValidation.ValidationFailure
+                        failures.Add(new global::ZeroAlloc.Validation.ValidationFailure
                         {
                             PropertyName = "LineItems[" + _lineItemsIdx + "]." + f.PropertyName,
                             ErrorMessage = f.ErrorMessage
@@ -84,7 +84,7 @@ public sealed partial class OrderValidator : ValidatorFor<Order>
             }
         }
 
-        return new global::ZValidation.ValidationResult(failures.ToArray());
+        return new global::ZeroAlloc.Validation.ValidationResult(failures.ToArray());
     }
 }
 ```

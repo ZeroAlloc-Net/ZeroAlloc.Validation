@@ -10,7 +10,7 @@ Option A — inline interpolation. The generator detects `{PropertyValue}` in a 
 
 ## Architecture
 
-Only `src/ZValidation.Generator/RuleEmitter.cs` changes. No attribute classes, no runtime library, no public API additions.
+Only `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs` changes. No attribute classes, no runtime library, no public API additions.
 
 ### Placeholder resolution order
 

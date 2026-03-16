@@ -6,31 +6,31 @@
 
 **Architecture:** Both features touch only `RuleEmitter.cs` (generator) plus one attribute file each. `[DisplayName]` replaces the name string passed to `ResolveMessage`/`GetDefaultMessage` at emit time; cascade wraps each property group in a failure-count check in both flat and nested emit paths.
 
-**Tech Stack:** C# source generator (`IIncrementalGenerator`, `netstandard2.0`), xUnit, `ZValidation.Testing.ValidationAssert`.
+**Tech Stack:** C# source generator (`IIncrementalGenerator`, `netstandard2.0`), xUnit, `ZeroAlloc.Validation.Testing.ValidationAssert`.
 
 ---
 
 ### Task 1: `[DisplayName]` attribute + generator support
 
 **Files:**
-- Create: `src/ZValidation/Attributes/DisplayNameAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
-- Create: `tests/ZValidation.Tests/Integration/DisplayNameModel.cs`
-- Create: `tests/ZValidation.Tests/Integration/DisplayNameTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/DisplayNameAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/DisplayNameModel.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/DisplayNameTests.cs`
 
 ---
 
 **Step 1: Write failing generator emission tests**
 
-Append to `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`:
+Append to `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`:
 
 ```csharp
 [Fact]
 public void Generator_DisplayName_UsesDisplayNameInDefaultMessage()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class M
@@ -50,7 +50,7 @@ public void Generator_DisplayName_UsesDisplayNameInDefaultMessage()
 public void Generator_DisplayName_SubstitutesPropertyNamePlaceholder()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class M
@@ -70,7 +70,7 @@ public void Generator_DisplayName_SubstitutesPropertyNamePlaceholder()
 public void Generator_NoDisplayName_UsesRawPropertyName()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class M
@@ -88,17 +88,17 @@ public void Generator_NoDisplayName_UsesRawPropertyName()
 **Step 2: Run tests, verify they FAIL**
 
 ```
-dotnet test tests/ZValidation.Tests --filter "DisplayName" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "DisplayName" -v minimal
 ```
 
 Expected: 3 failures (attribute not yet defined, generator not yet updated).
 
 **Step 3: Create the attribute**
 
-`src/ZValidation/Attributes/DisplayNameAttribute.cs`:
+`src/ZeroAlloc.Validation/Attributes/DisplayNameAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = false)]
 public sealed class DisplayNameAttribute : Attribute
@@ -117,7 +117,7 @@ public sealed class DisplayNameAttribute : Attribute
 4a. Add FQN constant near the top of `RuleEmitter` (after `StopOnFirstFailureFqn`):
 
 ```csharp
-private const string DisplayNameAttributeFqn = "ZValidation.DisplayNameAttribute";
+private const string DisplayNameAttributeFqn = "ZeroAlloc.Validation.DisplayNameAttribute";
 ```
 
 4b. Add `GetDisplayName` helper (after `GetUnless`):
@@ -154,19 +154,19 @@ var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, a
 **Step 5: Run generator tests, verify they PASS**
 
 ```
-dotnet test tests/ZValidation.Tests --filter "DisplayName" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "DisplayName" -v minimal
 ```
 
 Expected: all 3 pass.
 
 **Step 6: Write integration tests — model**
 
-`tests/ZValidation.Tests/Integration/DisplayNameModel.cs`:
+`tests/ZeroAlloc.Validation.Tests/Integration/DisplayNameModel.cs`:
 
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public class DisplayNameModel
@@ -188,13 +188,13 @@ public class DisplayNameModel
 
 **Step 7: Write integration tests — test class**
 
-`tests/ZValidation.Tests/Integration/DisplayNameTests.cs`:
+`tests/ZeroAlloc.Validation.Tests/Integration/DisplayNameTests.cs`:
 
 ```csharp
 using Xunit;
-using ZValidation.Testing;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 public class DisplayNameTests
 {
@@ -246,7 +246,7 @@ public class DisplayNameTests
 **Step 8: Run all tests, verify they PASS**
 
 ```
-dotnet test tests/ZValidation.Tests -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests -v minimal
 ```
 
 Expected: all tests pass (count increases by 8 = 3 generator + 5 integration).
@@ -254,11 +254,11 @@ Expected: all tests pass (count increases by 8 = 3 generator + 5 integration).
 **Step 9: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/DisplayNameAttribute.cs \
-        src/ZValidation.Generator/RuleEmitter.cs \
-        tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs \
-        tests/ZValidation.Tests/Integration/DisplayNameModel.cs \
-        tests/ZValidation.Tests/Integration/DisplayNameTests.cs
+git add src/ZeroAlloc.Validation/Attributes/DisplayNameAttribute.cs \
+        src/ZeroAlloc.Validation.Generator/RuleEmitter.cs \
+        tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/DisplayNameModel.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/DisplayNameTests.cs
 git commit -m "feat: add [DisplayName] attribute for display-name override in error messages"
 ```
 
@@ -267,24 +267,24 @@ git commit -m "feat: add [DisplayName] attribute for display-name override in er
 ### Task 2: Validator-level cascade (`[Validate(StopOnFirstFailure = true)]`)
 
 **Files:**
-- Modify: `src/ZValidation/Attributes/ValidateAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
-- Create: `tests/ZValidation.Tests/Integration/ValidatorCascadeModel.cs`
-- Create: `tests/ZValidation.Tests/Integration/ValidatorCascadeTests.cs`
+- Modify: `src/ZeroAlloc.Validation/Attributes/ValidateAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/ValidatorCascadeModel.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/ValidatorCascadeTests.cs`
 
 ---
 
 **Step 1: Write failing generator emission tests**
 
-Append to `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`:
+Append to `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`:
 
 ```csharp
 [Fact]
 public void Generator_ValidatorStop_FlatPath_EmitsCountCheckAfterEachPropertyGroup()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate(StopOnFirstFailure = true)]
         public class M
@@ -309,7 +309,7 @@ public void Generator_ValidatorStop_FlatPath_EmitsCountCheckAfterEachPropertyGro
 public void Generator_ValidatorStop_NestedPath_EmitsFailuresCountCheckAfterEachPropertyGroup()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Inner { [NotEmpty] public string X { get; set; } = ""; }
@@ -336,7 +336,7 @@ public void Generator_ValidatorStop_NestedPath_EmitsFailuresCountCheckAfterEachP
 public void Generator_ValidatorStop_Default_NoCountChecks()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class M
@@ -360,7 +360,7 @@ public void Generator_ValidatorStop_Default_NoCountChecks()
 **Step 2: Run tests, verify they FAIL**
 
 ```
-dotnet test tests/ZValidation.Tests --filter "ValidatorStop" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "ValidatorStop" -v minimal
 ```
 
 Expected: 3 failures (property not yet on attribute, generator not yet updated).
@@ -368,7 +368,7 @@ Expected: 3 failures (property not yet on attribute, generator not yet updated).
 **Step 3: Add `StopOnFirstFailure` to `ValidateAttribute.cs`**
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]
 public sealed class ValidateAttribute : Attribute
@@ -424,7 +424,7 @@ private static void EmitFlatPath(
     string modelParamName,
     bool validatorStop)
 {
-    sb.AppendLine($"        var buffer = new global::ZValidation.ValidationFailure[{totalDirectRules}];");
+    sb.AppendLine($"        var buffer = new global::ZeroAlloc.Validation.ValidationFailure[{totalDirectRules}];");
     sb.AppendLine("        int count = 0;");
     sb.AppendLine();
 
@@ -461,19 +461,19 @@ private static void EmitFlatPath(
         {
             sb.AppendLine($"        if (count > _b{pi})");
             sb.AppendLine("        {");
-            sb.AppendLine("            var r = new global::ZValidation.ValidationFailure[count];");
+            sb.AppendLine("            var r = new global::ZeroAlloc.Validation.ValidationFailure[count];");
             sb.AppendLine("            global::System.Array.Copy(buffer, r, count);");
-            sb.AppendLine("            return new global::ZValidation.ValidationResult(r);");
+            sb.AppendLine("            return new global::ZeroAlloc.Validation.ValidationResult(r);");
             sb.AppendLine("        }");
         }
 
         sb.AppendLine();
     }
 
-    sb.AppendLine("        if (count == buffer.Length) return new global::ZValidation.ValidationResult(buffer);");
-    sb.AppendLine("        var result = new global::ZValidation.ValidationFailure[count];");
+    sb.AppendLine("        if (count == buffer.Length) return new global::ZeroAlloc.Validation.ValidationResult(buffer);");
+    sb.AppendLine("        var result = new global::ZeroAlloc.Validation.ValidationFailure[count];");
     sb.AppendLine("        global::System.Array.Copy(buffer, result, count);");
-    sb.AppendLine("        return new global::ZValidation.ValidationResult(result);");
+    sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult(result);");
 }
 ```
 
@@ -486,7 +486,7 @@ When `validatorStop = true`, iterate `classSymbol.GetMembers()` in declaration o
 - If property has direct rules: emit them (same logic as `EmitPropertyRulesWithAdd` for that single property)
 - If property is a nested validator property: emit the null guard + nested call
 - If property is a collection validator property: emit the collection loop
-- Emit `if (failures.Count > _b{groupIdx}) return new global::ZValidation.ValidationResult(failures.ToArray());`
+- Emit `if (failures.Count > _b{groupIdx}) return new global::ZeroAlloc.Validation.ValidationResult(failures.ToArray());`
 
 This ensures declaration order is respected even when some properties have only nested/collection validation. Use `SymbolEqualityComparer.Default.Equals` to match properties across the pre-computed lists.
 
@@ -508,19 +508,19 @@ private static void EmitNestedPath(
 **Step 5: Run generator tests, verify they PASS**
 
 ```
-dotnet test tests/ZValidation.Tests --filter "ValidatorStop" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "ValidatorStop" -v minimal
 ```
 
 Expected: all 3 pass.
 
 **Step 6: Write integration tests — models**
 
-`tests/ZValidation.Tests/Integration/ValidatorCascadeModel.cs`:
+`tests/ZeroAlloc.Validation.Tests/Integration/ValidatorCascadeModel.cs`:
 
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 // Flat-path model (no nested validators)
 [Validate(StopOnFirstFailure = true)]
@@ -548,14 +548,14 @@ public class ValidatorCascadeWithNestedModel
 
 **Step 7: Write integration tests — test class**
 
-`tests/ZValidation.Tests/Integration/ValidatorCascadeTests.cs`:
+`tests/ZeroAlloc.Validation.Tests/Integration/ValidatorCascadeTests.cs`:
 
 ```csharp
 using System.Linq;
 using Xunit;
-using ZValidation.Testing;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 public class ValidatorCascadeTests
 {
@@ -624,7 +624,7 @@ public class ValidatorCascadeTests
 **Step 8: Run all tests, verify they PASS**
 
 ```
-dotnet test tests/ZValidation.Tests -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests -v minimal
 ```
 
 Expected: all tests pass (count increases by ~8 = 3 generator + 5 integration).
@@ -632,11 +632,11 @@ Expected: all tests pass (count increases by ~8 = 3 generator + 5 integration).
 **Step 9: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/ValidateAttribute.cs \
-        src/ZValidation.Generator/RuleEmitter.cs \
-        tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs \
-        tests/ZValidation.Tests/Integration/ValidatorCascadeModel.cs \
-        tests/ZValidation.Tests/Integration/ValidatorCascadeTests.cs
+git add src/ZeroAlloc.Validation/Attributes/ValidateAttribute.cs \
+        src/ZeroAlloc.Validation.Generator/RuleEmitter.cs \
+        tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/ValidatorCascadeModel.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/ValidatorCascadeTests.cs
 git commit -m "feat: add [Validate(StopOnFirstFailure = true)] for validator-level fail-fast cascade"
 ```
 
@@ -694,7 +694,7 @@ Composes correctly with property-level `[StopOnFirstFailure]`.
 **Step 2: Run all tests, verify no regressions**
 
 ```
-dotnet test tests/ZValidation.Tests -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests -v minimal
 ```
 
 **Step 3: Commit**

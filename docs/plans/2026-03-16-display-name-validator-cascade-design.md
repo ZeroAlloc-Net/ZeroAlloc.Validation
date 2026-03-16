@@ -32,7 +32,7 @@ If `[DisplayName]` is absent, behavior is unchanged — raw C# property name use
 
 ### Architecture
 
-- New attribute class: `src/ZValidation/Attributes/DisplayNameAttribute.cs` (`AttributeTargets.Property`, single-use)
+- New attribute class: `src/ZeroAlloc.Validation/Attributes/DisplayNameAttribute.cs` (`AttributeTargets.Property`, single-use)
 - `RuleEmitter.cs`: add `GetDisplayName(IPropertySymbol prop)` helper that reads the attribute; update `ResolveMessage` and `GetDefaultMessage` to use the display name instead of the raw property name for `{PropertyName}` substitution and default message generation
 
 ### Behavior
@@ -44,8 +44,8 @@ If `[DisplayName]` is absent, behavior is unchanged — raw C# property name use
 
 ### Files changed
 
-- Create: `src/ZValidation/Attributes/DisplayNameAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/DisplayNameAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
 
 ---
 
@@ -106,8 +106,8 @@ if (count > _b0) { var r = new ValidationFailure[count]; Array.Copy(buffer, r, c
 
 ### Files changed
 
-- Modify: `src/ZValidation/Attributes/ValidateAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
+- Modify: `src/ZeroAlloc.Validation/Attributes/ValidateAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
 
 ---
 

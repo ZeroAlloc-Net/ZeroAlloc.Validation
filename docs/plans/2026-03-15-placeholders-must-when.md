@@ -16,15 +16,15 @@
 
 ```
 src/
-  ZValidation/
+  ZeroAlloc.Validation/
     Attributes/ValidationAttribute.cs   ← base class with Message property
     Attributes/NotEmptyAttribute.cs     ← typical attribute (no constructor args)
     Attributes/GreaterThanAttribute.cs  ← typical attribute (double constructor arg)
     Internal/DecimalValidator.cs        ← runtime helper
-  ZValidation.Generator/
+  ZeroAlloc.Validation.Generator/
     RuleEmitter.cs                      ← all generator logic lives here
 tests/
-  ZValidation.Tests/
+  ZeroAlloc.Validation.Tests/
     Attributes/AttributeDeclarationTests.cs
     Generator/GeneratorRuleEmissionTests.cs
     Integration/RangeModel.cs           ← example model file (one type)
@@ -64,12 +64,12 @@ var message = GetMessage(attr) ?? GetDefaultMessage(fqn, attr, propName);
 ## Task 1: `[Must]` attribute + generator + tests
 
 **Files:**
-- Create: `src/ZValidation/Attributes/MustAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
-- Create: `tests/ZValidation.Tests/Integration/MustModel.cs`
-- Create: `tests/ZValidation.Tests/Integration/MustTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/MustAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/MustModel.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/MustTests.cs`
 
 ---
 
@@ -82,7 +82,7 @@ Add this `[Fact]` to `GeneratorRuleEmissionTests.cs`:
 public void Generator_EmitsMust_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Widget
@@ -101,7 +101,7 @@ public void Generator_EmitsMust_Check()
 ### Step 2: Run test — verify it fails
 
 ```
-dotnet test tests/ZValidation.Tests --filter "Generator_EmitsMust_Check" -v normal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "Generator_EmitsMust_Check" -v normal
 ```
 
 Expected: FAIL (the generator emits `false` for unknown FQNs, so the condition won't contain `IsValidCode`).
@@ -109,7 +109,7 @@ Expected: FAIL (the generator emits `false` for unknown FQNs, so the condition w
 ### Step 3: Create `MustAttribute.cs`
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class MustAttribute(string methodName) : ValidationAttribute
 {
@@ -122,7 +122,7 @@ public sealed class MustAttribute(string methodName) : ValidationAttribute
 **4a. Add FQN constant** (after the `PrecisionScaleFqn` line):
 
 ```csharp
-private const string MustFqn = "ZValidation.MustAttribute";
+private const string MustFqn = "ZeroAlloc.Validation.MustAttribute";
 ```
 
 **4b. Register in `IsRuleAttribute`** — add `or MustFqn` to the return expression.
@@ -163,19 +163,19 @@ MustFqn => $"{propName} is invalid.",
 ### Step 5: Run generator test — verify it passes
 
 ```
-dotnet test tests/ZValidation.Tests --filter "Generator_EmitsMust_Check" -v normal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "Generator_EmitsMust_Check" -v normal
 ```
 
 Expected: PASS.
 
 ### Step 6: Write the failing integration test
 
-Create `tests/ZValidation.Tests/Integration/MustModel.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Integration/MustModel.cs`:
 
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public partial class MustModel
@@ -187,13 +187,13 @@ public partial class MustModel
 }
 ```
 
-Create `tests/ZValidation.Tests/Integration/MustTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Integration/MustTests.cs`:
 
 ```csharp
 using Xunit;
-using ZValidation.Testing;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 public class MustTests
 {
@@ -223,7 +223,7 @@ public class MustTests
 ### Step 7: Run integration tests — verify they fail
 
 ```
-dotnet test tests/ZValidation.Tests --filter "MustTests" -v normal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "MustTests" -v normal
 ```
 
 Expected: FAIL (MustModelValidator doesn't exist yet — generator hasn't run on the model).
@@ -241,7 +241,7 @@ Expected: succeeds, generator emits `MustModelValidator`.
 ### Step 9: Run integration tests — verify they pass
 
 ```
-dotnet test tests/ZValidation.Tests --filter "MustTests" -v normal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "MustTests" -v normal
 ```
 
 Expected: all 3 PASS.
@@ -299,12 +299,12 @@ Expected: all tests pass, 0 warnings.
 ### Step 12: Commit
 
 ```
-git add src/ZValidation/Attributes/MustAttribute.cs
-git add src/ZValidation.Generator/RuleEmitter.cs
-git add tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs
-git add tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
-git add tests/ZValidation.Tests/Integration/MustModel.cs
-git add tests/ZValidation.Tests/Integration/MustTests.cs
+git add src/ZeroAlloc.Validation/Attributes/MustAttribute.cs
+git add src/ZeroAlloc.Validation.Generator/RuleEmitter.cs
+git add tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/MustModel.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/MustTests.cs
 git commit -m "feat: add [Must] validation attribute with instance method predicate"
 ```
 
@@ -313,12 +313,12 @@ git commit -m "feat: add [Must] validation attribute with instance method predic
 ## Task 2: `When`/`Unless` named params + generator + tests
 
 **Files:**
-- Modify: `src/ZValidation/Attributes/ValidationAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
-- Create: `tests/ZValidation.Tests/Integration/ConditionalModel.cs`
-- Create: `tests/ZValidation.Tests/Integration/ConditionalTests.cs`
+- Modify: `src/ZeroAlloc.Validation/Attributes/ValidationAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/ConditionalModel.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/ConditionalTests.cs`
 
 ---
 
@@ -331,7 +331,7 @@ Add to `GeneratorRuleEmissionTests.cs`:
 public void Generator_EmitsWhen_Guard()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Order
@@ -351,7 +351,7 @@ public void Generator_EmitsWhen_Guard()
 public void Generator_EmitsUnless_Guard()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Profile
@@ -371,7 +371,7 @@ public void Generator_EmitsUnless_Guard()
 public void Generator_EmitsBothWhenAndUnless_Guards()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Doc
@@ -394,7 +394,7 @@ public void Generator_EmitsBothWhenAndUnless_Guards()
 ### Step 2: Run — verify they fail
 
 ```
-dotnet test tests/ZValidation.Tests --filter "Generator_EmitsWhen_Guard|Generator_EmitsUnless_Guard|Generator_EmitsBothWhenAndUnless_Guards" -v normal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "Generator_EmitsWhen_Guard|Generator_EmitsUnless_Guard|Generator_EmitsBothWhenAndUnless_Guards" -v normal
 ```
 
 Expected: all FAIL.
@@ -402,7 +402,7 @@ Expected: all FAIL.
 ### Step 3: Add `When` and `Unless` to `ValidationAttribute`
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = true)]
 public abstract class ValidationAttribute : Attribute
@@ -456,19 +456,19 @@ sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
 ### Step 5: Run generator tests — verify they pass
 
 ```
-dotnet test tests/ZValidation.Tests --filter "Generator_EmitsWhen_Guard|Generator_EmitsUnless_Guard|Generator_EmitsBothWhenAndUnless_Guards" -v normal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "Generator_EmitsWhen_Guard|Generator_EmitsUnless_Guard|Generator_EmitsBothWhenAndUnless_Guards" -v normal
 ```
 
 Expected: all PASS.
 
 ### Step 6: Write failing integration tests
 
-Create `tests/ZValidation.Tests/Integration/ConditionalModel.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Integration/ConditionalModel.cs`:
 
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public partial class ConditionalModel
@@ -490,13 +490,13 @@ public partial class ConditionalModel
 }
 ```
 
-Create `tests/ZValidation.Tests/Integration/ConditionalTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Integration/ConditionalTests.cs`:
 
 ```csharp
 using Xunit;
-using ZValidation.Testing;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 public class ConditionalTests
 {
@@ -601,7 +601,7 @@ public class ConditionalTests
 
 ```
 dotnet build
-dotnet test tests/ZValidation.Tests --filter "ConditionalTests" -v normal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "ConditionalTests" -v normal
 ```
 
 Expected: all 7 PASS.
@@ -658,12 +658,12 @@ Expected: all pass, 0 warnings.
 ### Step 10: Commit
 
 ```
-git add src/ZValidation/Attributes/ValidationAttribute.cs
-git add src/ZValidation.Generator/RuleEmitter.cs
-git add tests/ZValidation.Tests/Attributes/AttributeDeclarationTests.cs
-git add tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
-git add tests/ZValidation.Tests/Integration/ConditionalModel.cs
-git add tests/ZValidation.Tests/Integration/ConditionalTests.cs
+git add src/ZeroAlloc.Validation/Attributes/ValidationAttribute.cs
+git add src/ZeroAlloc.Validation.Generator/RuleEmitter.cs
+git add tests/ZeroAlloc.Validation.Tests/Attributes/AttributeDeclarationTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/ConditionalModel.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/ConditionalTests.cs
 git commit -m "feat: add When/Unless conditional named params to ValidationAttribute"
 ```
 
@@ -672,10 +672,10 @@ git commit -m "feat: add When/Unless conditional named params to ValidationAttri
 ## Task 3: Message placeholders + tests
 
 **Files:**
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
-- Create: `tests/ZValidation.Tests/Integration/PlaceholderModel.cs`
-- Create: `tests/ZValidation.Tests/Integration/PlaceholderTests.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/PlaceholderModel.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/PlaceholderTests.cs`
 
 ---
 
@@ -688,7 +688,7 @@ Add to `GeneratorRuleEmissionTests.cs`:
 public void Generator_Placeholder_PropertyName_Replaced()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Item { [NotEmpty(Message = "'{PropertyName}' is required")] public string Name { get; set; } = ""; }
@@ -704,7 +704,7 @@ public void Generator_Placeholder_PropertyName_Replaced()
 public void Generator_Placeholder_ComparisonValue_Replaced()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Item { [GreaterThan(18, Message = "Must be > {ComparisonValue}")] public int Age { get; set; } }
@@ -719,7 +719,7 @@ public void Generator_Placeholder_ComparisonValue_Replaced()
 public void Generator_Placeholder_FromTo_Replaced()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Item { [ExclusiveBetween(0, 100, Message = "Between {From} and {To}")] public double Value { get; set; } }
@@ -735,7 +735,7 @@ public void Generator_Placeholder_FromTo_Replaced()
 public void Generator_Placeholder_MinMaxLength_Replaced()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Item { [Length(2, 50, Message = "Length {MinLength}–{MaxLength}")] public string Name { get; set; } = ""; }
@@ -751,7 +751,7 @@ public void Generator_Placeholder_MinMaxLength_Replaced()
 ### Step 2: Run — verify they fail
 
 ```
-dotnet test tests/ZValidation.Tests --filter "Generator_Placeholder" -v normal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "Generator_Placeholder" -v normal
 ```
 
 Expected: all FAIL (tokens remain un-replaced).
@@ -819,19 +819,19 @@ var message = ResolveMessage(attr, fqn, propName) ?? GetDefaultMessage(fqn, attr
 ### Step 4: Run generator tests — verify they pass
 
 ```
-dotnet test tests/ZValidation.Tests --filter "Generator_Placeholder" -v normal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "Generator_Placeholder" -v normal
 ```
 
 Expected: all 4 PASS.
 
 ### Step 5: Write failing integration tests
 
-Create `tests/ZValidation.Tests/Integration/PlaceholderModel.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Integration/PlaceholderModel.cs`:
 
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public partial class PlaceholderModel
@@ -850,13 +850,13 @@ public partial class PlaceholderModel
 }
 ```
 
-Create `tests/ZValidation.Tests/Integration/PlaceholderTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Integration/PlaceholderTests.cs`:
 
 ```csharp
 using Xunit;
-using ZValidation.Testing;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 public class PlaceholderTests
 {
@@ -908,14 +908,14 @@ public class PlaceholderTests
 
 ```
 dotnet build
-dotnet test tests/ZValidation.Tests --filter "PlaceholderTests" -v normal
+dotnet test tests/ZeroAlloc.Validation.Tests --filter "PlaceholderTests" -v normal
 ```
 
 Expected: all 5 PASS.
 
 ### Step 7: Check `ValidationAssert.HasErrorWithMessage` exists
 
-Look at `src/ZValidation.Testing/ValidationAssert.cs`. If `HasErrorWithMessage` does not exist, add it:
+Look at `src/ZeroAlloc.Validation.Testing/ValidationAssert.cs`. If `HasErrorWithMessage` does not exist, add it:
 
 ```csharp
 public static void HasErrorWithMessage(ValidationResult result, string propertyName, string expectedMessage)
@@ -953,10 +953,10 @@ Expected: all pass, 0 warnings.
 ### Step 9: Commit
 
 ```
-git add src/ZValidation.Generator/RuleEmitter.cs
-git add src/ZValidation.Testing/ValidationAssert.cs
-git add tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
-git add tests/ZValidation.Tests/Integration/PlaceholderModel.cs
-git add tests/ZValidation.Tests/Integration/PlaceholderTests.cs
+git add src/ZeroAlloc.Validation.Generator/RuleEmitter.cs
+git add src/ZeroAlloc.Validation.Testing/ValidationAssert.cs
+git add tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/PlaceholderModel.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/PlaceholderTests.cs
 git commit -m "feat: add gen-time message placeholder substitution ({PropertyName}, {ComparisonValue}, etc.)"
 ```

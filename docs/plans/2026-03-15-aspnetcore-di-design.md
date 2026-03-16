@@ -11,7 +11,7 @@ Two related features delivered together:
 
 1. **DI lifetime forwarding** — put `[Scoped]`/`[Transient]`/`[Singleton]` (ZeroAlloc.Inject) on a model alongside `[Validate]`; the core generator emits the same attribute on the generated validator so ZeroAlloc.Inject registers it automatically.
 
-2. **ASP.NET Core auto-validation** — a new `ZValidation.AspNetCore.Generator` scans all `[Validate]` models and emits a source-generated `ValidationActionFilter` with a type-switch dispatch (no reflection, fully AOT-safe) plus a `AddZValidationAutoValidation` extension method.
+2. **ASP.NET Core auto-validation** — a new `ZeroAlloc.Validation.AspNetCore.Generator` scans all `[Validate]` models and emits a source-generated `ValidationActionFilter` with a type-switch dispatch (no reflection, fully AOT-safe) plus a `AddZValidationAutoValidation` extension method.
 
 Both features are opt-in. The core library has no dependency on ZeroAlloc.Inject or ASP.NET Core.
 
@@ -45,38 +45,38 @@ When emitting the validator class header, check if the model class has one of th
 
 ```csharp
 // Without lifetime:
-public partial class CustomerValidator : global::ZValidation.ValidatorFor<Customer>
+public partial class CustomerValidator : global::ZeroAlloc.Validation.ValidatorFor<Customer>
 
 // With [Scoped] on model:
 [global::ZeroAlloc.Inject.Scoped]
-public partial class CustomerValidator : global::ZValidation.ValidatorFor<Customer>
+public partial class CustomerValidator : global::ZeroAlloc.Validation.ValidatorFor<Customer>
 ```
 
 The attribute is read from the model's `AttributeData` list by FQN — identical pattern to how validation attributes are detected.
 
 ### Key decisions
 
-- No hard package reference to ZeroAlloc.Inject in `ZValidation.Generator` — FQN string matching only
+- No hard package reference to ZeroAlloc.Inject in `ZeroAlloc.Validation.Generator` — FQN string matching only
 - Model without a lifetime attribute → no attribute on validator (unchanged behaviour)
 - All three lifetimes supported; only one may be applied (Roslyn emits the first found)
 
 ---
 
-## 2. New Project: `ZValidation.AspNetCore.Generator`
+## 2. New Project: `ZeroAlloc.Validation.AspNetCore.Generator`
 
 ### Project setup
 
 ```
 src/
-  ZValidation.AspNetCore.Generator/
-    ZValidation.AspNetCore.Generator.csproj   ← netstandard2.0, IsRoslynComponent=true
+  ZeroAlloc.Validation.AspNetCore.Generator/
+    ZeroAlloc.Validation.AspNetCore.Generator.csproj   ← netstandard2.0, IsRoslynComponent=true
     AspNetCoreFilterEmitter.cs                ← generator logic
 ```
 
-`ZValidation.AspNetCore.csproj` references it as an analyzer:
+`ZeroAlloc.Validation.AspNetCore.csproj` references it as an analyzer:
 
 ```xml
-<ProjectReference Include="..\ZValidation.AspNetCore.Generator\ZValidation.AspNetCore.Generator.csproj"
+<ProjectReference Include="..\ZeroAlloc.Validation.AspNetCore.Generator\ZeroAlloc.Validation.AspNetCore.Generator.csproj"
                   OutputItemType="Analyzer"
                   ReferenceOutputAssembly="false" />
 ```
@@ -117,7 +117,7 @@ internal sealed class ZValidationActionFilter : IActionFilter
 
     public void OnActionExecuted(ActionExecutedContext context) { }
 
-    private global::ZValidation.ValidationResult? Dispatch(object? arg) => arg switch
+    private global::ZeroAlloc.Validation.ValidationResult? Dispatch(object? arg) => arg switch
     {
         global::MyApp.Customer c => _services.GetRequiredService<global::MyApp.CustomerValidator>().Validate(c),
         global::MyApp.Order o   => _services.GetRequiredService<global::MyApp.OrderValidator>().Validate(o),
@@ -177,7 +177,7 @@ Validators registered by `AddZValidationAutoValidation` use `TryAdd` — if the 
 | Two `[Validate]` models | Extension method contains `TryAddTransient` for both validators |
 | Non-`[Validate]` type | Not present in switch or extension method |
 
-### Integration tests (new `tests/ZValidation.Tests.AspNetCore/`)
+### Integration tests (new `tests/ZeroAlloc.Validation.Tests.AspNetCore/`)
 
 | Test | Assertion |
 |---|---|
@@ -197,4 +197,4 @@ Validators registered by `AddZValidationAutoValidation` use `TryAdd` — if the 
 | Default validator lifetime in extension method | `TryAddTransient` | Safe default; ZeroAlloc.Inject registrations win via `TryAdd` ordering |
 | HTTP status for validation failure | 422 Unprocessable Entity | RFC 9110 standard for semantic validation errors |
 | Dispatch mechanism | Generated `switch` expression | AOT-safe, no reflection |
-| `ZValidation.AspNetCore.Generator` target | `netstandard2.0` | Consistent with `ZValidation.Generator`; required for Roslyn analyzers |
+| `ZeroAlloc.Validation.AspNetCore.Generator` target | `netstandard2.0` | Consistent with `ZeroAlloc.Validation.Generator`; required for Roslyn analyzers |

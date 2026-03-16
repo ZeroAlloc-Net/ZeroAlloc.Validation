@@ -19,18 +19,18 @@ The generator currently emits `else if` chains for multiple rules on the same pr
 ## Task 1: Add ErrorCode and Severity to ValidationAttribute
 
 **Files:**
-- Modify: `src/ZValidation/Attributes/ValidationAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation/Attributes/ValidationAttribute.cs`
 
 **Step 1: Write the failing test**
 
-Add to `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`:
+Add to `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`:
 
 ```csharp
 [Fact]
 public void Generator_EmitsErrorCode_InFailureInitializer()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Item { [NotEmpty(ErrorCode = "NAME_REQUIRED")] public string Name { get; set; } = ""; }
@@ -44,21 +44,21 @@ public void Generator_EmitsErrorCode_InFailureInitializer()
 public void Generator_EmitsSeverity_Warning_InFailureInitializer()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Item { [NotEmpty(Severity = Severity.Warning)] public string Name { get; set; } = ""; }
         """;
 
     var generated = RunGeneratorGetSource(source);
-    Assert.Contains("global::ZValidation.Severity.Warning", generated, StringComparison.Ordinal);
+    Assert.Contains("global::ZeroAlloc.Validation.Severity.Warning", generated, StringComparison.Ordinal);
 }
 
 [Fact]
 public void Generator_OmitsErrorCode_WhenNull()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Item { [NotEmpty] public string Name { get; set; } = ""; }
@@ -72,7 +72,7 @@ public void Generator_OmitsErrorCode_WhenNull()
 public void Generator_OmitsSeverity_WhenError()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Item { [NotEmpty] public string Name { get; set; } = ""; }
@@ -86,17 +86,17 @@ public void Generator_OmitsSeverity_WhenError()
 **Step 2: Run tests to verify they fail**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "ErrorCode|Severity" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "ErrorCode|Severity" -v minimal
 ```
 
 Expected: 4 FAIL.
 
 **Step 3: Add ErrorCode and Severity to ValidationAttribute**
 
-Edit `src/ZValidation/Attributes/ValidationAttribute.cs`:
+Edit `src/ZeroAlloc.Validation/Attributes/ValidationAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = true)]
 public abstract class ValidationAttribute : Attribute
@@ -112,14 +112,14 @@ public abstract class ValidationAttribute : Attribute
 **Step 4: Run tests to verify they still fail** (generator not updated yet)
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "ErrorCode|Severity" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "ErrorCode|Severity" -v minimal
 ```
 
 Expected: still 4 FAIL (generator doesn't emit them yet).
 
 **Step 5: Add GetErrorCode and GetSeverityValue helpers to RuleEmitter**
 
-In `src/ZValidation.Generator/RuleEmitter.cs`, add alongside `GetMessage`/`GetWhen`/`GetUnless`:
+In `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`, add alongside `GetMessage`/`GetWhen`/`GetUnless`:
 
 ```csharp
 private static string? GetErrorCode(AttributeData attr)
@@ -141,9 +141,9 @@ private static int GetSeverityValue(AttributeData attr)
 
 private static string SeverityToLiteral(int severityValue) => severityValue switch
 {
-    1 => "global::ZValidation.Severity.Warning",
-    2 => "global::ZValidation.Severity.Info",
-    _ => "global::ZValidation.Severity.Error"
+    1 => "global::ZeroAlloc.Validation.Severity.Warning",
+    2 => "global::ZeroAlloc.Validation.Severity.Info",
+    _ => "global::ZeroAlloc.Validation.Severity.Error"
 };
 ```
 
@@ -158,7 +158,7 @@ private static string BuildFailureInitializer(string propName, string message, A
     var severityValue = GetSeverityValue(attr);
 
     var sb2 = new StringBuilder();
-    sb2.Append($"new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\"");
+    sb2.Append($"new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\"");
     if (errorCode is not null)
         sb2.Append($", ErrorCode = \"{EscapeString(errorCode)}\"");
     if (severityValue != 0)
@@ -173,7 +173,7 @@ private static string BuildFailureInitializer(string propName, string message, A
 In `EmitPropertyRulesWithAdd`, change:
 ```csharp
 // OLD:
-sb.AppendLine($"            failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }});");
+sb.AppendLine($"            failures.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }});");
 
 // NEW:
 sb.AppendLine($"            failures.Add({BuildFailureInitializer(propName, message, attr)});");
@@ -184,7 +184,7 @@ sb.AppendLine($"            failures.Add({BuildFailureInitializer(propName, mess
 In `EmitFlatPath`, change:
 ```csharp
 // OLD:
-sb.AppendLine($"            buffer[count++] = new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
+sb.AppendLine($"            buffer[count++] = new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = \"{EscapeString(message)}\" }};");
 
 // NEW:
 sb.AppendLine($"            buffer[count++] = {BuildFailureInitializer(propName, message, attr)};");
@@ -193,7 +193,7 @@ sb.AppendLine($"            buffer[count++] = {BuildFailureInitializer(propName,
 **Step 9: Run the 4 new tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "ErrorCode|Severity" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "ErrorCode|Severity" -v minimal
 ```
 
 Expected: 4 PASS.
@@ -201,19 +201,19 @@ Expected: 4 PASS.
 **Step 10: Run full test suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 
 Expected: all pass.
 
 **Step 11: Add integration tests**
 
-Create `tests/ZValidation.Tests/Integration/EnrichedMetadataModel.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Integration/EnrichedMetadataModel.cs`:
 
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public class EnrichedMetadataModel
@@ -229,15 +229,15 @@ public class EnrichedMetadataModel
 }
 ```
 
-Create `tests/ZValidation.Tests/Integration/EnrichedMetadataTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Integration/EnrichedMetadataTests.cs`:
 
 ```csharp
 using System;
 using System.Linq;
 using Xunit;
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 public class EnrichedMetadataTests
 {
@@ -281,7 +281,7 @@ public class EnrichedMetadataTests
 **Step 12: Run integration tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "EnrichedMetadata" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "EnrichedMetadata" -v minimal
 ```
 
 Expected: 4 PASS.
@@ -289,11 +289,11 @@ Expected: 4 PASS.
 **Step 13: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/ValidationAttribute.cs \
-        src/ZValidation.Generator/RuleEmitter.cs \
-        tests/ZValidation.Tests/Integration/EnrichedMetadataModel.cs \
-        tests/ZValidation.Tests/Integration/EnrichedMetadataTests.cs \
-        tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation/Attributes/ValidationAttribute.cs \
+        src/ZeroAlloc.Validation.Generator/RuleEmitter.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/EnrichedMetadataModel.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/EnrichedMetadataTests.cs \
+        tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add ErrorCode and Severity named params to validation attributes"
 ```
 
@@ -304,11 +304,11 @@ git commit -m "feat: add ErrorCode and Severity named params to validation attri
 **Context:** The generator currently emits `else if` for multiple rules on the same property, which is implicitly stop-at-first-failure. This task changes the default to "continue" mode (all rules run independently) and introduces `[StopOnFirstFailure]` to explicitly opt back into stop mode.
 
 **Files:**
-- Create: `src/ZValidation/Attributes/StopOnFirstFailureAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
-- Create: `tests/ZValidation.Tests/Integration/CascadeModel.cs`
-- Create: `tests/ZValidation.Tests/Integration/CascadeTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/StopOnFirstFailureAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/CascadeModel.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/CascadeTests.cs`
 
 **Step 1: Update the existing test that asserts else-if (it will need to flip)**
 
@@ -319,7 +319,7 @@ In `GeneratorRuleEmissionTests.cs`, find the test `Generator_EmitsStopAtFirstFai
 public void Generator_DefaultContinueMode_EmitsSeparateIf_NotElseIf()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Person
@@ -345,7 +345,7 @@ Add to `GeneratorRuleEmissionTests.cs`:
 public void Generator_StopOnFirstFailure_EmitsElseIf()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Person
@@ -365,7 +365,7 @@ public void Generator_StopOnFirstFailure_EmitsElseIf()
 public void Generator_StopOnFirstFailure_OnlyAffectsTaggedProperty()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Person
@@ -392,17 +392,17 @@ public void Generator_StopOnFirstFailure_OnlyAffectsTaggedProperty()
 **Step 3: Run tests to verify they fail**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "StopOnFirstFailure|DefaultContinue" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "StopOnFirstFailure|DefaultContinue" -v minimal
 ```
 
 Expected: 3 FAIL (attribute doesn't exist yet; existing else-if test also now expects different behavior).
 
 **Step 4: Create StopOnFirstFailureAttribute**
 
-Create `src/ZValidation/Attributes/StopOnFirstFailureAttribute.cs`:
+Create `src/ZeroAlloc.Validation/Attributes/StopOnFirstFailureAttribute.cs`:
 
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = false)]
 public sealed class StopOnFirstFailureAttribute : Attribute { }
@@ -413,7 +413,7 @@ public sealed class StopOnFirstFailureAttribute : Attribute { }
 Add constant and helper at the top of `RuleEmitter.cs`:
 
 ```csharp
-private const string StopOnFirstFailureFqn = "ZValidation.StopOnFirstFailureAttribute";
+private const string StopOnFirstFailureFqn = "ZeroAlloc.Validation.StopOnFirstFailureAttribute";
 
 private static bool HasStopOnFirstFailure(IPropertySymbol prop) =>
     prop.GetAttributes().Any(a =>
@@ -471,7 +471,7 @@ private static void EmitFlatPath(
     int totalDirectRules,
     string modelParamName)
 {
-    sb.AppendLine($"        var buffer = new global::ZValidation.ValidationFailure[{totalDirectRules}];");
+    sb.AppendLine($"        var buffer = new global::ZeroAlloc.Validation.ValidationFailure[{totalDirectRules}];");
     sb.AppendLine("        int count = 0;");
     sb.AppendLine();
 
@@ -501,17 +501,17 @@ private static void EmitFlatPath(
         sb.AppendLine();
     }
 
-    sb.AppendLine("        if (count == buffer.Length) return new global::ZValidation.ValidationResult(buffer);");
-    sb.AppendLine("        var result = new global::ZValidation.ValidationFailure[count];");
+    sb.AppendLine("        if (count == buffer.Length) return new global::ZeroAlloc.Validation.ValidationResult(buffer);");
+    sb.AppendLine("        var result = new global::ZeroAlloc.Validation.ValidationFailure[count];");
     sb.AppendLine("        global::System.Array.Copy(buffer, result, count);");
-    sb.AppendLine("        return new global::ZValidation.ValidationResult(result);");
+    sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult(result);");
 }
 ```
 
 **Step 8: Run generator tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "StopOnFirstFailure|DefaultContinue" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "StopOnFirstFailure|DefaultContinue" -v minimal
 ```
 
 Expected: 3 PASS.
@@ -519,19 +519,19 @@ Expected: 3 PASS.
 **Step 9: Run full test suite — fix any regressions**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 
 The test `Generator_EmitsStackalloc_SizedToRuleCount` asserts `ValidationFailure[3]` — this should still pass since `totalDirectRules` counts all rules regardless of stop mode. Review and fix any other failures.
 
 **Step 10: Add integration tests**
 
-Create `tests/ZValidation.Tests/Integration/CascadeModel.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Integration/CascadeModel.cs`:
 
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public class CascadeModel
@@ -551,16 +551,16 @@ public class CascadeModel
 }
 ```
 
-Create `tests/ZValidation.Tests/Integration/CascadeTests.cs`:
+Create `tests/ZeroAlloc.Validation.Tests/Integration/CascadeTests.cs`:
 
 ```csharp
 using System;
 using System.Linq;
 using Xunit;
-using ZValidation;
-using ZValidation.Testing;
+using ZeroAlloc.Validation;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 public class CascadeTests
 {
@@ -609,7 +609,7 @@ public class CascadeTests
 **Step 11: Run integration tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Cascade" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Cascade" -v minimal
 ```
 
 Expected: all PASS (or investigate and fix).
@@ -625,11 +625,11 @@ Expected: all pass.
 **Step 13: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/StopOnFirstFailureAttribute.cs \
-        src/ZValidation.Generator/RuleEmitter.cs \
-        tests/ZValidation.Tests/Integration/CascadeModel.cs \
-        tests/ZValidation.Tests/Integration/CascadeTests.cs \
-        tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation/Attributes/StopOnFirstFailureAttribute.cs \
+        src/ZeroAlloc.Validation.Generator/RuleEmitter.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/CascadeModel.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/CascadeTests.cs \
+        tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add [StopOnFirstFailure] attribute; default to continue mode for property rules"
 ```
 

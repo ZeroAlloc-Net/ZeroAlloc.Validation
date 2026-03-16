@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add the 11 missing built-in validation attributes (`Null`, `Empty`, `Equal`, `NotEqual`, `GreaterThanOrEqualTo`, `LessThanOrEqualTo`, `ExclusiveBetween`, `Length`, `IsInEnum`, `IsEnumName`, `PrecisionScale`) to complete the ZValidation attribute set.
+**Goal:** Add the 11 missing built-in validation attributes (`Null`, `Empty`, `Equal`, `NotEqual`, `GreaterThanOrEqualTo`, `LessThanOrEqualTo`, `ExclusiveBetween`, `Length`, `IsInEnum`, `IsEnumName`, `PrecisionScale`) to complete the ZeroAlloc.Validation attribute set.
 
-**Architecture:** Each new validator is a C# attribute class in `src/ZValidation/Attributes/` (inheriting `ValidationAttribute`) plus a FQN constant, `IsRuleAttribute` entry, `BuildCondition` case, and `GetDefaultMessage` case in `src/ZValidation.Generator/RuleEmitter.cs`. `IsInEnum` requires extending `BuildCondition` to accept the property's full type name. `PrecisionScale` requires a new `DecimalValidator` internal helper. Everything else follows the existing pattern exactly.
+**Architecture:** Each new validator is a C# attribute class in `src/ZeroAlloc.Validation/Attributes/` (inheriting `ValidationAttribute`) plus a FQN constant, `IsRuleAttribute` entry, `BuildCondition` case, and `GetDefaultMessage` case in `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`. `IsInEnum` requires extending `BuildCondition` to accept the property's full type name. `PrecisionScale` requires a new `DecimalValidator` internal helper. Everything else follows the existing pattern exactly.
 
 **Tech Stack:** C# 13, Roslyn `IIncrementalGenerator`, `IPropertySymbol`, `SpecialType`, `SymbolDisplayFormat.FullyQualifiedFormat`, xUnit 2.9.3.
 
@@ -15,23 +15,23 @@
 Design doc: `docs/plans/2026-03-15-missing-validators-design.md`
 
 Key existing files — read these before starting:
-- `src/ZValidation/Attributes/GreaterThanAttribute.cs` — attribute pattern (primary constructor)
-- `src/ZValidation/Attributes/InclusiveBetweenAttribute.cs` — two-arg attribute pattern
-- `src/ZValidation/Attributes/ValidationAttribute.cs` — base class
-- `src/ZValidation/Internal/EmailValidator.cs` — internal helper pattern
-- `src/ZValidation.Generator/RuleEmitter.cs` — all generator logic lives here
-- `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs` — generator test pattern
-- `tests/ZValidation.Tests/Integration/EndToEndTests.cs` — integration test pattern
+- `src/ZeroAlloc.Validation/Attributes/GreaterThanAttribute.cs` — attribute pattern (primary constructor)
+- `src/ZeroAlloc.Validation/Attributes/InclusiveBetweenAttribute.cs` — two-arg attribute pattern
+- `src/ZeroAlloc.Validation/Attributes/ValidationAttribute.cs` — base class
+- `src/ZeroAlloc.Validation/Internal/EmailValidator.cs` — internal helper pattern
+- `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs` — all generator logic lives here
+- `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs` — generator test pattern
+- `tests/ZeroAlloc.Validation.Tests/Integration/EndToEndTests.cs` — integration test pattern
 
 ---
 
 ### Task 1: `[Null]` and `[Empty]`
 
 **Files:**
-- Create: `src/ZValidation/Attributes/NullAttribute.cs`
-- Create: `src/ZValidation/Attributes/EmptyAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/NullAttribute.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/EmptyAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write two failing generator tests**
 
@@ -42,7 +42,7 @@ Add to `GeneratorRuleEmissionTests.cs`:
 public void Generator_EmitsNull_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [Null] public string? Name { get; set; } }
@@ -56,7 +56,7 @@ public void Generator_EmitsNull_Check()
 public void Generator_EmitsEmpty_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [Empty] public string? Name { get; set; } }
@@ -70,23 +70,23 @@ public void Generator_EmitsEmpty_Check()
 **Step 2: Run to verify they fail**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsNull_Check|Generator_EmitsEmpty_Check"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsNull_Check|Generator_EmitsEmpty_Check"
 ```
 
 Expected: FAIL — `NullAttribute` and `EmptyAttribute` don't exist yet.
 
 **Step 3: Create the attribute classes**
 
-`src/ZValidation/Attributes/NullAttribute.cs`:
+`src/ZeroAlloc.Validation/Attributes/NullAttribute.cs`:
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class NullAttribute : ValidationAttribute { }
 ```
 
-`src/ZValidation/Attributes/EmptyAttribute.cs`:
+`src/ZeroAlloc.Validation/Attributes/EmptyAttribute.cs`:
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class EmptyAttribute : ValidationAttribute { }
 ```
@@ -95,8 +95,8 @@ public sealed class EmptyAttribute : ValidationAttribute { }
 
 Add two FQN constants after the existing ones (after `MatchesFqn`):
 ```csharp
-private const string NullFqn  = "ZValidation.NullAttribute";
-private const string EmptyFqn = "ZValidation.EmptyAttribute";
+private const string NullFqn  = "ZeroAlloc.Validation.NullAttribute";
+private const string EmptyFqn = "ZeroAlloc.Validation.EmptyAttribute";
 ```
 
 Update `IsRuleAttribute` — extend the `or` chain:
@@ -122,7 +122,7 @@ EmptyFqn => $"{propName} must be empty.",
 **Step 5: Run to verify tests pass**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsNull_Check|Generator_EmitsEmpty_Check"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsNull_Check|Generator_EmitsEmpty_Check"
 ```
 
 Expected: PASS.
@@ -130,7 +130,7 @@ Expected: PASS.
 **Step 6: Run full suite to confirm no regressions**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
 Expected: All tests pass.
@@ -138,7 +138,7 @@ Expected: All tests pass.
 **Step 7: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/NullAttribute.cs src/ZValidation/Attributes/EmptyAttribute.cs src/ZValidation.Generator/RuleEmitter.cs tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation/Attributes/NullAttribute.cs src/ZeroAlloc.Validation/Attributes/EmptyAttribute.cs src/ZeroAlloc.Validation.Generator/RuleEmitter.cs tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add [Null] and [Empty] validation attributes"
 ```
 
@@ -147,10 +147,10 @@ git commit -m "feat: add [Null] and [Empty] validation attributes"
 ### Task 2: `[Equal]` and `[NotEqual]`
 
 **Files:**
-- Create: `src/ZValidation/Attributes/EqualAttribute.cs`
-- Create: `src/ZValidation/Attributes/NotEqualAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/EqualAttribute.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/NotEqualAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write failing generator tests**
 
@@ -161,7 +161,7 @@ Add to `GeneratorRuleEmissionTests.cs`:
 public void Generator_EmitsEqual_Numeric_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [Equal(42.0)] public int Value { get; set; } }
@@ -174,7 +174,7 @@ public void Generator_EmitsEqual_Numeric_Check()
 public void Generator_EmitsEqual_String_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [Equal("active")] public string Status { get; set; } = ""; }
@@ -187,7 +187,7 @@ public void Generator_EmitsEqual_String_Check()
 public void Generator_EmitsNotEqual_Numeric_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [NotEqual(0.0)] public double Score { get; set; } }
@@ -200,7 +200,7 @@ public void Generator_EmitsNotEqual_Numeric_Check()
 **Step 2: Run to verify they fail**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsEqual|Generator_EmitsNotEqual"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsEqual|Generator_EmitsNotEqual"
 ```
 
 Expected: FAIL.
@@ -209,9 +209,9 @@ Expected: FAIL.
 
 `Equal` needs two constructor overloads — cannot use primary constructor syntax:
 
-`src/ZValidation/Attributes/EqualAttribute.cs`:
+`src/ZeroAlloc.Validation/Attributes/EqualAttribute.cs`:
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class EqualAttribute : ValidationAttribute
 {
@@ -222,9 +222,9 @@ public sealed class EqualAttribute : ValidationAttribute
 }
 ```
 
-`src/ZValidation/Attributes/NotEqualAttribute.cs`:
+`src/ZeroAlloc.Validation/Attributes/NotEqualAttribute.cs`:
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class NotEqualAttribute : ValidationAttribute
 {
@@ -239,8 +239,8 @@ public sealed class NotEqualAttribute : ValidationAttribute
 
 Add FQN constants:
 ```csharp
-private const string EqualFqn    = "ZValidation.EqualAttribute";
-private const string NotEqualFqn = "ZValidation.NotEqualAttribute";
+private const string EqualFqn    = "ZeroAlloc.Validation.EqualAttribute";
+private const string NotEqualFqn = "ZeroAlloc.Validation.NotEqualAttribute";
 ```
 
 Update `IsRuleAttribute` — extend the `or` chain to include `EqualFqn or NotEqualFqn`.
@@ -277,7 +277,7 @@ NotEqualFqn => IsStringArg(attr, 0)
 **Step 5: Run to verify tests pass**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsEqual|Generator_EmitsNotEqual"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsEqual|Generator_EmitsNotEqual"
 ```
 
 Expected: PASS.
@@ -285,7 +285,7 @@ Expected: PASS.
 **Step 6: Run full suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
 Expected: All pass.
@@ -293,7 +293,7 @@ Expected: All pass.
 **Step 7: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/EqualAttribute.cs src/ZValidation/Attributes/NotEqualAttribute.cs src/ZValidation.Generator/RuleEmitter.cs tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation/Attributes/EqualAttribute.cs src/ZeroAlloc.Validation/Attributes/NotEqualAttribute.cs src/ZeroAlloc.Validation.Generator/RuleEmitter.cs tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add [Equal] and [NotEqual] validation attributes"
 ```
 
@@ -302,10 +302,10 @@ git commit -m "feat: add [Equal] and [NotEqual] validation attributes"
 ### Task 3: `[GreaterThanOrEqualTo]` and `[LessThanOrEqualTo]`
 
 **Files:**
-- Create: `src/ZValidation/Attributes/GreaterThanOrEqualToAttribute.cs`
-- Create: `src/ZValidation/Attributes/LessThanOrEqualToAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/GreaterThanOrEqualToAttribute.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/LessThanOrEqualToAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write failing generator tests**
 
@@ -314,7 +314,7 @@ git commit -m "feat: add [Equal] and [NotEqual] validation attributes"
 public void Generator_EmitsGreaterThanOrEqualTo_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [GreaterThanOrEqualTo(0)] public int Age { get; set; } }
@@ -327,7 +327,7 @@ public void Generator_EmitsGreaterThanOrEqualTo_Check()
 public void Generator_EmitsLessThanOrEqualTo_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [LessThanOrEqualTo(100)] public int Score { get; set; } }
@@ -340,16 +340,16 @@ public void Generator_EmitsLessThanOrEqualTo_Check()
 **Step 2: Run to verify they fail**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsGreaterThanOrEqualTo|Generator_EmitsLessThanOrEqualTo"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsGreaterThanOrEqualTo|Generator_EmitsLessThanOrEqualTo"
 ```
 
 Expected: FAIL.
 
 **Step 3: Create the attribute classes**
 
-`src/ZValidation/Attributes/GreaterThanOrEqualToAttribute.cs`:
+`src/ZeroAlloc.Validation/Attributes/GreaterThanOrEqualToAttribute.cs`:
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class GreaterThanOrEqualToAttribute(double value) : ValidationAttribute
 {
@@ -357,9 +357,9 @@ public sealed class GreaterThanOrEqualToAttribute(double value) : ValidationAttr
 }
 ```
 
-`src/ZValidation/Attributes/LessThanOrEqualToAttribute.cs`:
+`src/ZeroAlloc.Validation/Attributes/LessThanOrEqualToAttribute.cs`:
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class LessThanOrEqualToAttribute(double value) : ValidationAttribute
 {
@@ -371,8 +371,8 @@ public sealed class LessThanOrEqualToAttribute(double value) : ValidationAttribu
 
 Add FQN constants:
 ```csharp
-private const string GreaterThanOrEqualToFqn = "ZValidation.GreaterThanOrEqualToAttribute";
-private const string LessThanOrEqualToFqn    = "ZValidation.LessThanOrEqualToAttribute";
+private const string GreaterThanOrEqualToFqn = "ZeroAlloc.Validation.GreaterThanOrEqualToAttribute";
+private const string LessThanOrEqualToFqn    = "ZeroAlloc.Validation.LessThanOrEqualToAttribute";
 ```
 
 Update `IsRuleAttribute` — extend the `or` chain.
@@ -392,7 +392,7 @@ LessThanOrEqualToFqn    => $"{propName} must be less than or equal to {GetArg(at
 **Step 5: Run to verify tests pass**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsGreaterThanOrEqualTo|Generator_EmitsLessThanOrEqualTo"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsGreaterThanOrEqualTo|Generator_EmitsLessThanOrEqualTo"
 ```
 
 Expected: PASS.
@@ -400,7 +400,7 @@ Expected: PASS.
 **Step 6: Run full suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
 Expected: All pass.
@@ -408,7 +408,7 @@ Expected: All pass.
 **Step 7: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/GreaterThanOrEqualToAttribute.cs src/ZValidation/Attributes/LessThanOrEqualToAttribute.cs src/ZValidation.Generator/RuleEmitter.cs tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation/Attributes/GreaterThanOrEqualToAttribute.cs src/ZeroAlloc.Validation/Attributes/LessThanOrEqualToAttribute.cs src/ZeroAlloc.Validation.Generator/RuleEmitter.cs tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add [GreaterThanOrEqualTo] and [LessThanOrEqualTo] validation attributes"
 ```
 
@@ -417,9 +417,9 @@ git commit -m "feat: add [GreaterThanOrEqualTo] and [LessThanOrEqualTo] validati
 ### Task 4: `[ExclusiveBetween]`
 
 **Files:**
-- Create: `src/ZValidation/Attributes/ExclusiveBetweenAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/ExclusiveBetweenAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write failing generator test**
 
@@ -428,7 +428,7 @@ git commit -m "feat: add [GreaterThanOrEqualTo] and [LessThanOrEqualTo] validati
 public void Generator_EmitsExclusiveBetween_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [ExclusiveBetween(0, 100)] public int Value { get; set; } }
@@ -442,16 +442,16 @@ public void Generator_EmitsExclusiveBetween_Check()
 **Step 2: Run to verify it fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsExclusiveBetween"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsExclusiveBetween"
 ```
 
 Expected: FAIL.
 
 **Step 3: Create the attribute class**
 
-`src/ZValidation/Attributes/ExclusiveBetweenAttribute.cs`:
+`src/ZeroAlloc.Validation/Attributes/ExclusiveBetweenAttribute.cs`:
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class ExclusiveBetweenAttribute(double min, double max) : ValidationAttribute
 {
@@ -464,7 +464,7 @@ public sealed class ExclusiveBetweenAttribute(double min, double max) : Validati
 
 Add FQN constant:
 ```csharp
-private const string ExclusiveBetweenFqn = "ZValidation.ExclusiveBetweenAttribute";
+private const string ExclusiveBetweenFqn = "ZeroAlloc.Validation.ExclusiveBetweenAttribute";
 ```
 
 Update `IsRuleAttribute`.
@@ -482,7 +482,7 @@ ExclusiveBetweenFqn => $"{propName} must be exclusively between {GetArg(attr, 0)
 **Step 5: Run to verify test passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsExclusiveBetween"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsExclusiveBetween"
 ```
 
 Expected: PASS.
@@ -490,13 +490,13 @@ Expected: PASS.
 **Step 6: Run full suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
 **Step 7: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/ExclusiveBetweenAttribute.cs src/ZValidation.Generator/RuleEmitter.cs tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation/Attributes/ExclusiveBetweenAttribute.cs src/ZeroAlloc.Validation.Generator/RuleEmitter.cs tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add [ExclusiveBetween] validation attribute"
 ```
 
@@ -505,9 +505,9 @@ git commit -m "feat: add [ExclusiveBetween] validation attribute"
 ### Task 5: `[Length]`
 
 **Files:**
-- Create: `src/ZValidation/Attributes/LengthAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/LengthAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write failing generator test**
 
@@ -516,7 +516,7 @@ git commit -m "feat: add [ExclusiveBetween] validation attribute"
 public void Generator_EmitsLength_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [Length(2, 50)] public string Name { get; set; } = ""; }
@@ -530,16 +530,16 @@ public void Generator_EmitsLength_Check()
 **Step 2: Run to verify it fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsLength_Check"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsLength_Check"
 ```
 
 Expected: FAIL.
 
 **Step 3: Create the attribute class**
 
-`src/ZValidation/Attributes/LengthAttribute.cs`:
+`src/ZeroAlloc.Validation/Attributes/LengthAttribute.cs`:
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class LengthAttribute(int min, int max) : ValidationAttribute
 {
@@ -552,7 +552,7 @@ public sealed class LengthAttribute(int min, int max) : ValidationAttribute
 
 Add FQN constant:
 ```csharp
-private const string LengthFqn = "ZValidation.LengthAttribute";
+private const string LengthFqn = "ZeroAlloc.Validation.LengthAttribute";
 ```
 
 Update `IsRuleAttribute`.
@@ -570,7 +570,7 @@ LengthFqn => $"{propName} must be between {GetArg(attr, 0)} and {GetArg(attr, 1)
 **Step 5: Run to verify test passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsLength_Check"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsLength_Check"
 ```
 
 Expected: PASS.
@@ -578,13 +578,13 @@ Expected: PASS.
 **Step 6: Run full suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
 **Step 7: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/LengthAttribute.cs src/ZValidation.Generator/RuleEmitter.cs tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation/Attributes/LengthAttribute.cs src/ZeroAlloc.Validation.Generator/RuleEmitter.cs tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add [Length] validation attribute"
 ```
 
@@ -595,9 +595,9 @@ git commit -m "feat: add [Length] validation attribute"
 This task also introduces the `propTypeFullName` parameter to `BuildCondition` and the `GetNullableUnwrappedFullTypeName` helper — both needed only for `IsInEnum`.
 
 **Files:**
-- Create: `src/ZValidation/Attributes/IsInEnumAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/IsInEnumAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write failing generator test**
 
@@ -606,7 +606,7 @@ This task also introduces the `propTypeFullName` parameter to `BuildCondition` a
 public void Generator_EmitsIsInEnum_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         public enum Color { Red, Green, Blue }
         [Validate]
@@ -621,16 +621,16 @@ public void Generator_EmitsIsInEnum_Check()
 **Step 2: Run to verify it fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsIsInEnum_Check"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsIsInEnum_Check"
 ```
 
 Expected: FAIL.
 
 **Step 3: Create the attribute class**
 
-`src/ZValidation/Attributes/IsInEnumAttribute.cs`:
+`src/ZeroAlloc.Validation/Attributes/IsInEnumAttribute.cs`:
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class IsInEnumAttribute : ValidationAttribute { }
 ```
@@ -639,7 +639,7 @@ public sealed class IsInEnumAttribute : ValidationAttribute { }
 
 Add FQN constant:
 ```csharp
-private const string IsInEnumFqn = "ZValidation.IsInEnumAttribute";
+private const string IsInEnumFqn = "ZeroAlloc.Validation.IsInEnumAttribute";
 ```
 
 Update `IsRuleAttribute`.
@@ -689,7 +689,7 @@ var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName);
 **Step 5: Run to verify test passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsIsInEnum_Check"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsIsInEnum_Check"
 ```
 
 Expected: PASS.
@@ -697,7 +697,7 @@ Expected: PASS.
 **Step 6: Run full suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
 Expected: All pass.
@@ -705,7 +705,7 @@ Expected: All pass.
 **Step 7: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/IsInEnumAttribute.cs src/ZValidation.Generator/RuleEmitter.cs tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation/Attributes/IsInEnumAttribute.cs src/ZeroAlloc.Validation.Generator/RuleEmitter.cs tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add [IsInEnum] validation attribute with prop-type forwarding in BuildCondition"
 ```
 
@@ -714,9 +714,9 @@ git commit -m "feat: add [IsInEnum] validation attribute with prop-type forwardi
 ### Task 7: `[IsEnumName]`
 
 **Files:**
-- Create: `src/ZValidation/Attributes/IsEnumNameAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/IsEnumNameAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write failing generator test**
 
@@ -725,7 +725,7 @@ git commit -m "feat: add [IsInEnum] validation attribute with prop-type forwardi
 public void Generator_EmitsIsEnumName_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         public enum Color { Red, Green, Blue }
         [Validate]
@@ -740,16 +740,16 @@ public void Generator_EmitsIsEnumName_Check()
 **Step 2: Run to verify it fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsIsEnumName_Check"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsIsEnumName_Check"
 ```
 
 Expected: FAIL.
 
 **Step 3: Create the attribute class**
 
-`src/ZValidation/Attributes/IsEnumNameAttribute.cs`:
+`src/ZeroAlloc.Validation/Attributes/IsEnumNameAttribute.cs`:
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class IsEnumNameAttribute(Type enumType) : ValidationAttribute
 {
@@ -761,7 +761,7 @@ public sealed class IsEnumNameAttribute(Type enumType) : ValidationAttribute
 
 Add FQN constant:
 ```csharp
-private const string IsEnumNameFqn = "ZValidation.IsEnumNameAttribute";
+private const string IsEnumNameFqn = "ZeroAlloc.Validation.IsEnumNameAttribute";
 ```
 
 Update `IsRuleAttribute`.
@@ -789,7 +789,7 @@ IsEnumNameFqn => $"{propName} is not a valid enum name.",
 **Step 5: Run to verify test passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsIsEnumName_Check"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsIsEnumName_Check"
 ```
 
 Expected: PASS.
@@ -797,13 +797,13 @@ Expected: PASS.
 **Step 6: Run full suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
 **Step 7: Commit**
 
 ```bash
-git add src/ZValidation/Attributes/IsEnumNameAttribute.cs src/ZValidation.Generator/RuleEmitter.cs tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation/Attributes/IsEnumNameAttribute.cs src/ZeroAlloc.Validation.Generator/RuleEmitter.cs tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add [IsEnumName] validation attribute"
 ```
 
@@ -812,10 +812,10 @@ git commit -m "feat: add [IsEnumName] validation attribute"
 ### Task 8: `[PrecisionScale]` + `DecimalValidator`
 
 **Files:**
-- Create: `src/ZValidation/Internal/DecimalValidator.cs`
-- Create: `src/ZValidation/Attributes/PrecisionScaleAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Create: `src/ZeroAlloc.Validation/Internal/DecimalValidator.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/PrecisionScaleAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Step 1: Write failing generator test**
 
@@ -824,7 +824,7 @@ git commit -m "feat: add [IsEnumName] validation attribute"
 public void Generator_EmitsPrecisionScale_Check()
 {
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [PrecisionScale(5, 2)] public decimal Amount { get; set; } }
@@ -839,16 +839,16 @@ public void Generator_EmitsPrecisionScale_Check()
 **Step 2: Run to verify it fails**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsPrecisionScale_Check"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsPrecisionScale_Check"
 ```
 
 Expected: FAIL.
 
 **Step 3: Create the `DecimalValidator` helper**
 
-`src/ZValidation/Internal/DecimalValidator.cs`:
+`src/ZeroAlloc.Validation/Internal/DecimalValidator.cs`:
 ```csharp
-namespace ZValidationInternal;
+namespace ZeroAlloc.Validation.Internal;
 
 internal static class DecimalValidator
 {
@@ -869,9 +869,9 @@ internal static class DecimalValidator
 
 **Step 4: Create the attribute class**
 
-`src/ZValidation/Attributes/PrecisionScaleAttribute.cs`:
+`src/ZeroAlloc.Validation/Attributes/PrecisionScaleAttribute.cs`:
 ```csharp
-namespace ZValidation;
+namespace ZeroAlloc.Validation;
 
 public sealed class PrecisionScaleAttribute(int precision, int scale) : ValidationAttribute
 {
@@ -884,14 +884,14 @@ public sealed class PrecisionScaleAttribute(int precision, int scale) : Validati
 
 Add FQN constant:
 ```csharp
-private const string PrecisionScaleFqn = "ZValidation.PrecisionScaleAttribute";
+private const string PrecisionScaleFqn = "ZeroAlloc.Validation.PrecisionScaleAttribute";
 ```
 
 Update `IsRuleAttribute`.
 
 Add case to `BuildCondition`:
 ```csharp
-PrecisionScaleFqn => $"global::ZValidationInternal.DecimalValidator.ExceedsPrecisionScale({access}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})",
+PrecisionScaleFqn => $"global::ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale({access}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})",
 ```
 
 Add case to `GetDefaultMessage`:
@@ -902,7 +902,7 @@ PrecisionScaleFqn => $"{propName} must not exceed {GetArg(attr, 0)} digits total
 **Step 6: Run to verify test passes**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "Generator_EmitsPrecisionScale_Check"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "Generator_EmitsPrecisionScale_Check"
 ```
 
 Expected: PASS.
@@ -910,13 +910,13 @@ Expected: PASS.
 **Step 7: Run full suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
 **Step 8: Commit**
 
 ```bash
-git add src/ZValidation/Internal/DecimalValidator.cs src/ZValidation/Attributes/PrecisionScaleAttribute.cs src/ZValidation.Generator/RuleEmitter.cs tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add src/ZeroAlloc.Validation/Internal/DecimalValidator.cs src/ZeroAlloc.Validation/Attributes/PrecisionScaleAttribute.cs src/ZeroAlloc.Validation.Generator/RuleEmitter.cs tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "feat: add [PrecisionScale] validation attribute and DecimalValidator helper"
 ```
 
@@ -925,7 +925,7 @@ git commit -m "feat: add [PrecisionScale] validation attribute and DecimalValida
 ### Task 9: End-to-end integration tests
 
 **Files:**
-- Modify: `tests/ZValidation.Tests/Integration/EndToEndTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Integration/EndToEndTests.cs`
 
 Append the following model classes and test classes at the end of the file.
 
@@ -1196,7 +1196,7 @@ public class PrecisionScaleTests
 **Step 2: Build to confirm all validators and test classes compile**
 
 ```bash
-dotnet build tests/ZValidation.Tests/ZValidation.Tests.csproj
+dotnet build tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj
 ```
 
 Expected: 0 errors.
@@ -1204,7 +1204,7 @@ Expected: 0 errors.
 **Step 3: Run all integration tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "NullEmptyTests|EqualityTests|RangeTests|ExclusiveBetweenTests|LengthTests|IsInEnumTests|IsEnumNameTests|PrecisionScaleTests"
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "NullEmptyTests|EqualityTests|RangeTests|ExclusiveBetweenTests|LengthTests|IsInEnumTests|IsEnumNameTests|PrecisionScaleTests"
 ```
 
 Expected: All pass.
@@ -1212,7 +1212,7 @@ Expected: All pass.
 **Step 4: Run full suite**
 
 ```bash
-dotnet test ZValidation.slnx
+dotnet test ZeroAlloc.Validation.slnx
 ```
 
 Expected: All tests pass across net8.0, net9.0, net10.0.
@@ -1220,7 +1220,7 @@ Expected: All tests pass across net8.0, net9.0, net10.0.
 **Step 5: Commit**
 
 ```bash
-git add tests/ZValidation.Tests/Integration/EndToEndTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Integration/EndToEndTests.cs
 git commit -m "test: add end-to-end integration tests for all new validators"
 ```
 
@@ -1231,7 +1231,7 @@ git commit -m "test: add end-to-end integration tests for all new validators"
 **Step 1: Full build**
 
 ```bash
-dotnet build ZValidation.slnx
+dotnet build ZeroAlloc.Validation.slnx
 ```
 
 Expected: 0 errors, 0 warnings.
@@ -1239,7 +1239,7 @@ Expected: 0 errors, 0 warnings.
 **Step 2: Full test run**
 
 ```bash
-dotnet test ZValidation.slnx
+dotnet test ZeroAlloc.Validation.slnx
 ```
 
 Expected: All tests pass.

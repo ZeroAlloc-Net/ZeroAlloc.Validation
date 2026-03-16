@@ -7,7 +7,7 @@
 
 ## Overview
 
-Add the 11 missing built-in validation attributes to complete the attribute set. All follow the existing pattern: a C# attribute class in `src/ZValidation/Attributes/`, a FQN constant + `BuildCondition` + `GetDefaultMessage` case in `RuleEmitter.cs`, and no runtime overhead beyond the already-established helpers.
+Add the 11 missing built-in validation attributes to complete the attribute set. All follow the existing pattern: a C# attribute class in `src/ZeroAlloc.Validation/Attributes/`, a FQN constant + `BuildCondition` + `GetDefaultMessage` case in `RuleEmitter.cs`, and no runtime overhead beyond the already-established helpers.
 
 ---
 
@@ -38,17 +38,17 @@ All attributes inherit `ValidationAttribute` and support the `Message` named par
 ### New FQN constants
 
 ```csharp
-private const string NullFqn                 = "ZValidation.NullAttribute";
-private const string EmptyFqn                = "ZValidation.EmptyAttribute";
-private const string EqualFqn                = "ZValidation.EqualAttribute";
-private const string NotEqualFqn             = "ZValidation.NotEqualAttribute";
-private const string GreaterThanOrEqualToFqn = "ZValidation.GreaterThanOrEqualToAttribute";
-private const string LessThanOrEqualToFqn    = "ZValidation.LessThanOrEqualToAttribute";
-private const string ExclusiveBetweenFqn     = "ZValidation.ExclusiveBetweenAttribute";
-private const string LengthFqn               = "ZValidation.LengthAttribute";
-private const string IsInEnumFqn             = "ZValidation.IsInEnumAttribute";
-private const string IsEnumNameFqn           = "ZValidation.IsEnumNameAttribute";
-private const string PrecisionScaleFqn       = "ZValidation.PrecisionScaleAttribute";
+private const string NullFqn                 = "ZeroAlloc.Validation.NullAttribute";
+private const string EmptyFqn                = "ZeroAlloc.Validation.EmptyAttribute";
+private const string EqualFqn                = "ZeroAlloc.Validation.EqualAttribute";
+private const string NotEqualFqn             = "ZeroAlloc.Validation.NotEqualAttribute";
+private const string GreaterThanOrEqualToFqn = "ZeroAlloc.Validation.GreaterThanOrEqualToAttribute";
+private const string LessThanOrEqualToFqn    = "ZeroAlloc.Validation.LessThanOrEqualToAttribute";
+private const string ExclusiveBetweenFqn     = "ZeroAlloc.Validation.ExclusiveBetweenAttribute";
+private const string LengthFqn               = "ZeroAlloc.Validation.LengthAttribute";
+private const string IsInEnumFqn             = "ZeroAlloc.Validation.IsInEnumAttribute";
+private const string IsEnumNameFqn           = "ZeroAlloc.Validation.IsEnumNameAttribute";
+private const string PrecisionScaleFqn       = "ZeroAlloc.Validation.PrecisionScaleAttribute";
 ```
 
 ### Emitted conditions
@@ -67,7 +67,7 @@ private const string PrecisionScaleFqn       = "ZValidation.PrecisionScaleAttrib
 | `LengthFqn` | `{access}.Length < {min} \|\| {access}.Length > {max}` |
 | `IsInEnumFqn` | `!System.Enum.IsDefined(typeof({FullPropType}), {access})` |
 | `IsEnumNameFqn` | `!System.Enum.IsDefined(typeof({EnumTypeArg}), {access})` |
-| `PrecisionScaleFqn` | `global::ZValidationInternal.DecimalValidator.ExceedsPrecisionScale({access}, {precision}, {scale})` |
+| `PrecisionScaleFqn` | `global::ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale({access}, {precision}, {scale})` |
 
 `IsInEnum` reads the property's type name from the Roslyn `IPropertySymbol` at generation time. For nullable enums (`Status?`), unwrap to the underlying type using `INamedTypeSymbol.TypeArguments[0]`.
 
@@ -77,10 +77,10 @@ private const string PrecisionScaleFqn       = "ZValidation.PrecisionScaleAttrib
 
 ## 3. New Internal Helper
 
-**`src/ZValidation/Internal/DecimalValidator.cs`**
+**`src/ZeroAlloc.Validation/Internal/DecimalValidator.cs`**
 
 ```csharp
-namespace ZValidationInternal;
+namespace ZeroAlloc.Validation.Internal;
 
 internal static class DecimalValidator
 {

@@ -7,16 +7,16 @@
 
 ## Overview
 
-ZValidation uses attribute-based rule declarations on model classes. A Roslyn incremental source generator reads the attributes and emits a zero-allocation `Validate()` implementation. No reflection at runtime.
+ZeroAlloc.Validation uses attribute-based rule declarations on model classes. A Roslyn incremental source generator reads the attributes and emits a zero-allocation `Validate()` implementation. No reflection at runtime.
 
 ---
 
 ## 1. Opt-In Model Declaration
 
-Models opt in with `[Validate]`. Properties declare rules with attribute annotations in the `ZValidation` namespace.
+Models opt in with `[Validate]`. Properties declare rules with attribute annotations in the `ZeroAlloc.Validation` namespace.
 
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
 [Validate]
 public class Customer

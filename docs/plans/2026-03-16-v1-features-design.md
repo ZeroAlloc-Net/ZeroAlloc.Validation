@@ -56,8 +56,8 @@ foreach (var _cf in instance.ValidateBusinessRules())
 
 ### Files changed
 
-- Create: `src/ZValidation/Attributes/CustomValidationAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/CustomValidationAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
 
 ---
 
@@ -93,7 +93,7 @@ public class Order
 public override ValidationResult Validate(Order instance)
 {
     if (instance.ShouldSkipValidation())
-        return new global::ZValidation.ValidationResult(global::System.Array.Empty<global::ZValidation.ValidationFailure>());
+        return new global::ZeroAlloc.Validation.ValidationResult(global::System.Array.Empty<global::ZeroAlloc.Validation.ValidationFailure>());
 
     // ... rest of validation ...
 }
@@ -101,8 +101,8 @@ public override ValidationResult Validate(Order instance)
 
 ### Files changed
 
-- Create: `src/ZValidation/Attributes/SkipWhenAttribute.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
+- Create: `src/ZeroAlloc.Validation/Attributes/SkipWhenAttribute.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
 
 ---
 
@@ -119,17 +119,17 @@ On the valid path (no failures), allocations 1–2 still occur.
 
 ### Solution
 
-Replace `List<T>` with a `FailureBuffer` ref struct in `ZValidationInternal` that wraps an `ArrayPool<ValidationFailure>` buffer.
+Replace `List<T>` with a `FailureBuffer` ref struct in `ZeroAlloc.Validation.Internal` that wraps an `ArrayPool<ValidationFailure>` buffer.
 
 ```csharp
-namespace ZValidationInternal;
+namespace ZeroAlloc.Validation.Internal;
 
 internal ref struct FailureBuffer
 {
-    private static readonly System.Buffers.ArrayPool<ZValidation.ValidationFailure> Pool =
-        System.Buffers.ArrayPool<ZValidation.ValidationFailure>.Shared;
+    private static readonly System.Buffers.ArrayPool<ZeroAlloc.Validation.ValidationFailure> Pool =
+        System.Buffers.ArrayPool<ZeroAlloc.Validation.ValidationFailure>.Shared;
 
-    private ZValidation.ValidationFailure[] _buf;
+    private ZeroAlloc.Validation.ValidationFailure[] _buf;
     private int _count;
 
     public FailureBuffer(int initialCapacity)
@@ -140,7 +140,7 @@ internal ref struct FailureBuffer
 
     public int Count => _count;
 
-    public void Add(ZValidation.ValidationFailure f)
+    public void Add(ZeroAlloc.Validation.ValidationFailure f)
     {
         if (_count == _buf.Length) Grow();
         _buf[_count++] = f;
@@ -154,19 +154,19 @@ internal ref struct FailureBuffer
         _buf = newBuf;
     }
 
-    public ZValidation.ValidationResult ToResult()
+    public ZeroAlloc.Validation.ValidationResult ToResult()
     {
         if (_count == 0)
         {
             Pool.Return(_buf, clearArray: false);
-            _buf = System.Array.Empty<ZValidation.ValidationFailure>();
-            return new ZValidation.ValidationResult(System.Array.Empty<ZValidation.ValidationFailure>());
+            _buf = System.Array.Empty<ZeroAlloc.Validation.ValidationFailure>();
+            return new ZeroAlloc.Validation.ValidationResult(System.Array.Empty<ZeroAlloc.Validation.ValidationFailure>());
         }
-        var result = new ZValidation.ValidationFailure[_count];
+        var result = new ZeroAlloc.Validation.ValidationFailure[_count];
         System.Array.Copy(_buf, result, _count);
         Pool.Return(_buf, clearArray: false);
-        _buf = System.Array.Empty<ZValidation.ValidationFailure>();
-        return new ZValidation.ValidationResult(result);
+        _buf = System.Array.Empty<ZeroAlloc.Validation.ValidationFailure>();
+        return new ZeroAlloc.Validation.ValidationResult(result);
     }
 }
 ```
@@ -177,12 +177,12 @@ Setting `_buf` to `Array.Empty` after returning to pool ensures idempotent behav
 
 ```csharp
 // Mixed path — before:
-var failures = new System.Collections.Generic.List<global::ZValidation.ValidationFailure>();
+var failures = new System.Collections.Generic.List<global::ZeroAlloc.Validation.ValidationFailure>();
 // ... failures.Add(...) ...
-return new global::ZValidation.ValidationResult(failures.ToArray());
+return new global::ZeroAlloc.Validation.ValidationResult(failures.ToArray());
 
 // Mixed path — after:
-var _buf = new global::ZValidationInternal.FailureBuffer(N);  // N = totalDirectRules
+var _buf = new global::ZeroAlloc.Validation.Internal.FailureBuffer(N);  // N = totalDirectRules
 // ... _buf.Add(...) ...
 return _buf.ToResult();
 ```
@@ -198,8 +198,8 @@ return _buf.ToResult();
 
 ### Files changed
 
-- Create: `src/ZValidation/Internal/FailureBuffer.cs`
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
+- Create: `src/ZeroAlloc.Validation/Internal/FailureBuffer.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
 
 ---
 

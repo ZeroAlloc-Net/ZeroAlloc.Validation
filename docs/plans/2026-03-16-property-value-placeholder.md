@@ -6,14 +6,14 @@
 
 **Architecture:** Only `RuleEmitter.cs` changes. `ResolveMessage` already substitutes compile-time placeholders (`{PropertyName}`, `{ComparisonValue}`, etc.) and leaves `{PropertyValue}` untouched. `BuildFailureInitializer` is extended to detect `{PropertyValue}` in the resolved message and emit a C# interpolated string instead of a plain string literal. The interpolation expression is type-aware: non-nullable value types use `{instance.Prop}` (implicit `ToString()`), strings use `{instance.Prop ?? "null"}`, everything else uses `{instance.Prop?.ToString() ?? "null"}`.
 
-**Tech Stack:** C# `IIncrementalGenerator` (`netstandard2.0`), xUnit, `ZValidation.Testing.ValidationAssert`. Generated code targets net8/9/10 (C# 12), so nested string literals inside interpolation holes are valid.
+**Tech Stack:** C# `IIncrementalGenerator` (`netstandard2.0`), xUnit, `ZeroAlloc.Validation.Testing.ValidationAssert`. Generated code targets net8/9/10 (C# 12), so nested string literals inside interpolation holes are valid.
 
 ---
 
 ## Task 1: Generator emission tests (TDD — write failing tests first)
 
 **Files:**
-- Modify: `tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs`
+- Modify: `tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs`
 
 **Context:** `GeneratorRuleEmissionTests` runs the source generator in-memory via `RunGeneratorGetSource(source)` and asserts on the generated C# text. These tests must fail before the implementation exists.
 
@@ -27,7 +27,7 @@ public void Generator_PropertyValue_NonNullableValueType_EmitsInterpolatedAccess
 {
     // int property → {instance.Age} (no null check needed)
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [GreaterThan(0, Message = "Must be > 0, got {PropertyValue}.")] public int Age { get; set; } }
@@ -42,7 +42,7 @@ public void Generator_PropertyValue_String_EmitsNullCoalesce()
 {
     // string property → {instance.Name ?? "null"}
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [MaxLength(5, Message = "Got {PropertyValue}.")] public string Name { get; set; } = ""; }
@@ -58,7 +58,7 @@ public void Generator_PropertyValue_NullableValueType_EmitsNullableToString()
 {
     // int? property → {instance.Score?.ToString() ?? "null"}
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [GreaterThan(0, Message = "Got {PropertyValue}.")] public int? Score { get; set; } }
@@ -74,7 +74,7 @@ public void Generator_PropertyValue_MixedWithCompileTimePlaceholders()
 {
     // Both {PropertyName} (compile-time) and {PropertyValue} (runtime) in same message
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [GreaterThan(0, Message = "{PropertyName} must be > 0, got {PropertyValue}.")] public int Age { get; set; } }
@@ -91,7 +91,7 @@ public void Generator_PropertyValue_NotInMessage_EmitsPlainStringLiteral()
 {
     // Regression guard: no {PropertyValue} → no interpolated string emitted
     var source = """
-        using ZValidation;
+        using ZeroAlloc.Validation;
         namespace TestModels;
         [Validate]
         public class Foo { [GreaterThan(0, Message = "Must be positive.")] public int Age { get; set; } }
@@ -106,7 +106,7 @@ public void Generator_PropertyValue_NotInMessage_EmitsPlainStringLiteral()
 **Step 2: Run tests to confirm they fail**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "PropertyValue" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "PropertyValue" -v minimal
 ```
 
 Expected: 4 FAIL (the 5th — `NotInMessage` — may already pass), 1 possible PASS.
@@ -114,7 +114,7 @@ Expected: 4 FAIL (the 5th — `NotInMessage` — may already pass), 1 possible P
 **Step 3: Commit the failing tests**
 
 ```bash
-git add tests/ZValidation.Tests/Generator/GeneratorRuleEmissionTests.cs
+git add tests/ZeroAlloc.Validation.Tests/Generator/GeneratorRuleEmissionTests.cs
 git commit -m "test: add failing generator tests for {PropertyValue} placeholder"
 ```
 
@@ -123,7 +123,7 @@ git commit -m "test: add failing generator tests for {PropertyValue} placeholder
 ## Task 2: Implement {PropertyValue} in RuleEmitter.cs
 
 **Files:**
-- Modify: `src/ZValidation.Generator/RuleEmitter.cs`
+- Modify: `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs`
 
 **Context:** All changes are in `RuleEmitter.cs`. The key method is `BuildFailureInitializer` (line 325) which currently always wraps the message in `"..."`. We need to detect `{PropertyValue}` and emit `$"..."` with an interpolation hole instead.
 
@@ -213,7 +213,7 @@ private static string BuildFailureInitializer(string propName, string message, A
     }
 
     var sb = new StringBuilder();
-    sb.Append($"new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = {errorMessageExpr}");
+    sb.Append($"new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}\", ErrorMessage = {errorMessageExpr}");
     if (errorCode is not null)
         sb.Append($", ErrorCode = \"{EscapeString(errorCode)}\"");
     if (severityValue != 0)
@@ -278,7 +278,7 @@ sb.AppendLine($"            buffer[count++] = {BuildFailureInitializer(propName,
 **Step 5: Run generator emission tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "PropertyValue" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "PropertyValue" -v minimal
 ```
 
 Expected: all 5 PASS.
@@ -286,7 +286,7 @@ Expected: all 5 PASS.
 **Step 6: Run full test suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 
 Expected: all pass (no regressions).
@@ -294,7 +294,7 @@ Expected: all pass (no regressions).
 **Step 7: Commit**
 
 ```bash
-git add src/ZValidation.Generator/RuleEmitter.cs
+git add src/ZeroAlloc.Validation.Generator/RuleEmitter.cs
 git commit -m "feat: add {PropertyValue} runtime placeholder to custom messages"
 ```
 
@@ -303,19 +303,19 @@ git commit -m "feat: add {PropertyValue} runtime placeholder to custom messages"
 ## Task 3: Integration tests
 
 **Files:**
-- Create: `tests/ZValidation.Tests/Integration/PropertyValueModel.cs`
-- Create: `tests/ZValidation.Tests/Integration/PropertyValuePlaceholderTests.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/PropertyValueModel.cs`
+- Create: `tests/ZeroAlloc.Validation.Tests/Integration/PropertyValuePlaceholderTests.cs`
 
 **Context:** Integration tests exercise the generated code at runtime. They verify that error messages actually contain the expected values, not just that the generator emits certain text patterns.
 
 **Step 1: Create the integration model**
 
-`tests/ZValidation.Tests/Integration/PropertyValueModel.cs`:
+`tests/ZeroAlloc.Validation.Tests/Integration/PropertyValueModel.cs`:
 
 ```csharp
-using ZValidation;
+using ZeroAlloc.Validation;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 [Validate]
 public class PropertyValueModel
@@ -344,14 +344,14 @@ public class PropertyValueModel
 
 **Step 2: Write the integration tests**
 
-`tests/ZValidation.Tests/Integration/PropertyValuePlaceholderTests.cs`:
+`tests/ZeroAlloc.Validation.Tests/Integration/PropertyValuePlaceholderTests.cs`:
 
 ```csharp
 using System.Linq;
 using Xunit;
-using ZValidation.Testing;
+using ZeroAlloc.Validation.Testing;
 
-namespace ZValidation.Tests.Integration;
+namespace ZeroAlloc.Validation.Tests.Integration;
 
 public class PropertyValuePlaceholderTests
 {
@@ -430,7 +430,7 @@ public class PropertyValuePlaceholderTests
 **Step 3: Run the integration tests**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj --filter "PropertyValuePlaceholder" -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj --filter "PropertyValuePlaceholder" -v minimal
 ```
 
 Expected: all PASS.
@@ -438,7 +438,7 @@ Expected: all PASS.
 **Step 4: Run full test suite**
 
 ```bash
-dotnet test tests/ZValidation.Tests/ZValidation.Tests.csproj -v minimal
+dotnet test tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj -v minimal
 ```
 
 Expected: all pass.
@@ -460,8 +460,8 @@ Replace with:
 **Step 6: Commit**
 
 ```bash
-git add tests/ZValidation.Tests/Integration/PropertyValueModel.cs \
-        tests/ZValidation.Tests/Integration/PropertyValuePlaceholderTests.cs \
+git add tests/ZeroAlloc.Validation.Tests/Integration/PropertyValueModel.cs \
+        tests/ZeroAlloc.Validation.Tests/Integration/PropertyValuePlaceholderTests.cs \
         docs/features.md
 git commit -m "test: add {PropertyValue} placeholder integration tests; mark feature complete"
 ```
