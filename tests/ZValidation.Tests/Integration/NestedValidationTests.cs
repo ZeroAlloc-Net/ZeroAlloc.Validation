@@ -112,7 +112,7 @@ public class NestedValidationTests
         };
         var result = _validator.Validate(order);
         var failure = result.Failures.ToArray()
-            .First(f => string.Equals(f.PropertyName, "BillingAddress.Street", StringComparison.Ordinal));
+            .Single(f => string.Equals(f.PropertyName, "BillingAddress.Street", StringComparison.Ordinal));
         Assert.Equal("STREET_REQUIRED", failure.ErrorCode);
     }
 
@@ -127,7 +127,7 @@ public class NestedValidationTests
         };
         var result = _validator.Validate(order);
         var failure = result.Failures.ToArray()
-            .First(f => string.Equals(f.PropertyName, "BillingAddress.City", StringComparison.Ordinal));
+            .Single(f => string.Equals(f.PropertyName, "BillingAddress.City", StringComparison.Ordinal));
         Assert.Equal(Severity.Warning, failure.Severity);
     }
 }
