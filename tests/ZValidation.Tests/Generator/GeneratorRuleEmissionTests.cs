@@ -766,6 +766,76 @@ public class GeneratorRuleEmissionTests
         Assert.DoesNotContain("ZeroAlloc.Inject", generated, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_EmitsConstructorParam_ForNestedValidateType()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate] public class Address { [NotEmpty] public string Street { get; set; } = ""; }
+            [Validate] public class Customer { public Address Home { get; set; } = new(); }
+            """;
+
+        var customerSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("CustomerValidator", StringComparison.Ordinal));
+
+        Assert.Contains("AddressValidator homeValidator", customerSource, StringComparison.Ordinal);
+        Assert.Contains("_homeValidator", customerSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsConstructorParam_ForCollectionOfValidateType()
+    {
+        var source = """
+            using ZValidation;
+            using System.Collections.Generic;
+            namespace TestModels;
+            [Validate] public class Item { [NotEmpty] public string Name { get; set; } = ""; }
+            [Validate] public class Bag { public List<Item> Things { get; set; } = new(); }
+            """;
+
+        var bagSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("BagValidator", StringComparison.Ordinal));
+
+        Assert.Contains("ItemValidator thingsValidator", bagSource, StringComparison.Ordinal);
+        Assert.Contains("_thingsValidator", bagSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_NoConstructor_WhenNoNestedProperties()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate] public class Plain { [NotEmpty] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+
+        Assert.DoesNotContain("public PlainValidator(", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_TwoNestedProperties_SameType_TwoDistinctParams()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate] public class Address { [NotEmpty] public string Street { get; set; } = ""; }
+            [Validate] public class Order
+            {
+                public Address Shipping { get; set; } = new();
+                public Address Billing  { get; set; } = new();
+            }
+            """;
+
+        var orderSource = RunGeneratorGetSources(source)
+            .First(s => s.Contains("OrderValidator", StringComparison.Ordinal));
+
+        Assert.Contains("_shippingValidator", orderSource, StringComparison.Ordinal);
+        Assert.Contains("_billingValidator", orderSource, StringComparison.Ordinal);
+    }
+
     private static string RunGeneratorGetSource(string source)
     {
         // Include System.Runtime so Roslyn can fully resolve attribute constructor argument types.

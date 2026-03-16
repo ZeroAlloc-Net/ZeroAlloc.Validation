@@ -6,7 +6,7 @@ namespace ZValidation.Tests.Integration;
 
 public class CollectionValidationTests
 {
-    private readonly CartValidator _validator = new();
+    private readonly CartValidator _validator = new(new LineItemValidator());
 
     [Fact]
     public void Valid_Cart_PassesValidation()

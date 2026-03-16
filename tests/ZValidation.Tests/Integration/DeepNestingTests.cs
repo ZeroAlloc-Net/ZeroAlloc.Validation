@@ -6,7 +6,7 @@ namespace ZValidation.Tests.Integration;
 
 public class DeepNestingTests
 {
-    private readonly DepotValidator _validator = new();
+    private readonly DepotValidator _validator = new(new DeliveryZoneValidator(new PostalCodeValidator()));
 
     [Fact]
     public void Valid_Depot_PassesValidation()

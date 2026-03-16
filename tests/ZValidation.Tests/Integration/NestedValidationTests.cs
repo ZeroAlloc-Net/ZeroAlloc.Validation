@@ -6,7 +6,7 @@ namespace ZValidation.Tests.Integration;
 
 public class NestedValidationTests
 {
-    private readonly OrderValidator _validator = new();
+    private readonly OrderValidator _validator = new(new AddressValidator(), new AddressValidator());
 
     [Fact]
     public void Valid_Order_PassesValidation()

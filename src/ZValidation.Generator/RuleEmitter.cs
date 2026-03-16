@@ -137,16 +137,11 @@ internal static class RuleEmitter
         {
             var nestedProp = nestedProperties[ni];
             var propName = nestedProp.Name;
-            var nestedNamespace = nestedProp.Type.ContainingNamespace?.ToDisplayString();
-            var nestedTypeName = nestedProp.Type.Name;
-            var validatorName = $"{nestedTypeName}Validator";
-            var qualifiedValidatorName = IsGlobalOrEmpty(nestedNamespace)
-                ? $"global::{validatorName}"
-                : $"global::{nestedNamespace}.{validatorName}";
+            var camelN = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture) + propName.Substring(1);
 
             sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
             sb.AppendLine("        {");
-            sb.AppendLine($"            var nestedResult = new {qualifiedValidatorName}().Validate({modelParamName}.{propName});");
+            sb.AppendLine($"            var nestedResult = _{camelN}Validator.Validate({modelParamName}.{propName});");
             sb.AppendLine("            foreach (ref readonly var f in nestedResult.Failures)");
             sb.AppendLine($"                failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
             sb.AppendLine("        }");
@@ -161,15 +156,10 @@ internal static class RuleEmitter
     {
         for (int ci = 0; ci < collectionProperties.Count; ci++)
         {
-            var (collProp, elementType) = collectionProperties[ci];
+            var (collProp, _) = collectionProperties[ci];
             var propName = collProp.Name;
             var varName = $"_c{ci.ToString(CultureInfo.InvariantCulture)}";
-            var elemNamespace = elementType.ContainingNamespace?.ToDisplayString();
-            var elemTypeName = elementType.Name;
-            var collValidatorName = $"{elemTypeName}Validator";
-            var qualifiedCollValidatorName = IsGlobalOrEmpty(elemNamespace)
-                ? $"global::{collValidatorName}"
-                : $"global::{elemNamespace}.{collValidatorName}";
+            var camelC = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture) + propName.Substring(1);
 
             sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
             sb.AppendLine("        {");
@@ -178,7 +168,7 @@ internal static class RuleEmitter
             sb.AppendLine("            {");
             sb.AppendLine($"                if ({varName}Item is not null)");
             sb.AppendLine("                {");
-            sb.AppendLine($"                    var {varName}Result = new {qualifiedCollValidatorName}().Validate({varName}Item);");
+            sb.AppendLine($"                    var {varName}Result = _{camelC}Validator.Validate({varName}Item);");
             sb.AppendLine($"                    foreach (ref readonly var f in {varName}Result.Failures)");
             sb.AppendLine($"                        failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage }});");
             sb.AppendLine("                }");
@@ -440,4 +430,43 @@ internal static class RuleEmitter
             .Select(p => (Property: p, ElementType: GetCollectionElementType(p) as INamedTypeSymbol))
             .Where(x => x.ElementType is not null && HasValidateAttribute(x.ElementType!))
             .Select(x => (x.Property, x.ElementType!));
+
+    public static System.Collections.Generic.List<(string FieldName, string ParamName, string QualifiedValidatorType)>
+        CollectNestedValidatorFields(INamedTypeSymbol classSymbol)
+    {
+        var result = new System.Collections.Generic.List<(string, string, string)>();
+        foreach (var member in classSymbol.GetMembers())
+        {
+            if (member is not IPropertySymbol prop) continue;
+
+            string? qualifiedType = null;
+
+            // Single nested type with [Validate]
+            if (prop.Type is INamedTypeSymbol nestedNamed && HasValidateAttribute(nestedNamed))
+            {
+                var ns = nestedNamed.ContainingNamespace?.ToDisplayString();
+                qualifiedType = IsGlobalOrEmpty(ns)
+                    ? $"global::{nestedNamed.Name}Validator"
+                    : $"global::{ns}.{nestedNamed.Name}Validator";
+            }
+            // Collection element type with [Validate]
+            else if (GetCollectionElementType(prop) is INamedTypeSymbol elemNamed && HasValidateAttribute(elemNamed))
+            {
+                var ns = elemNamed.ContainingNamespace?.ToDisplayString();
+                qualifiedType = IsGlobalOrEmpty(ns)
+                    ? $"global::{elemNamed.Name}Validator"
+                    : $"global::{ns}.{elemNamed.Name}Validator";
+            }
+
+            if (qualifiedType is null) continue;
+
+            var propName = prop.Name;
+            var camel = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture)
+                        + propName.Substring(1);
+            result.Add(($"_{camel}Validator", $"{camel}Validator", qualifiedType));
+        }
+        return result;
+    }
+
+    internal static ITypeSymbol? GetCollectionElementTypePublic(IPropertySymbol prop) => GetCollectionElementType(prop);
 }
