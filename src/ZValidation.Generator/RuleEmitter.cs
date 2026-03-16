@@ -63,10 +63,14 @@ internal static class RuleEmitter
         bool hasNested = nestedProperties.Count > 0 || collectionProperties.Count > 0;
         int totalDirectRules = byProperty.Sum(x => x.Rules.Count);
 
+        var validateAttr = classSymbol.GetAttributes()
+            .FirstOrDefault(a => string.Equals(a.AttributeClass?.ToDisplayString(), ValidateAttributeFqn, StringComparison.Ordinal));
+        bool validatorStop = GetBoolNamedArg(validateAttr, "StopOnFirstFailure");
+
         if (hasNested)
-            EmitNestedPath(sb, byProperty, nestedProperties, collectionProperties, modelParamName);
+            EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName, validatorStop);
         else
-            EmitFlatPath(sb, byProperty, totalDirectRules, modelParamName);
+            EmitFlatPath(sb, byProperty, totalDirectRules, modelParamName, validatorStop);
     }
 
     private static List<(IPropertySymbol Property, List<AttributeData> Rules)> CollectPropertyRules(INamedTypeSymbol classSymbol)
@@ -89,19 +93,108 @@ internal static class RuleEmitter
 
     private static void EmitNestedPath(
         StringBuilder sb,
+        INamedTypeSymbol classSymbol,
+        List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
+        List<IPropertySymbol> nestedProperties,
+        List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
+        string modelParamName,
+        bool validatorStop)
+    {
+        sb.AppendLine("        var failures = new System.Collections.Generic.List<global::ZValidation.ValidationFailure>();");
+        sb.AppendLine();
+
+        if (!validatorStop)
+        {
+            EmitPropertyRulesWithAdd(sb, byProperty, modelParamName);
+            EmitNestedValidators(sb, nestedProperties, modelParamName);
+            EmitCollectionValidators(sb, collectionProperties, modelParamName);
+        }
+        else
+        {
+            EmitNestedPathStop(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName);
+        }
+
+        sb.AppendLine("        return new global::ZValidation.ValidationResult(failures.ToArray());");
+    }
+
+    private static void EmitNestedPathStop(
+        StringBuilder sb,
+        INamedTypeSymbol classSymbol,
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         List<IPropertySymbol> nestedProperties,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
         string modelParamName)
     {
-        sb.AppendLine("        var failures = new System.Collections.Generic.List<global::ZValidation.ValidationFailure>();");
-        sb.AppendLine();
+        int groupIdx = 0;
+        int collCi = 0;
 
-        EmitPropertyRulesWithAdd(sb, byProperty, modelParamName);
-        EmitNestedValidators(sb, nestedProperties, modelParamName);
-        EmitCollectionValidators(sb, collectionProperties, modelParamName);
+        foreach (var member in classSymbol.GetMembers())
+        {
+            if (member is not IPropertySymbol prop) continue;
 
-        sb.AppendLine("        return new global::ZValidation.ValidationResult(failures.ToArray());");
+            FindPropertyGroups(prop, byProperty, nestedProperties, collectionProperties,
+                out var directProp, out var directRules, out var nestedProp, out var collProp);
+
+            if (directProp is null && nestedProp is null && collProp is null) continue;
+
+            sb.AppendLine($"        int _b{groupIdx} = failures.Count;");
+
+            if (directProp is not null && directRules is not null)
+                EmitPropertyRulesForProp(sb, directProp, directRules, modelParamName);
+
+            if (nestedProp is not null)
+                EmitNestedValidatorForProp(sb, nestedProp, modelParamName);
+
+            if (collProp is not null)
+                EmitCollectionValidatorForProp(sb, collProp, collCi++, modelParamName);
+
+            sb.AppendLine($"        if (failures.Count > _b{groupIdx}) return new global::ZValidation.ValidationResult(failures.ToArray());");
+            sb.AppendLine();
+            groupIdx++;
+        }
+    }
+
+    private static void FindPropertyGroups(
+        IPropertySymbol prop,
+        List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
+        List<IPropertySymbol> nestedProperties,
+        List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
+        out IPropertySymbol? directProp,
+        out List<AttributeData>? directRules,
+        out IPropertySymbol? nestedProp,
+        out IPropertySymbol? collProp)
+    {
+        directProp = null;
+        directRules = null;
+        for (int bi = 0; bi < byProperty.Count; bi++)
+        {
+            if (SymbolEqualityComparer.Default.Equals(byProperty[bi].Property, prop))
+            {
+                directProp = byProperty[bi].Property;
+                directRules = byProperty[bi].Rules;
+                break;
+            }
+        }
+
+        nestedProp = null;
+        for (int ni = 0; ni < nestedProperties.Count; ni++)
+        {
+            if (SymbolEqualityComparer.Default.Equals(nestedProperties[ni], prop))
+            {
+                nestedProp = nestedProperties[ni];
+                break;
+            }
+        }
+
+        collProp = null;
+        for (int ci = 0; ci < collectionProperties.Count; ci++)
+        {
+            if (SymbolEqualityComparer.Default.Equals(collectionProperties[ci].Property, prop))
+            {
+                collProp = collectionProperties[ci].Property;
+                break;
+            }
+        }
     }
 
     private static void EmitPropertyRulesWithAdd(
@@ -112,30 +205,39 @@ internal static class RuleEmitter
         for (int pi = 0; pi < byProperty.Count; pi++)
         {
             var (prop, rules) = byProperty[pi];
-            var propName = prop.Name;
-            var displayName = GetDisplayName(prop) ?? propName;
-            var propAccess = $"{modelParamName}.{propName}";
-            var stopMode = HasStopOnFirstFailure(prop);
-
-            for (int i = 0; i < rules.Count; i++)
-            {
-                var attr = rules[i];
-                var fqn = attr.AttributeClass!.ToDisplayString();
-                var prefix = (stopMode && i > 0) ? "        else if" : "        if";
-                var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
-                var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-                var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
-                var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
-                var whenMethod   = GetWhen(attr);
-                var unlessMethod = GetUnless(attr);
-                var whenGuard    = whenMethod   is null ? "" : $"{modelParamName}.{whenMethod}() && ";
-                var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
-
-                sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
-                sb.AppendLine($"            failures.Add({BuildFailureInitializer(propName, message, attr, propertyValueExpr)});");
-            }
-            sb.AppendLine();
+            EmitPropertyRulesForProp(sb, prop, rules, modelParamName);
         }
+    }
+
+    private static void EmitPropertyRulesForProp(
+        StringBuilder sb,
+        IPropertySymbol prop,
+        List<AttributeData> rules,
+        string modelParamName)
+    {
+        var propName = prop.Name;
+        var displayName = GetDisplayName(prop) ?? propName;
+        var propAccess = $"{modelParamName}.{propName}";
+        var stopMode = HasStopOnFirstFailure(prop);
+
+        for (int i = 0; i < rules.Count; i++)
+        {
+            var attr = rules[i];
+            var fqn = attr.AttributeClass!.ToDisplayString();
+            var prefix = (stopMode && i > 0) ? "        else if" : "        if";
+            var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
+            var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
+            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
+            var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
+            var whenMethod   = GetWhen(attr);
+            var unlessMethod = GetUnless(attr);
+            var whenGuard    = whenMethod   is null ? "" : $"{modelParamName}.{whenMethod}() && ";
+            var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
+
+            sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
+            sb.AppendLine($"            failures.Add({BuildFailureInitializer(propName, message, attr, propertyValueExpr)});");
+        }
+        sb.AppendLine();
     }
 
     private static void EmitNestedValidators(
@@ -144,19 +246,21 @@ internal static class RuleEmitter
         string modelParamName)
     {
         for (int ni = 0; ni < nestedProperties.Count; ni++)
-        {
-            var nestedProp = nestedProperties[ni];
-            var propName = nestedProp.Name;
-            var camelN = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture) + propName.Substring(1);
+            EmitNestedValidatorForProp(sb, nestedProperties[ni], modelParamName);
+    }
 
-            sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
-            sb.AppendLine("        {");
-            sb.AppendLine($"            var nestedResult = _{camelN}Validator.Validate({modelParamName}.{propName});");
-            sb.AppendLine("            foreach (ref readonly var f in nestedResult.Failures)");
-            sb.AppendLine($"                failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
-            sb.AppendLine("        }");
-            sb.AppendLine();
-        }
+    private static void EmitNestedValidatorForProp(StringBuilder sb, IPropertySymbol nestedProp, string modelParamName)
+    {
+        var propName = nestedProp.Name;
+        var camelN = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture) + propName.Substring(1);
+
+        sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            var nestedResult = _{camelN}Validator.Validate({modelParamName}.{propName});");
+        sb.AppendLine("            foreach (ref readonly var f in nestedResult.Failures)");
+        sb.AppendLine($"                failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
+        sb.AppendLine("        }");
+        sb.AppendLine();
     }
 
     private static void EmitCollectionValidators(
@@ -165,35 +269,38 @@ internal static class RuleEmitter
         string modelParamName)
     {
         for (int ci = 0; ci < collectionProperties.Count; ci++)
-        {
-            var (collProp, _) = collectionProperties[ci];
-            var propName = collProp.Name;
-            var varName = $"_c{ci.ToString(CultureInfo.InvariantCulture)}";
-            var camelC = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture) + propName.Substring(1);
+            EmitCollectionValidatorForProp(sb, collectionProperties[ci].Property, ci, modelParamName);
+    }
 
-            sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
-            sb.AppendLine("        {");
-            sb.AppendLine($"            int {varName}Idx = 0;");
-            sb.AppendLine($"            foreach (var {varName}Item in {modelParamName}.{propName})");
-            sb.AppendLine("            {");
-            sb.AppendLine($"                if ({varName}Item is not null)");
-            sb.AppendLine("                {");
-            sb.AppendLine($"                    var {varName}Result = _{camelC}Validator.Validate({varName}Item);");
-            sb.AppendLine($"                    foreach (ref readonly var f in {varName}Result.Failures)");
-            sb.AppendLine($"                        failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
-            sb.AppendLine("                }");
-            sb.AppendLine($"                {varName}Idx++;");
-            sb.AppendLine("            }");
-            sb.AppendLine("        }");
-            sb.AppendLine();
-        }
+    private static void EmitCollectionValidatorForProp(StringBuilder sb, IPropertySymbol collProp, int ci, string modelParamName)
+    {
+        var propName = collProp.Name;
+        var varName = $"_c{ci.ToString(CultureInfo.InvariantCulture)}";
+        var camelC = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture) + propName.Substring(1);
+
+        sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            int {varName}Idx = 0;");
+        sb.AppendLine($"            foreach (var {varName}Item in {modelParamName}.{propName})");
+        sb.AppendLine("            {");
+        sb.AppendLine($"                if ({varName}Item is not null)");
+        sb.AppendLine("                {");
+        sb.AppendLine($"                    var {varName}Result = _{camelC}Validator.Validate({varName}Item);");
+        sb.AppendLine($"                    foreach (ref readonly var f in {varName}Result.Failures)");
+        sb.AppendLine($"                        failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
+        sb.AppendLine("                }");
+        sb.AppendLine($"                {varName}Idx++;");
+        sb.AppendLine("            }");
+        sb.AppendLine("        }");
+        sb.AppendLine();
     }
 
     private static void EmitFlatPath(
         StringBuilder sb,
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         int totalDirectRules,
-        string modelParamName)
+        string modelParamName,
+        bool validatorStop)
     {
         // Buffer is sized to totalDirectRules (all rules), but [StopOnFirstFailure] properties may
         // write fewer entries. The count < buffer.Length check at the end trims the array correctly.
@@ -208,6 +315,9 @@ internal static class RuleEmitter
             var displayName = GetDisplayName(prop) ?? propName;
             var propAccess = $"{modelParamName}.{propName}";
             var stopMode = HasStopOnFirstFailure(prop);
+
+            if (validatorStop)
+                sb.AppendLine($"        int _b{pi} = count;");
 
             for (int i = 0; i < rules.Count; i++)
             {
@@ -226,6 +336,17 @@ internal static class RuleEmitter
                 sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
                 sb.AppendLine($"            buffer[count++] = {BuildFailureInitializer(propName, message, attr, propertyValueExpr)};");
             }
+
+            if (validatorStop)
+            {
+                sb.AppendLine($"        if (count > _b{pi})");
+                sb.AppendLine("        {");
+                sb.AppendLine("            var r = new global::ZValidation.ValidationFailure[count];");
+                sb.AppendLine("            global::System.Array.Copy(buffer, r, count);");
+                sb.AppendLine("            return new global::ZValidation.ValidationResult(r);");
+                sb.AppendLine("        }");
+            }
+
             sb.AppendLine();
         }
 
@@ -330,6 +451,15 @@ internal static class RuleEmitter
             if (string.Equals(named.Key, "Severity", StringComparison.Ordinal) && named.Value.Value is int i)
                 return i;
         return 0;
+    }
+
+    private static bool GetBoolNamedArg(AttributeData? attr, string name)
+    {
+        if (attr is null) return false;
+        foreach (var named in attr.NamedArguments)
+            if (string.Equals(named.Key, name, StringComparison.Ordinal) && named.Value.Value is bool b)
+                return b;
+        return false;
     }
 
     private static string SeverityToLiteral(int severityValue) => severityValue switch

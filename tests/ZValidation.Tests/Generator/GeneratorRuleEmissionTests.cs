@@ -1334,4 +1334,77 @@ public class GeneratorRuleEmissionTests
         var generated = RunGeneratorGetSource(source);
         Assert.Contains("\"Forename must not be empty.\"", generated, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Generator_ValidatorStop_FlatPath_EmitsCountCheckAfterEachPropertyGroup()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate(StopOnFirstFailure = true)]
+            public class M
+            {
+                [NotEmpty]
+                public string Name { get; set; } = "";
+
+                [GreaterThan(0)]
+                public int Age { get; set; }
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("_b0 = count", generated, StringComparison.Ordinal);
+        Assert.Contains("count > _b0", generated, StringComparison.Ordinal);
+        Assert.Contains("_b1 = count", generated, StringComparison.Ordinal);
+        Assert.Contains("count > _b1", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_ValidatorStop_NestedPath_EmitsFailuresCountCheckAfterEachPropertyGroup()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Inner { [NotEmpty] public string X { get; set; } = ""; }
+
+            [Validate(StopOnFirstFailure = true)]
+            public class Outer
+            {
+                [NotEmpty]
+                public string Reference { get; set; } = "";
+
+                public Inner? Item { get; set; }
+            }
+            """;
+
+        var generated = RunGeneratorGetSources(source)
+            .First(s => s.Contains("class OuterValidator"));
+        Assert.Contains("_b0 = failures.Count", generated, StringComparison.Ordinal);
+        Assert.Contains("failures.Count > _b0", generated, StringComparison.Ordinal);
+        Assert.Contains("_b1 = failures.Count", generated, StringComparison.Ordinal);
+        Assert.Contains("failures.Count > _b1", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_ValidatorStop_Default_NoCountChecks()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class M
+            {
+                [NotEmpty]
+                public string Name { get; set; } = "";
+
+                [GreaterThan(0)]
+                public int Age { get; set; }
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.DoesNotContain("_b0 =", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("_b1 =", generated, StringComparison.Ordinal);
+    }
 }
