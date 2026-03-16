@@ -1474,4 +1474,59 @@ public class GeneratorRuleEmissionTests
         var generated = RunGeneratorGetSource(source);
         Assert.DoesNotContain("ShouldSkip", generated, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Generator_CustomValidation_EmitsForeachCallAfterOtherValidation()
+    {
+        var source = """
+            using ZValidation;
+            using System.Collections.Generic;
+            namespace TestModels;
+            [Validate]
+            public class M
+            {
+                [NotEmpty]
+                public string Name { get; set; } = "";
+
+                [CustomValidation]
+                private IEnumerable<ValidationFailure> Validate() =>
+                    System.Array.Empty<ValidationFailure>();
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("instance.Validate()", generated, StringComparison.Ordinal);
+        Assert.Contains("_buf.Add", generated, StringComparison.Ordinal);
+        // Custom validation is called after property rules
+        var nameCheckIdx = generated.IndexOf("IsNullOrEmpty", StringComparison.Ordinal);
+        var customCallIdx = generated.IndexOf("instance.Validate()", StringComparison.Ordinal);
+        Assert.True(customCallIdx > nameCheckIdx, "Custom validation should appear after property rules");
+    }
+
+    [Fact]
+    public void Generator_MultipleCustomValidation_EmitsBothInDeclarationOrder()
+    {
+        var source = """
+            using ZValidation;
+            using System.Collections.Generic;
+            namespace TestModels;
+            [Validate]
+            public class M
+            {
+                [CustomValidation]
+                private IEnumerable<ValidationFailure> ValidateFirst() =>
+                    System.Array.Empty<ValidationFailure>();
+
+                [CustomValidation]
+                private IEnumerable<ValidationFailure> ValidateSecond() =>
+                    System.Array.Empty<ValidationFailure>();
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        var firstIdx = generated.IndexOf("instance.ValidateFirst()", StringComparison.Ordinal);
+        var secondIdx = generated.IndexOf("instance.ValidateSecond()", StringComparison.Ordinal);
+        Assert.True(firstIdx >= 0 && secondIdx >= 0, "Both methods should be called");
+        Assert.True(firstIdx < secondIdx, "ValidateFirst should appear before ValidateSecond");
+    }
 }

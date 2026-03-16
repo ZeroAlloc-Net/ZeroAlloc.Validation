@@ -30,6 +30,14 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor ZV0013 = new DiagnosticDescriptor(
+        id: "ZV0013",
+        title: "Invalid [CustomValidation] method signature",
+        messageFormat: "Method '{0}' decorated with [CustomValidation] must have no parameters and return IEnumerable<ValidationFailure>",
+        category: "ZValidation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var validateClasses = context.SyntaxProvider
@@ -142,6 +150,42 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
             ReportZV0011IfApplicable(ctx, prop, member, validateWithAttr);
             ReportZV0012IfApplicable(ctx, prop, member, validateWithAttr);
+        }
+        ReportCustomValidationDiagnostics(ctx, classSymbol);
+    }
+
+    private static void ReportCustomValidationDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
+    {
+        const string customValidationFqn = "ZValidation.CustomValidationAttribute";
+        const string expectedReturnType = "System.Collections.Generic.IEnumerable<ZValidation.ValidationFailure>";
+
+        foreach (var member in classSymbol.GetMembers())
+        {
+            if (member is not IMethodSymbol method) continue;
+
+            bool hasAttr = false;
+            AttributeData? attrData = null;
+            foreach (var attr in method.GetAttributes())
+            {
+                if (string.Equals(attr.AttributeClass?.ToDisplayString(), customValidationFqn, StringComparison.Ordinal))
+                {
+                    hasAttr = true;
+                    attrData = attr;
+                    break;
+                }
+            }
+            if (!hasAttr) continue;
+
+            bool validSignature = method.Parameters.Length == 0
+                && string.Equals(method.ReturnType.ToDisplayString(), expectedReturnType, StringComparison.Ordinal);
+
+            if (!validSignature)
+            {
+                ctx.ReportDiagnostic(Diagnostic.Create(ZV0013,
+                    attrData?.ApplicationSyntaxReference?.GetSyntax().GetLocation()
+                        ?? member.Locations.FirstOrDefault(),
+                    method.Name));
+            }
         }
     }
 

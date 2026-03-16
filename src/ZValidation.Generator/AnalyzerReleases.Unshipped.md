@@ -7,3 +7,4 @@ Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
 ZV0011 | ZValidation | Warning | Redundant [ValidateWith] attribute
 ZV0012 | ZValidation | Error | Invalid [ValidateWith] validator type
+ZV0013 | ZValidation | Error | Invalid [CustomValidation] method signature

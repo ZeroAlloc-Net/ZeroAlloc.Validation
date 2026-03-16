@@ -13,6 +13,7 @@ internal static class RuleEmitter
     private const string StopOnFirstFailureFqn = "ZValidation.StopOnFirstFailureAttribute";
     private const string DisplayNameAttributeFqn = "ZValidation.DisplayNameAttribute";
     private const string SkipWhenAttributeFqn = "ZValidation.SkipWhenAttribute";
+    private const string CustomValidationAttributeFqn = "ZValidation.CustomValidationAttribute";
 
     private const string NotNullFqn               = "ZValidation.NotNullAttribute";
     private const string NotEmptyFqn              = "ZValidation.NotEmptyAttribute";
@@ -69,7 +70,8 @@ internal static class RuleEmitter
         var byProperty = CollectPropertyRules(classSymbol);
         var nestedProperties = GetNestedValidateProperties(classSymbol).ToList();
         var collectionProperties = GetCollectionValidateProperties(classSymbol).ToList();
-        bool hasNested = nestedProperties.Count > 0 || collectionProperties.Count > 0;
+        var customMethods = CollectCustomValidationMethods(classSymbol);
+        bool hasNested = nestedProperties.Count > 0 || collectionProperties.Count > 0 || customMethods.Count > 0;
         int totalDirectRules = byProperty.Sum(x => x.Rules.Count);
 
         var validateAttr = classSymbol.GetAttributes()
@@ -77,7 +79,7 @@ internal static class RuleEmitter
         bool validatorStop = GetBoolNamedArg(validateAttr, "StopOnFirstFailure");
 
         if (hasNested)
-            EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName, validatorStop, totalDirectRules);
+            EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, customMethods, modelParamName, validatorStop, totalDirectRules);
         else
             EmitFlatPath(sb, byProperty, totalDirectRules, modelParamName, validatorStop);
     }
@@ -106,6 +108,7 @@ internal static class RuleEmitter
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         List<IPropertySymbol> nestedProperties,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
+        List<string> customMethods,
         string modelParamName,
         bool validatorStop,
         int totalDirectRules)
@@ -124,7 +127,48 @@ internal static class RuleEmitter
             EmitNestedPathStop(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName);
         }
 
+        // [CustomValidation] methods always run last, after all property/nested/collection validation
+        EmitCustomValidationCalls(sb, customMethods, modelParamName);
+
         sb.AppendLine("        return _buf.ToResult();");
+    }
+
+    private static void EmitCustomValidationCalls(StringBuilder sb, List<string> customMethods, string modelParamName)
+    {
+        for (int i = 0; i < customMethods.Count; i++)
+        {
+            sb.AppendLine($"        foreach (var _cf in {modelParamName}.{customMethods[i]}())");
+            sb.AppendLine("            _buf.Add(_cf);");
+            sb.AppendLine();
+        }
+    }
+
+    private static List<string> CollectCustomValidationMethods(INamedTypeSymbol classSymbol)
+    {
+        var result = new List<string>();
+        foreach (var member in classSymbol.GetMembers())
+        {
+            if (member is not IMethodSymbol method) continue;
+            bool hasAttr = false;
+            foreach (var attr in method.GetAttributes())
+            {
+                if (string.Equals(attr.AttributeClass?.ToDisplayString(), CustomValidationAttributeFqn, StringComparison.Ordinal))
+                {
+                    hasAttr = true;
+                    break;
+                }
+            }
+            if (!hasAttr) continue;
+            // Only emit if signature is correct: no parameters, returns IEnumerable<ValidationFailure>
+            if (method.Parameters.Length != 0) continue;
+            if (!string.Equals(
+                method.ReturnType.ToDisplayString(),
+                "System.Collections.Generic.IEnumerable<ZValidation.ValidationFailure>",
+                StringComparison.Ordinal))
+                continue;
+            result.Add(method.Name);
+        }
+        return result;
     }
 
     private static void EmitNestedPathStop(
