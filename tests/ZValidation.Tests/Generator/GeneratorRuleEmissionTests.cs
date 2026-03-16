@@ -1556,4 +1556,22 @@ public class GeneratorRuleEmissionTests
         Assert.True(stopGuardIdx >= 0, "Expected stop-on-first-failure guard (_buf.Count)");
         Assert.True(customCallIdx > stopGuardIdx, "Custom validation call must appear after property group guard");
     }
+
+    [Fact]
+    public void Analyzer_ZV0013_Fires_WhenCustomValidationMethodHasWrongSignature()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class M
+            {
+                [CustomValidation]
+                public void Validate() { }
+            }
+            """;
+
+        var diagnostics = RunGeneratorGetDiagnostics(source);
+        Assert.Contains(diagnostics, d => string.Equals(d.Id, "ZV0013", StringComparison.Ordinal));
+    }
 }
