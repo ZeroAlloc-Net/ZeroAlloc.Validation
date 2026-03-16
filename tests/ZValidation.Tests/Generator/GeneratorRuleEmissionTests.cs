@@ -1529,4 +1529,31 @@ public class GeneratorRuleEmissionTests
         Assert.True(firstIdx >= 0 && secondIdx >= 0, "Both methods should be called");
         Assert.True(firstIdx < secondIdx, "ValidateFirst should appear before ValidateSecond");
     }
+
+    [Fact]
+    public void Generator_StopOnFirstFailure_WithCustomValidation_EmitsCustomCallsAfterPropertyGroups()
+    {
+        var source = """
+            using ZValidation;
+            using System.Collections.Generic;
+            namespace TestModels;
+            [Validate(StopOnFirstFailure = true)]
+            public class M
+            {
+                [NotEmpty]
+                public string Name { get; set; } = "";
+
+                [CustomValidation]
+                internal IEnumerable<ValidationFailure> Validate() =>
+                    System.Array.Empty<ValidationFailure>();
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        // Custom validation call must appear after the stop-on-first-failure guard for Name
+        var stopGuardIdx = generated.IndexOf("_buf.Count", StringComparison.Ordinal);
+        var customCallIdx = generated.IndexOf("instance.Validate()", StringComparison.Ordinal);
+        Assert.True(stopGuardIdx >= 0, "Expected stop-on-first-failure guard (_buf.Count)");
+        Assert.True(customCallIdx > stopGuardIdx, "Custom validation call must appear after property group guard");
+    }
 }

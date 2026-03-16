@@ -127,7 +127,9 @@ internal static class RuleEmitter
             EmitNestedPathStop(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName);
         }
 
-        // [CustomValidation] methods always run last, after all property/nested/collection validation
+        // [CustomValidation] methods always run last.
+        // With validatorStop=true: EmitNestedPathStop above emits early returns for each failing property group,
+        // so custom methods are only reached if all property groups pass.
         EmitCustomValidationCalls(sb, customMethods, modelParamName);
 
         sb.AppendLine("        return _buf.ToResult();");
