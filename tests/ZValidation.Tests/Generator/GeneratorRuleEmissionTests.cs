@@ -55,7 +55,7 @@ public class GeneratorRuleEmissionTests
     }
 
     [Fact]
-    public void Generator_EmitsStopAtFirstFailure_AsElseIf()
+    public void Generator_DefaultContinueMode_EmitsSeparateIf_NotElseIf()
     {
         var source = """
             using ZValidation;
@@ -70,7 +70,55 @@ public class GeneratorRuleEmissionTests
             """;
 
         var generated = RunGeneratorGetSource(source);
+        // In continue mode, rules are independent ifs — no else if
+        Assert.DoesNotContain("else if", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_StopOnFirstFailure_EmitsElseIf()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Person
+            {
+                [StopOnFirstFailure]
+                [NotEmpty]
+                [MaxLength(50)]
+                public string Name { get; set; } = "";
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
         Assert.Contains("else if", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_StopOnFirstFailure_OnlyAffectsTaggedProperty()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Person
+            {
+                [StopOnFirstFailure]
+                [NotEmpty]
+                [MaxLength(50)]
+                public string Name { get; set; } = "";
+
+                [GreaterThan(0)]
+                [LessThan(120)]
+                public int Age { get; set; }
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        // Name has else if (stop mode), but Age rules use separate if (continue mode)
+        // The generated code has exactly one "else if" (for Name's second rule)
+        var elseIfCount = CountOccurrences(generated, "else if");
+        Assert.Equal(1, elseIfCount);
     }
 
     [Fact]
@@ -1000,6 +1048,18 @@ public class GeneratorRuleEmissionTests
 
         var generated = RunGeneratorGetSource(source);
         Assert.Contains("CODE\\\"WITH\\\"QUOTES", generated, StringComparison.Ordinal);
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        int count = 0;
+        int index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+        return count;
     }
 
     private static System.Collections.Generic.IReadOnlyList<Diagnostic> RunGeneratorGetDiagnostics(string source)

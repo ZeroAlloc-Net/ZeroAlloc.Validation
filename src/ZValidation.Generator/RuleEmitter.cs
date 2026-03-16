@@ -10,6 +10,7 @@ internal static class RuleEmitter
 {
     private const string ValidateAttributeFqn = "ZValidation.ValidateAttribute";
     private const string ValidateWithAttributeFqn = "ZValidation.ValidateWithAttribute";
+    private const string StopOnFirstFailureFqn = "ZValidation.StopOnFirstFailureAttribute";
 
     private const string NotNullFqn               = "ZValidation.NotNullAttribute";
     private const string NotEmptyFqn              = "ZValidation.NotEmptyAttribute";
@@ -48,6 +49,10 @@ internal static class RuleEmitter
             or PrecisionScaleFqn
             or MustFqn;
     }
+
+    private static bool HasStopOnFirstFailure(IPropertySymbol prop) =>
+        prop.GetAttributes().Any(a =>
+            string.Equals(a.AttributeClass?.ToDisplayString(), StopOnFirstFailureFqn, StringComparison.Ordinal));
 
     public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance")
     {
@@ -108,12 +113,13 @@ internal static class RuleEmitter
             var (prop, rules) = byProperty[pi];
             var propName = prop.Name;
             var propAccess = $"{modelParamName}.{propName}";
+            var stopMode = HasStopOnFirstFailure(prop);
 
             for (int i = 0; i < rules.Count; i++)
             {
                 var attr = rules[i];
                 var fqn = attr.AttributeClass!.ToDisplayString();
-                var prefix = i == 0 ? "        if" : "        else if";
+                var prefix = (stopMode && i > 0) ? "        else if" : "        if";
                 var message = ResolveMessage(attr, fqn, propName) ?? GetDefaultMessage(fqn, attr, propName);
                 var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
                 var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
@@ -195,12 +201,13 @@ internal static class RuleEmitter
             var (prop, rules) = byProperty[pi];
             var propName = prop.Name;
             var propAccess = $"{modelParamName}.{propName}";
+            var stopMode = HasStopOnFirstFailure(prop);
 
             for (int i = 0; i < rules.Count; i++)
             {
                 var attr = rules[i];
                 var fqn = attr.AttributeClass!.ToDisplayString();
-                var prefix = i == 0 ? "        if" : "        else if";
+                var prefix = (stopMode && i > 0) ? "        else if" : "        if";
                 var message = ResolveMessage(attr, fqn, propName) ?? GetDefaultMessage(fqn, attr, propName);
                 var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
                 var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
