@@ -144,7 +144,7 @@ public class GeneratorRuleEmissionTests
     }
 
     [Fact]
-    public void Generator_UsesListForModelWithNestedValidateType()
+    public void Generator_UsesFailureBufferForModelWithNestedValidateType()
     {
         var source = """
             using ZValidation;
@@ -169,8 +169,8 @@ public class GeneratorRuleEmissionTests
         var customerSource = RunGeneratorGetSources(source)
             .First(s => s.Contains("CustomerValidator", StringComparison.Ordinal));
 
-        Assert.Contains("List<", customerSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("List<", RunGeneratorGetSources(source)
+        Assert.Contains("FailureBuffer", customerSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("FailureBuffer", RunGeneratorGetSources(source)
             .First(s => s.Contains("AddressValidator", StringComparison.Ordinal)), StringComparison.Ordinal);
     }
 
@@ -247,7 +247,7 @@ public class GeneratorRuleEmissionTests
     }
 
     [Fact]
-    public void Generator_UsesListForModelWithCollectionOfValidateType()
+    public void Generator_UsesFailureBufferForModelWithCollectionOfValidateType()
     {
         var source = """
             using ZValidation;
@@ -273,8 +273,8 @@ public class GeneratorRuleEmissionTests
         var orderSource = RunGeneratorGetSources(source)
             .First(s => s.Contains("OrderValidator", StringComparison.Ordinal));
 
-        Assert.Contains("List<", orderSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("List<", RunGeneratorGetSources(source)
+        Assert.Contains("FailureBuffer", orderSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("FailureBuffer", RunGeneratorGetSources(source)
             .First(s => s.Contains("LineItemValidator", StringComparison.Ordinal)), StringComparison.Ordinal);
     }
 
@@ -320,7 +320,7 @@ public class GeneratorRuleEmissionTests
             .First(s => s.Contains("ArticleValidator", StringComparison.Ordinal));
 
         Assert.Contains("TagValidator", articleSource, StringComparison.Ordinal);
-        Assert.Contains("List<", articleSource, StringComparison.Ordinal);
+        Assert.Contains("FailureBuffer", articleSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1380,10 +1380,10 @@ public class GeneratorRuleEmissionTests
 
         var generated = RunGeneratorGetSources(source)
             .First(s => s.Contains("class OuterValidator"));
-        Assert.Contains("_b0 = failures.Count", generated, StringComparison.Ordinal);
-        Assert.Contains("failures.Count > _b0", generated, StringComparison.Ordinal);
-        Assert.Contains("_b1 = failures.Count", generated, StringComparison.Ordinal);
-        Assert.Contains("failures.Count > _b1", generated, StringComparison.Ordinal);
+        Assert.Contains("_b0 = _buf.Count", generated, StringComparison.Ordinal);
+        Assert.Contains("_buf.Count > _b0", generated, StringComparison.Ordinal);
+        Assert.Contains("_b1 = _buf.Count", generated, StringComparison.Ordinal);
+        Assert.Contains("_buf.Count > _b1", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1406,5 +1406,37 @@ public class GeneratorRuleEmissionTests
         var generated = RunGeneratorGetSource(source);
         Assert.DoesNotContain("_b0 =", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("_b1 =", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_MixedPath_UsesFailureBuffer_NotList()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class Inner { [NotEmpty] public string X { get; set; } = ""; }
+            [Validate]
+            public class Outer { public Inner? Item { get; set; } }
+            """;
+
+        var generated = RunGeneratorGetSources(source)
+            .First(s => s.Contains("class OuterValidator"));
+        Assert.Contains("FailureBuffer", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("List<global::ZValidation.ValidationFailure>", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_FlatPath_DoesNotUseFailureBuffer()
+    {
+        var source = """
+            using ZValidation;
+            namespace TestModels;
+            [Validate]
+            public class M { [NotEmpty] public string Name { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.DoesNotContain("FailureBuffer", generated, StringComparison.Ordinal);
     }
 }

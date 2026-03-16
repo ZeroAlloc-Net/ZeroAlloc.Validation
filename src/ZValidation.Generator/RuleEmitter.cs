@@ -68,7 +68,7 @@ internal static class RuleEmitter
         bool validatorStop = GetBoolNamedArg(validateAttr, "StopOnFirstFailure");
 
         if (hasNested)
-            EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName, validatorStop);
+            EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName, validatorStop, totalDirectRules);
         else
             EmitFlatPath(sb, byProperty, totalDirectRules, modelParamName, validatorStop);
     }
@@ -98,9 +98,10 @@ internal static class RuleEmitter
         List<IPropertySymbol> nestedProperties,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
         string modelParamName,
-        bool validatorStop)
+        bool validatorStop,
+        int totalDirectRules)
     {
-        sb.AppendLine("        var failures = new System.Collections.Generic.List<global::ZValidation.ValidationFailure>();");
+        sb.AppendLine($"        var _buf = new global::ZValidationInternal.FailureBuffer({totalDirectRules});");
         sb.AppendLine();
 
         if (!validatorStop)
@@ -114,7 +115,7 @@ internal static class RuleEmitter
             EmitNestedPathStop(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName);
         }
 
-        sb.AppendLine("        return new global::ZValidation.ValidationResult(failures.ToArray());");
+        sb.AppendLine("        return _buf.ToResult();");
     }
 
     private static void EmitNestedPathStop(
@@ -141,7 +142,7 @@ internal static class RuleEmitter
             // one group. A single snapshot covers all three so that a null-check failure on a
             // nested property also suppresses the nested validator call result — consistent with
             // FluentValidation's per-property cascade semantics.
-            sb.AppendLine($"        int _b{groupIdx} = failures.Count;");
+            sb.AppendLine($"        int _b{groupIdx} = _buf.Count;");
 
             if (directProp is not null && directRules is not null)
                 EmitPropertyRulesForProp(sb, directProp, directRules, modelParamName);
@@ -152,7 +153,7 @@ internal static class RuleEmitter
             if (collProp is not null)
                 EmitCollectionValidatorForProp(sb, collProp, collCi++, modelParamName);
 
-            sb.AppendLine($"        if (failures.Count > _b{groupIdx}) return new global::ZValidation.ValidationResult(failures.ToArray());");
+            sb.AppendLine($"        if (_buf.Count > _b{groupIdx}) return _buf.ToResult();");
             sb.AppendLine();
             groupIdx++;
         }
@@ -239,7 +240,7 @@ internal static class RuleEmitter
             var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
 
             sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
-            sb.AppendLine($"            failures.Add({BuildFailureInitializer(propName, message, attr, propertyValueExpr)});");
+            sb.AppendLine($"            _buf.Add({BuildFailureInitializer(propName, message, attr, propertyValueExpr)});");
         }
         sb.AppendLine();
     }
@@ -262,7 +263,7 @@ internal static class RuleEmitter
         sb.AppendLine("        {");
         sb.AppendLine($"            var nestedResult = _{camelN}Validator.Validate({modelParamName}.{propName});");
         sb.AppendLine("            foreach (ref readonly var f in nestedResult.Failures)");
-        sb.AppendLine($"                failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
+        sb.AppendLine($"                _buf.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
         sb.AppendLine("        }");
         sb.AppendLine();
     }
@@ -291,7 +292,7 @@ internal static class RuleEmitter
         sb.AppendLine("                {");
         sb.AppendLine($"                    var {varName}Result = _{camelC}Validator.Validate({varName}Item);");
         sb.AppendLine($"                    foreach (ref readonly var f in {varName}Result.Failures)");
-        sb.AppendLine($"                        failures.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
+        sb.AppendLine($"                        _buf.Add(new global::ZValidation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
         sb.AppendLine("                }");
         sb.AppendLine($"                {varName}Idx++;");
         sb.AppendLine("            }");
