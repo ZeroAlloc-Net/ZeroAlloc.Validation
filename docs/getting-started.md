@@ -30,7 +30,7 @@ dotnet add package ZeroAlloc.Validation.Testing
 
 ## How it works
 
-ZeroAlloc.Validation uses a Roslyn source generator that runs at **compile time**, not at runtime. It inspects your annotated models and emits a `partial class` that extends `ValidatorFor<T>`. The result is pure IL — no reflection, no expression trees, and no allocations on the hot path.
+ZeroAlloc.Validation uses a Roslyn source generator that runs at **compile time**, not at runtime. It inspects your annotated models and emits a concrete validator class (e.g. `RegisterUserRequestValidator`) that extends `ValidatorFor<T>`. No reflection, no expression trees — pure IL at build time. The result has no allocations on the hot path.
 
 ```mermaid
 flowchart LR
