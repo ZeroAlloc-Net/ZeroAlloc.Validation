@@ -67,6 +67,22 @@ public class AspNetCoreGeneratorTests
         Assert.Contains("AddZValidationAutoValidation", ext, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void GeneratedFilter_ImplementsIAsyncActionFilter()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+            [Validate]
+            public class CreateOrderRequest { [NotEmpty] public string Reference { get; set; } = ""; }
+            """;
+
+        var generated = RunAspNetGeneratorGetSource(source, "ZValidationActionFilter.g.cs");
+        Assert.Contains("IAsyncActionFilter", generated, System.StringComparison.Ordinal);
+        Assert.Contains("OnActionExecutionAsync", generated, System.StringComparison.Ordinal);
+        Assert.Contains("ValidateAsync", generated, System.StringComparison.Ordinal);
+    }
+
     private static string RunAspNetGeneratorGetSource(string source, string fileName)
     {
         var sources = RunAspNetGeneratorGetSources(source);

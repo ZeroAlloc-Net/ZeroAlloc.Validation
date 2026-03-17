@@ -49,17 +49,17 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         sb.AppendLine("using Microsoft.AspNetCore.Mvc.Filters;");
         sb.AppendLine("using Microsoft.Extensions.DependencyInjection;");
         sb.AppendLine();
-        sb.AppendLine("internal sealed class ZValidationActionFilter : global::Microsoft.AspNetCore.Mvc.Filters.IActionFilter");
+        sb.AppendLine("internal sealed class ZValidationActionFilter : global::Microsoft.AspNetCore.Mvc.Filters.IAsyncActionFilter");
         sb.AppendLine("{");
         sb.AppendLine("    private readonly global::System.IServiceProvider _services;");
         sb.AppendLine();
         sb.AppendLine("    public ZValidationActionFilter(global::System.IServiceProvider services) => _services = services;");
         sb.AppendLine();
-        sb.AppendLine("    public void OnActionExecuting(global::Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context)");
+        sb.AppendLine("    public async global::System.Threading.Tasks.Task OnActionExecutionAsync(global::Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context, global::Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)");
         sb.AppendLine("    {");
         sb.AppendLine("        foreach (var arg in context.ActionArguments.Values)");
         sb.AppendLine("        {");
-        sb.AppendLine("            var result = Dispatch(arg);");
+        sb.AppendLine("            var result = await DispatchAsync(arg);");
         sb.AppendLine("            if (result is null || result.Value.IsValid) continue;");
         sb.AppendLine();
         sb.AppendLine("            var pd = new global::Microsoft.AspNetCore.Mvc.ValidationProblemDetails();");
@@ -72,16 +72,17 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         sb.AppendLine("            context.Result = new global::Microsoft.AspNetCore.Mvc.UnprocessableEntityObjectResult(pd);");
         sb.AppendLine("            return;");
         sb.AppendLine("        }");
+        sb.AppendLine("        await next();");
         sb.AppendLine("    }");
-        sb.AppendLine();
-        sb.AppendLine("    public void OnActionExecuted(global::Microsoft.AspNetCore.Mvc.Filters.ActionExecutedContext context) { }");
         sb.AppendLine();
     }
 
     private static void AppendDispatchSwitch(StringBuilder sb, ImmutableArray<INamedTypeSymbol> models)
     {
-        sb.AppendLine("    private global::ZeroAlloc.Validation.ValidationResult? Dispatch(object? arg) => arg switch");
+        sb.AppendLine("    private async global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult?> DispatchAsync(object? arg)");
         sb.AppendLine("    {");
+        sb.AppendLine("        switch (arg)");
+        sb.AppendLine("        {");
 
         foreach (var model in models)
         {
@@ -90,11 +91,13 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
                 ? $"global::{model.Name}Validator"
                 : $"global::{model.ContainingNamespace.ToDisplayString()}.{model.Name}Validator";
             var varName = char.ToLowerInvariant(model.Name[0]).ToString() + model.Name.Substring(1) + "_arg";
-            sb.AppendLine($"        {fullName} {varName} => _services.GetRequiredService<{validatorName}>().Validate({varName}),");
+            sb.AppendLine($"            case {fullName} {varName}:");
+            sb.AppendLine($"                return await _services.GetRequiredService<{validatorName}>().ValidateAsync({varName});");
         }
 
-        sb.AppendLine("        _ => null");
-        sb.AppendLine("    };");
+        sb.AppendLine("            default: return null;");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
         sb.AppendLine("}");
     }
 
