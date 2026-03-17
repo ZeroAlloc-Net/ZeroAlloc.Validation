@@ -122,13 +122,19 @@ Use `ErrorCode` to attach a machine-readable identifier to a failure, useful for
 
 ```csharp
 [NotEmpty(ErrorCode = "EMAIL_REQUIRED")]
-public string Email { get; set; } = "";
-
 [EmailAddress(ErrorCode = "EMAIL_INVALID_FORMAT")]
 public string Email { get; set; } = "";
 ```
 
 Access it via `f.ErrorCode`. The value is `null` when not set.
+
+```csharp
+foreach (ref readonly var f in result.Failures)
+{
+    if (f.ErrorCode is not null)
+        Console.WriteLine($"{f.PropertyName} [{f.ErrorCode}]: {f.ErrorMessage}");
+}
+```
 
 ## Severity on validation attributes
 
