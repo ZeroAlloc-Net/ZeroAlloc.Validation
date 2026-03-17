@@ -21,7 +21,7 @@ sidebar_position: 10
 
 ```csharp
 [Validate]
-[SkipWhen(nameof(IsDraft))]
+[SkipWhen(nameof(ShouldSkipValidation))]
 public class Order
 {
     public bool IsDraft { get; set; }
@@ -32,7 +32,7 @@ public class Order
     [GreaterThan(0)]
     public decimal Amount { get; set; }
 
-    private bool IsDraft() => IsDraft;  // method wraps the property
+    private bool ShouldSkipValidation() => IsDraft;
 }
 ```
 
