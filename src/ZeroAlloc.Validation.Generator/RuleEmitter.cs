@@ -848,7 +848,7 @@ internal static class RuleEmitter
     /// Returns the Validate method body as a string (multi-statement block WITHOUT outer braces),
     /// using <paramref name="modelParamName"/> as the instance variable.
     /// </summary>
-    public static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, string modelParamName)
+    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, string modelParamName)
     {
         var sb = new System.Text.StringBuilder();
         EmitValidateBody(sb, classSymbol, modelParamName);
