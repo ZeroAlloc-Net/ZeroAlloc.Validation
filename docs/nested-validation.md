@@ -10,9 +10,9 @@ sidebar_position: 3
 
 ZeroAlloc.Validation supports automatic validation of nested objects. When a property's type is itself decorated with `[Validate]`, the source generator wires up the nested validator at compile time — no runtime reflection required.
 
-## Automatic nesting via `[NotNull]`
+## Automatic nested validation
 
-Apply `[NotNull]` to a property whose type carries `[Validate]`. The generator detects the attribute, declares a private readonly field for the nested validator, and injects it through the outer validator's constructor.
+Nested validation is triggered when a property's type carries `[Validate]`. The generator detects this, declares a private readonly field for the nested validator, and injects it through the outer validator's constructor. `[NotNull]` is commonly added alongside for nullable properties, but it is not the trigger — the presence of `[Validate]` on the property's type is what drives code generation.
 
 ```csharp
 [Validate]
@@ -105,7 +105,8 @@ public class MyAddressValidator : ValidatorFor<ExternalAddress>
 {
     public override ValidationResult Validate(ExternalAddress instance)
     {
-        // custom rules
+        // ... apply your rules ...
+        return new ValidationResult([]); // return failures if any, or an empty result for success
     }
 }
 
@@ -117,6 +118,8 @@ public class Order
     public ExternalAddress? ShippingAddress { get; set; }
 }
 ```
+
+> **Note:** Using `[ValidateWith]` on a property whose type already carries `[Validate]` produces a **ZV0011** compiler warning. The auto-generated validator is used by default; `[ValidateWith]` should only be needed for types you do not control.
 
 `[ValidateWith]` is in the `ZeroAlloc.Validation` namespace. It accepts a `Type` constructor argument:
 
