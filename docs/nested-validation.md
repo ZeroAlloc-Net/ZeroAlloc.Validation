@@ -53,11 +53,13 @@ public sealed class OrderValidator : ValidatorFor<Order>
         if (instance.ShippingAddress is not null)
         {
             var nestedResult = _shippingAddressValidator.Validate(instance.ShippingAddress);
-            foreach (var f in nestedResult.Failures)
-                buffer.Add(new ValidationFailure
+            foreach (ref readonly var f in nestedResult.Failures)
+                _buf.Add(new ValidationFailure
                 {
                     PropertyName = "ShippingAddress." + f.PropertyName,
-                    ErrorMessage = f.ErrorMessage
+                    ErrorMessage = f.ErrorMessage,
+                    ErrorCode    = f.ErrorCode,
+                    Severity     = f.Severity
                 });
         }
 
@@ -121,14 +123,6 @@ public class Order
 ```csharp
 [ValidateWith(typeof(MyAddressValidator))]
 ```
-
-A generic syntax is also available, but requires C# 11 / .NET 9 or later:
-
-```csharp
-[ValidateWith<MyAddressValidator>]   // .NET 9+ only
-```
-
-Use the `typeof` form when targeting earlier runtimes.
 
 ## Null-safety
 
