@@ -25,8 +25,8 @@ public class FlatModelBenchmark
         Email     = "not-an-email"
     };
 
-    [Benchmark] public bool ZA_Valid()   => _za.Validate(_valid).IsValid;
-    [Benchmark] public bool ZA_Invalid() => _za.Validate(_invalid).IsValid;
-    [Benchmark] public bool FV_Valid()   => _fv.Validate(_valid).IsValid;
-    [Benchmark] public bool FV_Invalid() => _fv.Validate(_invalid).IsValid;
+    [Benchmark]                    public bool ZA_Valid()   => _za.Validate(_valid).IsValid;
+    [Benchmark]                    public bool ZA_Invalid() => _za.Validate(_invalid).IsValid;
+    [Benchmark(Baseline = true)]   public bool FV_Valid()   => _fv.Validate(_valid).IsValid;
+    [Benchmark]                    public bool FV_Invalid() => _fv.Validate(_invalid).IsValid;
 }

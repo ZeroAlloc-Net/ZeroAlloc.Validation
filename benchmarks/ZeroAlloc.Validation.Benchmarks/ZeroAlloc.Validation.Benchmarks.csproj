@@ -14,7 +14,7 @@
     <ProjectReference Include="..\..\src\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj" />
     <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Generator\ZeroAlloc.Validation.Generator.csproj"
                       OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="true" />
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

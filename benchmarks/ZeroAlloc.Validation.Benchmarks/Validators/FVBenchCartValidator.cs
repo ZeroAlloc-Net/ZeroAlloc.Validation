@@ -5,9 +5,11 @@ namespace ZeroAlloc.Validation.Benchmarks.Validators;
 
 public sealed class FVBenchCartValidator : AbstractValidator<BenchCart>
 {
+    private static readonly FVBenchLineItemValidator _itemValidator = new();
+
     public FVBenchCartValidator()
     {
         RuleFor(x => x.CartId).NotEmpty();
-        RuleForEach(x => x.Items).SetValidator(new FVBenchLineItemValidator());
+        RuleForEach(x => x.Items).SetValidator(_itemValidator);
     }
 }
