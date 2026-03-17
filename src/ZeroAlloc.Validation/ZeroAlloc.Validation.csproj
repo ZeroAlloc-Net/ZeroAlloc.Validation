@@ -15,4 +15,10 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <!-- Expose generator dependency DLLs as Analyzer items so Roslyn's loader can find them -->
+  <ItemGroup>
+    <Analyzer Include="$(NuGetPackageRoot)zeroalloc.pipeline.generators\0.1.1\lib\netstandard2.0\ZeroAlloc.Pipeline.Generators.dll" />
+    <Analyzer Include="$(NuGetPackageRoot)zeroalloc.pipeline\0.1.1\lib\netstandard2.0\ZeroAlloc.Pipeline.dll" />
+  </ItemGroup>
+
 </Project>

@@ -8,6 +8,21 @@ namespace ZeroAlloc.Validation.Generator;
 [Generator]
 public sealed class ValidatorGenerator : IIncrementalGenerator
 {
+    /// <summary>
+    /// Opaque wrapper so the IncrementalValueProvider type parameter does not reference
+    /// ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo directly, which would force Roslyn
+    /// to load that assembly when JIT-compiling <see cref="Initialize"/>.
+    /// </summary>
+    private sealed class BehaviorCache
+    {
+        public System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> Sync  { get; }
+        public System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> Async { get; }
+        public BehaviorCache(
+            System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> sync,
+            System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> async_)
+        { Sync = sync; Async = async_; }
+    }
+
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
     private const string ValidateWithFqn      = "ZeroAlloc.Validation.ValidateWithAttribute";
     private const string TransientFqn = "ZeroAlloc.Inject.TransientAttribute";
@@ -55,16 +70,21 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 transform: static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol);
 
 #pragma warning disable EPS06 // IncrementalValuesProvider<T> is a struct; Combine is the standard Roslyn API
-        var combined = validateClasses.Combine(context.CompilationProvider);
+        var behaviors = context.CompilationProvider
+            .Select(static (compilation, _) =>
+            {
+                var (sync, async_) = BehaviorDiscoverer.DiscoverAll(compilation);
+                return new BehaviorCache(sync, async_);
+            });
+        var combined = validateClasses.Combine(behaviors);
 #pragma warning restore EPS06
         context.RegisterSourceOutput(combined, static (ctx, pair) => Emit(ctx, pair.Left, pair.Right));
     }
 
-    private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymbol, BehaviorCache allBehaviors)
     {
-        var (allSync, allAsync) = BehaviorDiscoverer.DiscoverAll(compilation);
         var modelFqn = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        var (syncBehaviors, asyncBehaviors) = BehaviorDiscoverer.ForModel(allSync, allAsync, modelFqn);
+        var (syncBehaviors, asyncBehaviors) = BehaviorDiscoverer.ForModel(allBehaviors.Sync, allBehaviors.Async, modelFqn);
 
         if (classSymbol.DeclaredAccessibility == Accessibility.Private)
             return;
@@ -195,7 +215,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             }
             // i now points just past the closing ')'; body[i] should be ';'
             result.Append(body, valueStart, i - valueStart); // includes final ')'
-            result.Append(wrapClose);                        // adds extra ')' + ';'
+            result.Append(wrapClose);  // closes ValueTask.FromResult( — ValidationResult's ')' was already in matched
             pos = i + 1; // skip original ';'
         }
         return result.ToString();
