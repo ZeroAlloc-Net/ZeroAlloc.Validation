@@ -30,4 +30,29 @@ public class PipelineBehaviorTests
         Assert.False(asyncResult.IsValid);
         ValidationAssert.HasError(asyncResult, "Name");
     }
+
+    [Fact]
+    public async Task ValidateAsync_AsyncBehavior_RunsPreAndPostHooks()
+    {
+        AsyncAuditBehavior.CallLog = new System.Collections.Generic.List<string>();
+        var validator = new PipelineOrderValidator();
+        var order = new PipelineOrder { Reference = "REF-001" };
+
+        var result = await validator.ValidateAsync(order);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(new[] { "pre", "post" }, AsyncAuditBehavior.CallLog);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_AsyncBehavior_InvalidModel_ReturnsFailure()
+    {
+        var validator = new PipelineOrderValidator();
+        var order = new PipelineOrder { Reference = "" }; // invalid
+
+        var result = await validator.ValidateAsync(order);
+
+        Assert.False(result.IsValid);
+        ValidationAssert.HasError(result, "Reference");
+    }
 }

@@ -76,16 +76,28 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         var nestedFields = RuleEmitter.CollectNestedValidatorFields(classSymbol);
         EmitFieldsAndConstructor(sb, validatorName, nestedFields);
 
+        EmitValidateMethod(sb, classSymbol, modelName, syncBehaviors);
+        EmitValidateAsyncOverride(sb, classSymbol, modelName, asyncBehaviors);
+
+        sb.AppendLine("}");
+
+        ctx.AddSource($"{validatorName}.g.cs", sb.ToString());
+    }
+
+    private static void EmitValidateMethod(
+        System.Text.StringBuilder sb,
+        INamedTypeSymbol classSymbol,
+        string modelName,
+        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> syncBehaviors)
+    {
         sb.AppendLine($"    public override global::ZeroAlloc.Validation.ValidationResult Validate({modelName} instance)");
         sb.AppendLine("    {");
         if (syncBehaviors.Count == 0)
         {
-            // No behaviors — direct path, zero overhead (existing behavior)
             RuleEmitter.EmitValidateBody(sb, classSymbol);
         }
         else
         {
-            // Sync pipeline chain
             var fullyQualifiedModel = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             var syncShape = new global::ZeroAlloc.Pipeline.Generators.PipelineShape
             {
@@ -104,9 +116,80 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             sb.AppendLine($"        return {chain};");
         }
         sb.AppendLine("    }");
-        sb.AppendLine("}");
+    }
 
-        ctx.AddSource($"{validatorName}.g.cs", sb.ToString());
+    private static void EmitValidateAsyncOverride(
+        System.Text.StringBuilder sb,
+        INamedTypeSymbol classSymbol,
+        string modelName,
+        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> asyncBehaviors)
+    {
+        if (asyncBehaviors.Count == 0)
+            return;
+
+        var fullyQualifiedModel = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var asyncShape = new global::ZeroAlloc.Pipeline.Generators.PipelineShape
+        {
+            TypeArguments           = new[] { fullyQualifiedModel },
+            OuterParameterNames     = new[] { "instance", "ct" },
+            LambdaParameterPrefixes = new[] { "r", "c" },
+            InnermostBodyFactory    = depth =>
+            {
+                var paramName = depth == 0 ? "instance" : $"r{depth}";
+                // Inline the full validation logic, but each `return new ValidationResult(...);\n`
+                // must be wrapped in ValueTask.FromResult. Replace the terminal fragment.
+                const string returnPrefix = "return new global::ZeroAlloc.Validation.ValidationResult(";
+                const string wrapOpen     = "return global::System.Threading.Tasks.ValueTask.FromResult(new global::ZeroAlloc.Validation.ValidationResult(";
+                // wrapClose adds one extra closing paren for FromResult(...) and the semicolon.
+                // The closing paren for ValidationResult(...) is already included in the matched substring.
+                const string wrapClose    = ");";
+                var body = RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName);
+                var asyncBody = WrapReturnSites(body, returnPrefix, wrapOpen, wrapClose);
+                return "{\n" + asyncBody + "        }";
+            }
+        };
+        var chain = global::ZeroAlloc.Pipeline.Generators.PipelineEmitter.EmitChain(asyncBehaviors, asyncShape);
+        sb.AppendLine();
+        sb.AppendLine($"    public override global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult> ValidateAsync({modelName} instance, global::System.Threading.CancellationToken ct = default)");
+        sb.AppendLine($"        => {chain};");
+    }
+
+    /// <summary>
+    /// Replaces every <c>return new ValidationResult(...);</c> pattern in the body by
+    /// wrapping the whole construct in <c>ValueTask.FromResult(…)</c>.
+    /// </summary>
+    private static string WrapReturnSites(string body, string returnPrefix, string wrapOpen, string wrapClose)
+    {
+        var result = new System.Text.StringBuilder(body.Length + 128);
+        int pos = 0;
+        while (pos < body.Length)
+        {
+            int start = body.IndexOf(returnPrefix, pos, StringComparison.Ordinal);
+            if (start < 0)
+            {
+                result.Append(body, pos, body.Length - pos);
+                break;
+            }
+            result.Append(body, pos, start - pos);
+            result.Append(wrapOpen);
+            // Find the matching semicolon that ends the return statement.
+            // The return statement is: return new ValidationResult(...);
+            // We need to find the ';' that terminates it (accounting for nested parens).
+            int valueStart = start + returnPrefix.Length;
+            int depth2 = 1; // one open paren from returnPrefix
+            int i = valueStart;
+            while (i < body.Length && depth2 > 0)
+            {
+                if (body[i] == '(') depth2++;
+                else if (body[i] == ')') depth2--;
+                i++;
+            }
+            // i now points just past the closing ')'; body[i] should be ';'
+            result.Append(body, valueStart, i - valueStart); // includes final ')'
+            result.Append(wrapClose);                        // adds extra ')' + ';'
+            pos = i + 1; // skip original ';'
+        }
+        return result.ToString();
     }
 
     private static void EmitFileHeader(
