@@ -12,13 +12,13 @@ All validation attributes live in the `ZeroAlloc.Validation` namespace and inher
 
 | Attribute | Description | Default error message |
 |---|---|---|
-| `[NotEmpty]` | Must not be null or empty | `'X' must not be empty.` |
-| `[Empty]` | Must be null or empty | `'X' must be empty.` |
-| `[MaxLength(n)]` | Length ≤ n | `'X' must be at most n characters.` |
-| `[MinLength(n)]` | Length ≥ n | `'X' must be at least n characters.` |
-| `[Length(min, max)]` | min ≤ length ≤ max | `'X' must be between min and max characters.` |
-| `[Matches(pattern)]` | Must match regex pattern | `'X' is not in the correct format.` |
-| `[EmailAddress]` | Must be a valid email address | `'X' is not a valid email address.` |
+| `[NotEmpty]` | Must not be null or empty | `PropertyName must not be empty.` |
+| `[Empty]` | Must be null or empty | `PropertyName must be empty.` |
+| `[MaxLength(n)]` | Length ≤ n | `PropertyName must not exceed n characters.` |
+| `[MinLength(n)]` | Length ≥ n | `PropertyName must be at least n characters.` |
+| `[Length(min,max)]` | min ≤ length ≤ max | `PropertyName must be between min and max characters.` |
+| `[Matches(pattern)]` | Must match regex pattern | `PropertyName does not match the required pattern.` |
+| `[EmailAddress]` | Must be a valid email address | `PropertyName must be a valid email address.` |
 
 ```csharp
 [Validate]
@@ -36,15 +36,15 @@ public class ContactForm
 
 | Attribute | Description | Default error message |
 |---|---|---|
-| `[GreaterThan(value)]` | > value | `'X' must be greater than value.` |
-| `[GreaterThanOrEqualTo(value)]` | ≥ value | `'X' must be greater than or equal to value.` |
-| `[LessThan(value)]` | < value | `'X' must be less than value.` |
-| `[LessThanOrEqualTo(value)]` | ≤ value | `'X' must be less than or equal to value.` |
-| `[InclusiveBetween(min, max)]` | min ≤ x ≤ max | `'X' must be between min and max.` |
-| `[ExclusiveBetween(min, max)]` | min < x < max | `'X' must be between min and max (exclusive).` |
-| `[Equal(value)]` | == value | `'X' must be equal to value.` |
-| `[NotEqual(value)]` | != value | `'X' must not be equal to value.` |
-| `[PrecisionScale(precision, scale)]` | At most `precision` total digits, `scale` after decimal | `'X' must not be more than precision digits in total, with allowance for scale decimals.` |
+| `[GreaterThan(value)]` | > value | `PropertyName must be greater than value.` |
+| `[GreaterThanOrEqualTo(value)]` | ≥ value | `PropertyName must be greater than or equal to value.` |
+| `[LessThan(value)]` | < value | `PropertyName must be less than value.` |
+| `[LessThanOrEqualTo(value)]` | ≤ value | `PropertyName must be less than or equal to value.` |
+| `[InclusiveBetween(min, max)]` | min ≤ x ≤ max | `PropertyName must be between min and max.` |
+| `[ExclusiveBetween(min, max)]` | min < x < max | `PropertyName must be exclusively between min and max.` |
+| `[Equal(value)]` | == value | `PropertyName must be equal to value.` |
+| `[NotEqual(value)]` | != value | `PropertyName must not be equal to value.` |
+| `[PrecisionScale(p, s)]` | At most `p` total digits, `s` after decimal | `PropertyName must not exceed p digits total with s decimal places.` |
 
 ```csharp
 [Validate]
@@ -60,8 +60,8 @@ public class OrderLine
 
 | Attribute | Description | Default error message |
 |---|---|---|
-| `[NotNull]` | Must not be null; also triggers nested validation when the property type carries `[Validate]` | `'X' must not be null.` |
-| `[Null]` | Must be null | `'X' must be null.` |
+| `[NotNull]` | Must not be null; also triggers nested validation when the property type carries `[Validate]` | `PropertyName must not be null.` |
+| `[Null]` | Must be null | `PropertyName must be null.` |
 
 ```csharp
 [Validate]
@@ -74,16 +74,17 @@ public class Order
 
 ## Enum attributes
 
-| Attribute | Description |
-|---|---|
-| `[IsEnumName]` | Value must be a defined name in an enum type |
-| `[IsInEnum]` | Value must be a defined member of an enum |
+| Attribute | Description | Default error message |
+|---|---|---|
+| `[IsEnumName(typeof(TEnum))]` | String property — value must be a defined name in the specified enum type | `PropertyName is not a valid enum name.` |
+| `[IsInEnum]` | Enum-typed property — value must be a defined member of its own enum type | `PropertyName is not a valid value.` |
 
 ```csharp
 [Validate]
 public class SetStatusRequest
 {
-    [IsInEnum] public OrderStatus Status { get; set; }
+    [IsInEnum]                          public OrderStatus Status   { get; set; }
+    [IsEnumName(typeof(OrderStatus))]   public string      StatusId { get; set; } = "";
 }
 ```
 
@@ -104,11 +105,22 @@ public class CreateUser
 }
 ```
 
+```csharp
+// Use an explicit validator for a nested type
+[Validate]
+public class Order
+{
+    [NotNull]
+    [ValidateWith(typeof(AddressValidator))]
+    public ExternalAddress? ShippingAddress { get; set; }
+}
+```
+
 ## Model-level attributes (on class)
 
 | Attribute | Description |
 |---|---|
-| `[Validate]` | Marks the class for source generation — required on every validated model |
+| `[Validate]` | Marks the class for source generation. Set `StopOnFirstFailure = true` to stop after the first failing property across the entire model. |
 | `[SkipWhen(nameof(Method))]` | Skip all validation when the named instance method (no parameters, returning `bool`) returns `true` |
 
 ## Custom rule attributes
@@ -117,6 +129,34 @@ public class CreateUser
 |---|---|---|
 | `[Must(nameof(Method))]` | Property | Run an instance method `bool MethodName(TPropType value)` on the model; fails if it returns `false` |
 | `[CustomValidation]` | Method | Mark an instance method `IEnumerable<ValidationFailure> Method()` (no parameters) to run after all property rules |
+
+```csharp
+[Validate]
+public class PasswordChange
+{
+    [NotEmpty]
+    public string NewPassword { get; set; } = "";
+
+    [NotEmpty]
+    [Must(nameof(MatchesNew))]
+    public string ConfirmPassword { get; set; } = "";
+
+    // [Must] — called as instance.MatchesNew(value)
+    private bool MatchesNew(string value) => value == NewPassword;
+
+    // [CustomValidation] — called as instance.ValidateStrength()
+    [CustomValidation]
+    public IEnumerable<ValidationFailure> ValidateStrength()
+    {
+        if (NewPassword.Length < 8)
+            yield return new ValidationFailure
+            {
+                PropertyName = nameof(NewPassword),
+                ErrorMessage = "Password must be at least 8 characters."
+            };
+    }
+}
+```
 
 ## Shared attribute properties
 
@@ -137,3 +177,5 @@ public abstract class ValidationAttribute : Attribute
 [GreaterThan(0, Message = "Amount must be positive.", ErrorCode = "AMOUNT_POS", Severity = Severity.Error)]
 public decimal Amount { get; set; }
 ```
+
+> **Note:** `[CustomValidation]` and `[StopOnFirstFailure]` inherit directly from `System.Attribute`, not from `ValidationAttribute`. They do not support the `Message`, `When`, `Unless`, `ErrorCode`, or `Severity` shared properties.
