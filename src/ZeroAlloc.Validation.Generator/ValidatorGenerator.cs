@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -8,6 +10,41 @@ namespace ZeroAlloc.Validation.Generator;
 [Generator]
 public sealed class ValidatorGenerator : IIncrementalGenerator
 {
+    static ValidatorGenerator()
+    {
+        // Roslyn's analyzer assembly loader does not always resolve dependency assemblies that live
+        // alongside the generator DLL.  Hook AssemblyResolve so we can load them from the same
+        // directory as ZeroAlloc.Validation.Generator.dll.
+        System.AppDomain.CurrentDomain.AssemblyResolve += ResolveAssembly;
+    }
+
+    // The set of dependency DLL names that are deployed alongside the generator DLL.
+    private static readonly System.Collections.Generic.HashSet<string> KnownDependencies =
+        new System.Collections.Generic.HashSet<string>(System.StringComparer.OrdinalIgnoreCase)
+        {
+            "ZeroAlloc.Pipeline.Generators",
+            "ZeroAlloc.Pipeline",
+        };
+
+    private static Assembly? ResolveAssembly(object? sender, ResolveEventArgs args)
+    {
+        var name = new AssemblyName(args.Name).Name;
+        if (name is null || !KnownDependencies.Contains(name)) return null;
+
+        // Return an already-loaded assembly if present to avoid double-loading.
+        foreach (var existing in System.AppDomain.CurrentDomain.GetAssemblies())
+        {
+            if (string.Equals(existing.GetName().Name, name, System.StringComparison.OrdinalIgnoreCase))
+                return existing;
+        }
+
+        var generatorDir = Path.GetDirectoryName(
+            typeof(ValidatorGenerator).Assembly.Location);
+        if (generatorDir is null) return null;
+
+        return Assembly.LoadFrom(Path.Combine(generatorDir, name + ".dll"));
+    }
+
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
     private const string ValidateWithFqn      = "ZeroAlloc.Validation.ValidateWithAttribute";
     private const string TransientFqn = "ZeroAlloc.Inject.TransientAttribute";
@@ -46,11 +83,18 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 predicate: static (node, _) => node is ClassDeclarationSyntax,
                 transform: static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol);
 
-        context.RegisterSourceOutput(validateClasses, Emit);
+#pragma warning disable EPS06 // IncrementalValuesProvider<T> is a struct; Combine is the standard Roslyn API
+        var combined = validateClasses.Combine(context.CompilationProvider);
+#pragma warning restore EPS06
+        context.RegisterSourceOutput(combined, static (ctx, pair) => Emit(ctx, pair.Left, pair.Right));
     }
 
-    private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
+    private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
+        var (allSync, allAsync) = BehaviorDiscoverer.DiscoverAll(compilation);
+        var modelFqn = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var (syncBehaviors, asyncBehaviors) = BehaviorDiscoverer.ForModel(allSync, allAsync, modelFqn);
+
         if (classSymbol.DeclaredAccessibility == Accessibility.Private)
             return;
 
