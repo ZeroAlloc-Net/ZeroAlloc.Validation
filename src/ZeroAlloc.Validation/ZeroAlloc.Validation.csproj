@@ -4,6 +4,10 @@
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="ZeroAlloc.Pipeline" Version="0.1.1" />
+  </ItemGroup>
+
   <!-- Bundle the source generator into this NuGet package -->
   <ItemGroup>
     <ProjectReference Include="..\ZeroAlloc.Validation.Generator\ZeroAlloc.Validation.Generator.csproj"
