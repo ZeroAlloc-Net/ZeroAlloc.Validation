@@ -151,6 +151,50 @@ public class BehaviorDiscoveryTests
         Assert.Contains(result.Diagnostics, d => string.Equals(d.Id, "ZV0015", System.StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Generator_AsyncBehavior_OnNestedModel_GeneratesValidCode()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            using ZeroAlloc.Pipeline;
+            using System.Threading;
+            using System.Threading.Tasks;
+
+            namespace TestModels;
+
+            [Validate]
+            public class Address { [NotEmpty] public string Street { get; set; } = ""; }
+
+            [Validate]
+            public class Customer
+            {
+                [NotEmpty] public string Name { get; set; } = "";
+                [ValidateWith<AddressValidator>] public Address Home { get; set; } = new();
+            }
+
+            [PipelineBehavior(Order = 0, AppliesTo = typeof(Customer))]
+            public class AuditBehavior : IPipelineBehavior
+            {
+                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel>(
+                    TModel instance,
+                    CancellationToken ct,
+                    System.Func<TModel, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
+                    => await next(instance, ct);
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        // No compile errors expected
+        Assert.DoesNotContain(result.Diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
+        var customerValidator = result.GeneratedTrees
+            .Select(t => t.ToString())
+            .FirstOrDefault(s => s.Contains("CustomerValidator"));
+        Assert.NotNull(customerValidator);
+        Assert.Contains("ValidateAsync", customerValidator, System.StringComparison.Ordinal);
+        Assert.Contains("ValueTask.FromResult", customerValidator, System.StringComparison.Ordinal);
+    }
+
     private static GeneratorDriverRunResult RunGenerator(string source)
     {
         // Ensure ZeroAlloc.Pipeline is loaded into the AppDomain.

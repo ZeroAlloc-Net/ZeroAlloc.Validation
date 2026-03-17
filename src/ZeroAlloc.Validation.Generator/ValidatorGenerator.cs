@@ -13,15 +13,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo directly, which would force Roslyn
     /// to load that assembly when JIT-compiling <see cref="Initialize"/>.
     /// </summary>
-    private sealed class BehaviorCache
-    {
-        public System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> Sync  { get; }
-        public System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> Async { get; }
-        public BehaviorCache(
-            System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> sync,
-            System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> async_)
-        { Sync = sync; Async = async_; }
-    }
+    private sealed record BehaviorCache(
+        System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> Sync,
+        System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> Async);
 
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
     private const string ValidateWithFqn      = "ZeroAlloc.Validation.ValidateWithAttribute";
@@ -218,6 +212,10 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             result.Append(wrapClose);  // closes ValueTask.FromResult( — ValidationResult's ')' was already in matched
             pos = i + 1; // skip original ';'
         }
+        // Also wrap the nested-path terminal (emitted by EmitNestedPath / collection paths)
+        result.Replace(
+            "return _buf.ToResult();",
+            "return global::System.Threading.Tasks.ValueTask.FromResult(_buf.ToResult());");
         return result.ToString();
     }
 
