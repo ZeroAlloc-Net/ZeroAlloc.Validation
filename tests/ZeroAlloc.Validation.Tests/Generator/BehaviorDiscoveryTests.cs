@@ -117,6 +117,40 @@ public class BehaviorDiscoveryTests
         Assert.DoesNotContain("ValidateAsync", generated, System.StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_DuplicateBehaviorOrder_EmitsZV0015()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            using ZeroAlloc.Pipeline;
+
+            namespace TestModels;
+
+            [Validate]
+            public class Order { [NotEmpty] public string Reference { get; set; } = ""; }
+
+            [PipelineBehavior(Order = 0)]
+            public class BehaviorA : IPipelineBehavior
+            {
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
+                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst);
+            }
+
+            [PipelineBehavior(Order = 0)]
+            public class BehaviorB : IPipelineBehavior
+            {
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
+                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst);
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Contains(result.Diagnostics, d => string.Equals(d.Id, "ZV0015", System.StringComparison.Ordinal));
+    }
+
     private static GeneratorDriverRunResult RunGenerator(string source)
     {
         // Ensure ZeroAlloc.Pipeline is loaded into the AppDomain.

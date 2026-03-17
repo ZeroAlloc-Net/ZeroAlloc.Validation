@@ -38,6 +38,14 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor ZV0015 = new DiagnosticDescriptor(
+        id: "ZV0015",
+        title: "Duplicate pipeline behavior Order",
+        messageFormat: "Two behaviors have the same Order value {0} for model '{1}'. Each behavior must have a unique Order.",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var validateClasses = context.SyntaxProvider
@@ -62,6 +70,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             return;
 
         ReportNestedDiagnostics(ctx, classSymbol);
+        ReportDuplicateOrderDiagnostics(ctx, syncBehaviors, asyncBehaviors, classSymbol.Name);
 
         var namespaceName = classSymbol.ContainingNamespace.IsGlobalNamespace
             ? null
@@ -250,6 +259,35 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             sb.AppendLine($"        {fieldName} = {paramName};");
         sb.AppendLine("    }");
         sb.AppendLine();
+    }
+
+    private static void ReportDuplicateOrderDiagnostics(
+        SourceProductionContext ctx,
+        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> sync,
+        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> async_,
+        string modelName)
+    {
+        var all = new List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo>(sync.Count + async_.Count);
+        all.AddRange(sync);
+        all.AddRange(async_);
+
+        var seen = new System.Collections.Generic.Dictionary<int, string>();
+        for (int i = 0; i < all.Count; i++)
+        {
+            var b = all[i];
+            if (seen.TryGetValue(b.Order, out _))
+            {
+                ctx.ReportDiagnostic(Diagnostic.Create(
+                    ZV0015,
+                    Location.None,
+                    b.Order.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    modelName));
+            }
+            else
+            {
+                seen[b.Order] = b.BehaviorTypeName;
+            }
+        }
     }
 
     private static void ReportNestedDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
