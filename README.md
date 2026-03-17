@@ -8,7 +8,7 @@ Source-generated, attribute-based validation for .NET that allocates nothing on 
 
 ## Install
 
-```
+```bash
 dotnet add package ZeroAlloc.Validation
 ```
 
@@ -26,6 +26,12 @@ public class CreateOrderRequest
 }
 
 // The source generator emits CreateOrderRequestValidator at build time
+var request   = new CreateOrderRequest
+{
+    Reference = "ORD-2026-001",
+    Amount    = 99.99m,
+    Email     = "customer@example.com"
+};
 var validator = new CreateOrderRequestValidator();
 var result    = validator.Validate(request);
 
@@ -63,6 +69,7 @@ See [Performance](docs/performance.md) for full benchmark results.
 - [Nested Validation](docs/nested-validation.md)
 - [Collection Validation](docs/collection-validation.md)
 - [Custom Validation](docs/custom-validation.md)
+- [Error Messages](docs/error-messages.md)
 - [ASP.NET Core Integration](docs/aspnetcore.md)
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
