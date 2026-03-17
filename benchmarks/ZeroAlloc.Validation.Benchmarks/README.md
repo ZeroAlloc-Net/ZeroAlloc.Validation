@@ -45,7 +45,7 @@ public class BenchOrder
 |----------- |-------------:|-----------:|------------:|------:|----------:|------------:|
 | ZA_Valid   |     6.713 ns |  0.4350 ns |    1.255 ns |  0.02 |         - |        0.00 |
 | ZA_Invalid |    44.012 ns |  2.7703 ns |    7.859 ns |  0.14 |     304 B |        0.46 |
-| FV_Valid   |   327.269 ns | 10.4974 ns |   29.436 ns |  1.01 |     664 B |        1.00 |
+| FV_Valid   |   327.269 ns | 10.4974 ns |   29.436 ns |  1.00 |     664 B |        1.00 |
 | FV_Invalid | 2,462.893 ns | 75.0023 ns |  210.315 ns |  7.58 |    5408 B |        8.14 |
 
 **Valid path:** ZeroAlloc is **~49× faster** and allocates **0 bytes** (vs 664 B).
@@ -95,7 +95,6 @@ A cart with a string ID and a list of three line items, each validated individua
 public class BenchCart
 {
     [NotEmpty] public string              CartId { get; set; } = "";
-    [ValidateWith<BenchLineItemValidator>]
                public List<BenchLineItem> Items  { get; set; } = [];
 }
 
@@ -113,7 +112,7 @@ _(3 items in both the valid and invalid fixture)_
 |----------- |------------:|-----------:|------------:|------:|----------:|------------:|
 | ZA_Valid   |    14.30 ns |   0.377 ns |    1.050 ns | 0.007 |         - |        0.00 |
 | ZA_Invalid |   178.54 ns |   6.361 ns |   18.044 ns | 0.089 |     856 B |        0.25 |
-| FV_Valid   | 2,042.95 ns |  89.644 ns |  254.305 ns | 1.014 |    3456 B |        1.00 |
+| FV_Valid   | 2,042.95 ns |  89.644 ns |  254.305 ns | 1.000 |    3456 B |        1.00 |
 | FV_Invalid | 5,957.29 ns | 249.827 ns |  704.642 ns | 2.958 |   11568 B |        3.35 |
 
 **Valid path:** ZeroAlloc is **~143× faster** and allocates **0 bytes** (vs 3,456 B).
