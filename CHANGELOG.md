@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v0.1.1...v0.1.2) (2026-03-17)
+
+
+### Bug Fixes
+
+* correct Build badge URL in README ([#3](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/3)) ([bae459a](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/bae459a72fbc137b8bc5b5ce1398a043e5b0c9dc))
+
 ## [0.1.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v0.1.0...v0.1.1) (2026-03-17)
 
 
