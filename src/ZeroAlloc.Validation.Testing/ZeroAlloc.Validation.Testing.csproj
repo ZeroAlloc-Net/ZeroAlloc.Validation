@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <PackageId>ZeroAlloc.Validation.Testing</PackageId>
+    <Description>Testing helpers for ZeroAlloc.Validation. Provides assertion utilities to verify validation results in unit tests.</Description>
   </PropertyGroup>
 
   <ItemGroup>
