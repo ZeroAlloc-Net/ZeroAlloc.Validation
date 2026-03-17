@@ -1353,10 +1353,10 @@ public class GeneratorRuleEmissionTests
             """;
 
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("_b0 = count", generated, StringComparison.Ordinal);
-        Assert.Contains("count > _b0", generated, StringComparison.Ordinal);
-        Assert.Contains("_b1 = count", generated, StringComparison.Ordinal);
-        Assert.Contains("count > _b1", generated, StringComparison.Ordinal);
+        Assert.Contains("_b0 = _count", generated, StringComparison.Ordinal);
+        Assert.Contains("_count > _b0", generated, StringComparison.Ordinal);
+        Assert.Contains("_b1 = _count", generated, StringComparison.Ordinal);
+        Assert.Contains("_count > _b1", generated, StringComparison.Ordinal);
     }
 
     [Fact]

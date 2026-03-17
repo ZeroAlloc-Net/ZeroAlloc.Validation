@@ -362,58 +362,74 @@ internal static class RuleEmitter
         string modelParamName,
         bool validatorStop)
     {
-        // Buffer is sized to totalDirectRules (all rules), but [StopOnFirstFailure] properties may
-        // write fewer entries. The count < buffer.Length check at the end trims the array correctly.
-        sb.AppendLine($"        var buffer = new global::ZeroAlloc.Validation.ValidationFailure[{totalDirectRules}];");
-        sb.AppendLine("        int count = 0;");
+        // Lazy allocation: buffer is only created on the first failure.
+        // On the valid path (0 failures) no heap allocation occurs.
+        sb.AppendLine($"        global::ZeroAlloc.Validation.ValidationFailure[]? _buf = null;");
+        sb.AppendLine("        int _count = 0;");
         sb.AppendLine();
 
         for (int pi = 0; pi < byProperty.Count; pi++)
         {
-            var (prop, rules) = byProperty[pi];
-            var propName = prop.Name;
-            var displayName = GetDisplayName(prop) ?? propName;
-            var propAccess = $"{modelParamName}.{propName}";
-            var stopMode = HasStopOnFirstFailure(prop);
+            if (validatorStop)
+                sb.AppendLine($"        int _b{pi} = _count;");
+
+            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName);
 
             if (validatorStop)
-                sb.AppendLine($"        int _b{pi} = count;");
-
-            for (int i = 0; i < rules.Count; i++)
-            {
-                var attr = rules[i];
-                var fqn = attr.AttributeClass!.ToDisplayString();
-                var prefix = (stopMode && i > 0) ? "        else if" : "        if";
-                var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
-                var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-                var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
-                var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
-                var whenMethod   = GetWhen(attr);
-                var unlessMethod = GetUnless(attr);
-                var whenGuard    = whenMethod   is null ? "" : $"{modelParamName}.{whenMethod}() && ";
-                var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
-
-                sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
-                sb.AppendLine($"            buffer[count++] = {BuildFailureInitializer(propName, message, attr, propertyValueExpr)};");
-            }
-
-            if (validatorStop)
-            {
-                sb.AppendLine($"        if (count > _b{pi})");
-                sb.AppendLine("        {");
-                sb.AppendLine("            var r = new global::ZeroAlloc.Validation.ValidationFailure[count];");
-                sb.AppendLine("            global::System.Array.Copy(buffer, r, count);");
-                sb.AppendLine("            return new global::ZeroAlloc.Validation.ValidationResult(r);");
-                sb.AppendLine("        }");
-            }
+                EmitFlatPathStopOnFirstFailureReturn(sb, pi);
 
             sb.AppendLine();
         }
 
-        sb.AppendLine("        if (count == buffer.Length) return new global::ZeroAlloc.Validation.ValidationResult(buffer);");
-        sb.AppendLine("        var result = new global::ZeroAlloc.Validation.ValidationFailure[count];");
-        sb.AppendLine("        global::System.Array.Copy(buffer, result, count);");
-        sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult(result);");
+        sb.AppendLine("        if (_count == 0)");
+        sb.AppendLine("            return new global::ZeroAlloc.Validation.ValidationResult(global::System.Array.Empty<global::ZeroAlloc.Validation.ValidationFailure>());");
+        sb.AppendLine("        var _result = new global::ZeroAlloc.Validation.ValidationFailure[_count];");
+        sb.AppendLine("        global::System.Array.Copy(_buf!, _result, _count);");
+        sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult(_result);");
+    }
+
+    private static void EmitFlatPathPropertyRules(
+        StringBuilder sb,
+        IPropertySymbol prop,
+        List<AttributeData> rules,
+        int totalDirectRules,
+        string modelParamName)
+    {
+        var propName = prop.Name;
+        var displayName = GetDisplayName(prop) ?? propName;
+        var propAccess = $"{modelParamName}.{propName}";
+        var stopMode = HasStopOnFirstFailure(prop);
+
+        for (int i = 0; i < rules.Count; i++)
+        {
+            var attr = rules[i];
+            var fqn = attr.AttributeClass!.ToDisplayString();
+            var prefix = (stopMode && i > 0) ? "        else if" : "        if";
+            var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
+            var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
+            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
+            var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
+            var whenMethod   = GetWhen(attr);
+            var unlessMethod = GetUnless(attr);
+            var whenGuard    = whenMethod   is null ? "" : $"{modelParamName}.{whenMethod}() && ";
+            var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
+
+            sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
+            sb.AppendLine("        {");
+            sb.AppendLine($"            _buf ??= new global::ZeroAlloc.Validation.ValidationFailure[{totalDirectRules}];");
+            sb.AppendLine($"            _buf[_count++] = {BuildFailureInitializer(propName, message, attr, propertyValueExpr)};");
+            sb.AppendLine("        }");
+        }
+    }
+
+    private static void EmitFlatPathStopOnFirstFailureReturn(StringBuilder sb, int pi)
+    {
+        sb.AppendLine($"        if (_count > _b{pi})");
+        sb.AppendLine("        {");
+        sb.AppendLine("            var _r = new global::ZeroAlloc.Validation.ValidationFailure[_count];");
+        sb.AppendLine("            global::System.Array.Copy(_buf!, _r, _count);");
+        sb.AppendLine("            return new global::ZeroAlloc.Validation.ValidationResult(_r);");
+        sb.AppendLine("        }");
     }
 
     private static bool IsGlobalOrEmpty(string? namespaceName) =>
