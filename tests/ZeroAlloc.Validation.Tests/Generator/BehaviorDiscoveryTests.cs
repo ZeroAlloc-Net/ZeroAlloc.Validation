@@ -79,6 +79,8 @@ public class BehaviorDiscoveryTests
 
         Assert.Equal(2, orderSync.Count);  // global + order-specific
         Assert.DoesNotContain(orderSync, b => string.Equals(b.BehaviorTypeName, "PersonB", System.StringComparison.Ordinal));
+        Assert.Equal(0, orderSync[0].Order);  // GlobalB (Order=0) comes first
+        Assert.Equal(1, orderSync[1].Order);  // OrderB (Order=1) comes second
     }
 
     private static Compilation CreateCompilation(string source)
