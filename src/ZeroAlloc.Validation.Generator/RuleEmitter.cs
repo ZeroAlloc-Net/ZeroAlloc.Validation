@@ -843,4 +843,15 @@ internal static class RuleEmitter
     }
 
     internal static ITypeSymbol? GetCollectionElementTypePublic(IPropertySymbol prop) => GetCollectionElementType(prop);
+
+    /// <summary>
+    /// Returns the Validate method body as a string (multi-statement block WITHOUT outer braces),
+    /// using <paramref name="modelParamName"/> as the instance variable.
+    /// </summary>
+    public static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, string modelParamName)
+    {
+        var sb = new System.Text.StringBuilder();
+        EmitValidateBody(sb, classSymbol, modelParamName);
+        return sb.ToString();
+    }
 }

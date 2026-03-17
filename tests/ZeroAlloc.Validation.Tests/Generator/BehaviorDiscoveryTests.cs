@@ -83,6 +83,62 @@ public class BehaviorDiscoveryTests
         Assert.Equal(1, orderSync[1].Order);  // OrderB (Order=1) comes second
     }
 
+    [Fact]
+    public void Generator_WithSyncBehavior_EmitsBehaviorChain_InValidate()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            using ZeroAlloc.Pipeline;
+
+            namespace TestModels;
+
+            [Validate]
+            public class Order { [NotEmpty] public string Reference { get; set; } = ""; }
+
+            [PipelineBehavior(Order = 0)]
+            public class LoggingBehavior : IPipelineBehavior
+            {
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
+                    TModel instance,
+                    System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(instance);
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics);
+        var generated = result.GeneratedTrees
+            .Select(t => t.ToString())
+            .FirstOrDefault(s => s.Contains("OrderValidator"));
+
+        Assert.NotNull(generated);
+        Assert.Contains("LoggingBehavior.Handle", generated, System.StringComparison.Ordinal);
+        Assert.DoesNotContain("ValidateAsync", generated, System.StringComparison.Ordinal);
+    }
+
+    private static GeneratorDriverRunResult RunGenerator(string source)
+    {
+        // Ensure ZeroAlloc.Pipeline is loaded into the AppDomain.
+        _ = typeof(ZeroAlloc.Pipeline.IPipelineBehavior).Assembly;
+
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            new[] { CSharpSyntaxTree.ParseText(source) },
+            System.AppDomain.CurrentDomain.GetAssemblies()
+                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
+                .Select(a => MetadataReference.CreateFromFile(a.Location))
+                .Cast<MetadataReference>()
+                .ToArray(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var generator = new ValidatorGenerator();
+        var driver = CSharpGeneratorDriver.Create(generator)
+            .RunGenerators(compilation);
+
+        return driver.GetRunResult();
+    }
+
     private static Compilation CreateCompilation(string source)
     {
         // Ensure ZeroAlloc.Pipeline is loaded into the AppDomain so that

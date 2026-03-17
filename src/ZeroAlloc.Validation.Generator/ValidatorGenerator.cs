@@ -78,7 +78,31 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
         sb.AppendLine($"    public override global::ZeroAlloc.Validation.ValidationResult Validate({modelName} instance)");
         sb.AppendLine("    {");
-        RuleEmitter.EmitValidateBody(sb, classSymbol);
+        if (syncBehaviors.Count == 0)
+        {
+            // No behaviors — direct path, zero overhead (existing behavior)
+            RuleEmitter.EmitValidateBody(sb, classSymbol);
+        }
+        else
+        {
+            // Sync pipeline chain
+            var fullyQualifiedModel = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var syncShape = new global::ZeroAlloc.Pipeline.Generators.PipelineShape
+            {
+                TypeArguments           = new[] { fullyQualifiedModel },
+                OuterParameterNames     = new[] { "instance" },
+                LambdaParameterPrefixes = new[] { "r" },
+                InnermostBodyFactory    = depth =>
+                {
+                    var paramName = depth == 0 ? "instance" : $"r{depth}";
+                    return "{\n"
+                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName)
+                        + "        }";
+                }
+            };
+            var chain = global::ZeroAlloc.Pipeline.Generators.PipelineEmitter.EmitChain(syncBehaviors, syncShape);
+            sb.AppendLine($"        return {chain};");
+        }
         sb.AppendLine("    }");
         sb.AppendLine("}");
 
