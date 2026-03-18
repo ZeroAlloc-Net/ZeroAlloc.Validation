@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using ZeroAlloc.Validation.Inject;
 
 namespace ZeroAlloc.Validation.AspNetCore.Generator;
 
@@ -28,8 +29,8 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
     {
         if (models.IsDefaultOrEmpty) return;
 
-        ctx.AddSource("ZeroAlloc.Validation.ZValidationActionFilter.g.cs",                EmitFilter(models));
-        ctx.AddSource("ZeroAlloc.Validation.ZValidationServiceCollectionExtensions.g.cs", EmitExtensions(models));
+        ctx.AddSource("ZeroAlloc.Validation.ZeroAllocValidationActionFilter.g.cs",                EmitFilter(models));
+        ctx.AddSource("ZeroAlloc.Validation.ZeroAllocValidationServiceCollectionExtensions.g.cs", EmitExtensions(models));
     }
 
     private static string EmitFilter(ImmutableArray<INamedTypeSymbol> models)
@@ -49,11 +50,11 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         sb.AppendLine("using Microsoft.AspNetCore.Mvc.Filters;");
         sb.AppendLine("using Microsoft.Extensions.DependencyInjection;");
         sb.AppendLine();
-        sb.AppendLine("internal sealed class ZValidationActionFilter : global::Microsoft.AspNetCore.Mvc.Filters.IAsyncActionFilter");
+        sb.AppendLine("internal sealed class ZeroAllocValidationActionFilter : global::Microsoft.AspNetCore.Mvc.Filters.IAsyncActionFilter");
         sb.AppendLine("{");
         sb.AppendLine("    private readonly global::System.IServiceProvider _services;");
         sb.AppendLine();
-        sb.AppendLine("    public ZValidationActionFilter(global::System.IServiceProvider services) => _services = services;");
+        sb.AppendLine("    public ZeroAllocValidationActionFilter(global::System.IServiceProvider services) => _services = services;");
         sb.AppendLine();
         sb.AppendLine("    public async global::System.Threading.Tasks.Task OnActionExecutionAsync(global::Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context, global::Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)");
         sb.AppendLine("    {");
@@ -87,12 +88,9 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         foreach (var model in models)
         {
             var fullName = model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var validatorName = model.ContainingNamespace.IsGlobalNamespace
-                ? $"global::{model.Name}Validator"
-                : $"global::{model.ContainingNamespace.ToDisplayString()}.{model.Name}Validator";
             var varName = char.ToLowerInvariant(model.Name[0]).ToString() + model.Name.Substring(1) + "_arg";
             sb.AppendLine($"            case {fullName} {varName}:");
-            sb.AppendLine($"                return await _services.GetRequiredService<{validatorName}>().ValidateAsync({varName});");
+            sb.AppendLine($"                return await _services.GetRequiredService<global::ZeroAlloc.Validation.ValidatorFor<{fullName}>>().ValidateAsync({varName});");
         }
 
         sb.AppendLine("            default: return null;");
@@ -111,22 +109,16 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         sb.AppendLine("using Microsoft.Extensions.DependencyInjection.Extensions;");
         sb.AppendLine("using Microsoft.AspNetCore.Mvc;");
         sb.AppendLine();
-        sb.AppendLine("public static class ZValidationServiceCollectionExtensions");
+        sb.AppendLine("public static class ZeroAllocValidationServiceCollectionExtensions");
         sb.AppendLine("{");
-        sb.AppendLine("    public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection AddZValidationAutoValidation(");
+        sb.AppendLine("    public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection AddZeroAllocAspNetCoreValidation(");
         sb.AppendLine("        this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services)");
         sb.AppendLine("    {");
 
-        foreach (var model in models)
-        {
-            var validatorName = model.ContainingNamespace.IsGlobalNamespace
-                ? $"global::{model.Name}Validator"
-                : $"global::{model.ContainingNamespace.ToDisplayString()}.{model.Name}Validator";
-            sb.AppendLine($"        services.TryAddTransient<{validatorName}>();");
-        }
+        ValidatorRegistrationEmitter.EmitRegistrations(sb, models);
 
-        sb.AppendLine("        services.TryAddTransient<ZValidationActionFilter>();");
-        sb.AppendLine("        services.Configure<global::Microsoft.AspNetCore.Mvc.MvcOptions>(o => o.Filters.Add<ZValidationActionFilter>());");
+        sb.AppendLine("        services.TryAddTransient<ZeroAllocValidationActionFilter>();");
+        sb.AppendLine("        services.Configure<global::Microsoft.AspNetCore.Mvc.MvcOptions>(o => o.Filters.Add<ZeroAllocValidationActionFilter>());");
         sb.AppendLine("        return services;");
         sb.AppendLine("    }");
         sb.AppendLine("}");

@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Share the registration emit helper — not a runtime reference -->
+    <!-- Access ValidatorRegistrationEmitter — compile-time reference only -->
     <ProjectReference Include="..\ZeroAlloc.Validation.Inject\ZeroAlloc.Validation.Inject.csproj"
                       ReferenceOutputAssembly="true"
                       PrivateAssets="all" />

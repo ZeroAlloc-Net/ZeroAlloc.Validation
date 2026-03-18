@@ -2,7 +2,7 @@
 id: aspnetcore
 title: ASP.NET Core Integration
 slug: /docs/aspnetcore
-description: Add automatic request validation with AddZValidationAutoValidation() and a generated action filter.
+description: Add automatic request validation with AddZeroAllocAspNetCoreValidation() and a generated action filter.
 sidebar_position: 7
 ---
 
@@ -19,21 +19,21 @@ dotnet add package ZeroAlloc.Validation.AspNetCore
 
 ```csharp
 builder.Services.AddControllers();
-builder.Services.AddZValidationAutoValidation();
+builder.Services.AddZeroAllocAspNetCoreValidation();
 ```
 
-`AddZValidationAutoValidation()` is source-generated — it lives in the generated code, not in a library method. It:
+`AddZeroAllocAspNetCoreValidation()` is source-generated — it lives in the generated code, not in a library method. It:
 
-- Registers each discovered validator as `Transient` via `TryAddTransient<TValidator>()`
-- Registers `ZValidationActionFilter` as `Transient`
-- Adds `ZValidationActionFilter` to `MvcOptions.Filters`
+- Registers each discovered validator as `Singleton` via `TryAddSingleton<ValidatorFor<T>, TValidator>()`
+- Registers `ZeroAllocValidationActionFilter` as `Transient`
+- Adds `ZeroAllocValidationActionFilter` to `MvcOptions.Filters`
 
 ## How it works
 
-The generated `ZValidationActionFilter` implements `IActionFilter` and intercepts every incoming request:
+The generated `ZeroAllocValidationActionFilter` implements `IAsyncActionFilter` and intercepts every incoming request:
 
-- `OnActionExecuting` iterates over `context.ActionArguments.Values`
-- For each argument, calls a generated type-switch `Dispatch(arg)` method
+- `OnActionExecutionAsync` iterates over `context.ActionArguments.Values`
+- For each argument, calls a generated type-switch `Dispatch(arg)` method that resolves the validator via `ValidatorFor<T>` from DI
 - If validation fails: short-circuits the request and returns HTTP **422 Unprocessable Entity** with `ValidationProblemDetails`
 - On success: the request proceeds to the controller
 
@@ -42,7 +42,7 @@ The type-switch is generated at build time — there is no reflection and no dic
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Filter as ZValidationActionFilter
+    participant Filter as ZeroAllocValidationActionFilter
     participant Validator as Generated Validator
     participant Controller
 
@@ -83,11 +83,7 @@ Example response:
 
 ## DI lifetimes
 
-By default, all validators are registered as `Transient`. This is safe because validators are stateless.
-
-If you annotate your model class with `[Transient]`, `[Scoped]`, or `[Singleton]` from the **ZeroAlloc.Inject** package, the source generator mirrors that lifetime onto the generated validator class. `AddZValidationAutoValidation()` still uses `TryAddTransient` (and will not override an explicitly registered validator), so your lifetime attribute takes precedence.
-
-> **Note:** `[Transient]`, `[Scoped]`, and `[Singleton]` come from the **ZeroAlloc.Inject** package, which is a separate NuGet package. ZeroAlloc.Validation itself does not define these attributes.
+All validators are registered as `Singleton` via `TryAddSingleton`. This is safe because generated validators are stateless. The registrations are idempotent — calling `AddZeroAllocAspNetCoreValidation()` multiple times or alongside `AddZeroAllocValidators()` produces no duplicates.
 
 ## Accessing the result manually
 
@@ -96,9 +92,9 @@ You can also inject and call validators directly in a controller, without using 
 ```csharp
 public class OrdersController : ControllerBase
 {
-    private readonly OrderValidator _validator;
+    private readonly ValidatorFor<CreateOrderRequest> _validator;
 
-    public OrdersController(OrderValidator validator) => _validator = validator;
+    public OrdersController(ValidatorFor<CreateOrderRequest> validator) => _validator = validator;
 
     [HttpPost]
     public IActionResult Create([FromBody] CreateOrderRequest request)

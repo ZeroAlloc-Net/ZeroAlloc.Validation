@@ -3,13 +3,18 @@
     <Project Path="src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj" />
     <Project Path="src/ZeroAlloc.Validation.AspNetCore.Generator/ZeroAlloc.Validation.AspNetCore.Generator.csproj" />
     <Project Path="src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj" />
+    <Project Path="src/ZeroAlloc.Validation.Inject/ZeroAlloc.Validation.Inject.csproj" />
+    <Project Path="src/ZeroAlloc.Validation.Options/ZeroAlloc.Validation.Options.csproj" />
+    <Project Path="src/ZeroAlloc.Validation.Options.Generator/ZeroAlloc.Validation.Options.Generator.csproj" />
     <Project Path="src/ZeroAlloc.Validation.Testing/ZeroAlloc.Validation.Testing.csproj" />
     <Project Path="src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ZeroAlloc.Validation.Tests.AspNetCore/ZeroAlloc.Validation.Tests.AspNetCore.csproj" />
+    <Project Path="tests/ZeroAlloc.Validation.Tests.Inject/ZeroAlloc.Validation.Tests.Inject.csproj" />
     <Project Path="tests/ZeroAlloc.Validation.Tests.MSTest/ZeroAlloc.Validation.Tests.MSTest.csproj" />
     <Project Path="tests/ZeroAlloc.Validation.Tests.NUnit/ZeroAlloc.Validation.Tests.NUnit.csproj" />
+    <Project Path="tests/ZeroAlloc.Validation.Tests.Options/ZeroAlloc.Validation.Tests.Options.csproj" />
     <Project Path="tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj" />
   </Folder>
 </Solution>
