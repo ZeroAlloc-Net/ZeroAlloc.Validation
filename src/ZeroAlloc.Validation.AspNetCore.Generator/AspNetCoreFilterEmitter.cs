@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using ZeroAlloc.Validation.Inject;
 
 namespace ZeroAlloc.Validation.AspNetCore.Generator;
 
@@ -87,12 +88,9 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         foreach (var model in models)
         {
             var fullName = model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var validatorName = model.ContainingNamespace.IsGlobalNamespace
-                ? $"global::{model.Name}Validator"
-                : $"global::{model.ContainingNamespace.ToDisplayString()}.{model.Name}Validator";
             var varName = char.ToLowerInvariant(model.Name[0]).ToString() + model.Name.Substring(1) + "_arg";
             sb.AppendLine($"            case {fullName} {varName}:");
-            sb.AppendLine($"                return await _services.GetRequiredService<{validatorName}>().ValidateAsync({varName});");
+            sb.AppendLine($"                return await _services.GetRequiredService<global::ZeroAlloc.Validation.ValidatorFor<{fullName}>>().ValidateAsync({varName});");
         }
 
         sb.AppendLine("            default: return null;");
@@ -117,13 +115,7 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         sb.AppendLine("        this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services)");
         sb.AppendLine("    {");
 
-        foreach (var model in models)
-        {
-            var validatorName = model.ContainingNamespace.IsGlobalNamespace
-                ? $"global::{model.Name}Validator"
-                : $"global::{model.ContainingNamespace.ToDisplayString()}.{model.Name}Validator";
-            sb.AppendLine($"        services.TryAddTransient<{validatorName}>();");
-        }
+        ValidatorRegistrationEmitter.EmitRegistrations(sb, models);
 
         sb.AppendLine("        services.TryAddTransient<ZeroAllocValidationActionFilter>();");
         sb.AppendLine("        services.Configure<global::Microsoft.AspNetCore.Mvc.MvcOptions>(o => o.Filters.Add<ZeroAllocValidationActionFilter>());");

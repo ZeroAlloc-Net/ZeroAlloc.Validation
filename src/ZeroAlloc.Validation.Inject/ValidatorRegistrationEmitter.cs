@@ -9,7 +9,7 @@ namespace ZeroAlloc.Validation.Inject;
 /// Emits one TryAddSingleton line per [Validate] class, registering the generated validator
 /// as ValidatorFor&lt;T&gt; so any DI consumer can resolve it by the abstract base type.
 /// </summary>
-internal static class ValidatorRegistrationEmitter
+public static class ValidatorRegistrationEmitter
 {
     /// <summary>
     /// Appends one <c>services.TryAddSingleton&lt;ValidatorFor&lt;T&gt;, TValidator&gt;();</c>

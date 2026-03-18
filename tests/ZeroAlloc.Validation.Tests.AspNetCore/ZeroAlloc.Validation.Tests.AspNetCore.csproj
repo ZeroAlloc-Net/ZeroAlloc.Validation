@@ -31,6 +31,10 @@
     <ProjectReference Include="..\..\src\ZeroAlloc.Validation.AspNetCore.Generator\ZeroAlloc.Validation.AspNetCore.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
+    <!-- Inject assembly must also be present in the analyzer load context -->
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Inject\ZeroAlloc.Validation.Inject.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

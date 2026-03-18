@@ -12,4 +12,10 @@
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.3.0" PrivateAssets="all" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Share the registration emit helper — not a runtime reference -->
+    <ProjectReference Include="..\ZeroAlloc.Validation.Inject\ZeroAlloc.Validation.Inject.csproj"
+                      ReferenceOutputAssembly="true" />
+  </ItemGroup>
+
 </Project>
