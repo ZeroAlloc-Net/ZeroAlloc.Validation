@@ -55,7 +55,7 @@ public class AspNetCoreGeneratorTests
     }
 
     [Fact]
-    public void Generator_EmitsAddZValidationAutoValidation_ExtensionMethod()
+    public void Generator_EmitsAddZeroAllocAspNetCoreValidation_ExtensionMethod()
     {
         var source = """
             using ZeroAlloc.Validation;
