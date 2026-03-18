@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v0.2.0...v0.2.1) (2026-03-18)
+
+
+### Documentation
+
+* add slug to getting-started for root URL routing ([1cc740d](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/1cc740d6d0ee0c4083f4a502b10347d854f9aedf))
+* add slug to getting-started for root URL routing ([10eaefc](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/10eaefc5a8b6cbc4ad35606364ee61c744cb48f4))
+
 ## [0.2.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v0.1.2...v0.2.0) (2026-03-18)
 
 
