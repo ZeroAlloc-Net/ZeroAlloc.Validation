@@ -14,7 +14,7 @@ Two new packages, plus changes to the existing AspNetCore package.
 |---|---|---|
 | `ZeroAlloc.Validation.Inject` | Generator only | Emits `AddZeroAllocValidators()` — bulk validator registration |
 | `ZeroAlloc.Validation.Options` | Generator + runtime | Emits `ValidateWithZeroAlloc()` overloads + options adapter |
-| `ZeroAlloc.Validation.AspNetCore` | Existing — updated | Rename Z-prefixed names; `AddZeroAllocValidation()` auto-registers validators |
+| `ZeroAlloc.Validation.AspNetCore` | Existing — updated | Rename Z-prefixed names; `AddZeroAllocAspNetCoreValidation()` auto-registers validators |
 
 ## Design Principles
 
@@ -111,12 +111,12 @@ public sealed class ZeroAllocOptionsValidator<T> : IValidateOptions<T> where T :
 |---|---|
 | `ZValidationActionFilter` | `ZeroAllocValidationActionFilter` |
 | `ZValidationServiceCollectionExtensions` | `ZeroAllocValidationServiceCollectionExtensions` |
-| `AddZValidationAutoValidation()` | `AddZeroAllocValidation()` |
+| `AddZValidationAutoValidation()` | `AddZeroAllocAspNetCoreValidation()` |
 
-### AddZeroAllocValidation() — now includes validator registration
+### AddZeroAllocAspNetCoreValidation() — now includes validator registration
 
 The `AspNetCoreFilterEmitter` is updated to use the shared registration emit helper. The
-generated `AddZeroAllocValidation()` method emits validator `TryAdd` lines alongside the
+generated `AddZeroAllocAspNetCoreValidation()` method emits validator `TryAdd` lines alongside the
 existing filter wiring:
 
 ```csharp
@@ -139,7 +139,7 @@ public static IServiceCollection AddZeroAllocValidation(this IServiceCollection 
 ### ASP.NET Core app — one call, everything works
 
 ```csharp
-builder.Services.AddZeroAllocValidation();
+builder.Services.AddZeroAllocAspNetCoreValidation();
 
 builder.Services.AddOptions<DatabaseOptions>()
     .BindConfiguration("Database")
@@ -157,7 +157,7 @@ services.AddZeroAllocValidators();
 
 ```csharp
 builder.Services.AddZeroAllocValidators();    // TryAdd
-builder.Services.AddZeroAllocValidation();    // TryAdd — no duplicates
+builder.Services.AddZeroAllocAspNetCoreValidation();    // TryAdd — no duplicates
 builder.Services.AddOptions<DatabaseOptions>()
     .ValidateWithZeroAlloc();                 // TryAdd — no duplicates
 ```
