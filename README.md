@@ -50,12 +50,24 @@ if (!result.IsValid)
 
 See [Performance](docs/performance.md) for full benchmark results.
 
+## Packages
+
+| Package | Purpose |
+|---|---|
+| `ZeroAlloc.Validation` | Core library — attributes, source generator, `ValidationResult` |
+| `ZeroAlloc.Validation.AspNetCore` | Auto-validates request models; returns HTTP 422 on failure |
+| `ZeroAlloc.Validation.Inject` | Emits `AddZeroAllocValidators()` — bulk DI registration in one call |
+| `ZeroAlloc.Validation.Options` | Emits `ValidateWithZeroAlloc()` — plugs validators into `Microsoft.Extensions.Options` |
+| `ZeroAlloc.Validation.Testing` | Fluent assertions for unit-testing validators |
+
 ## Features
 
 - Zero heap allocation on the valid path
 - 25+ built-in validation attributes
 - Nested object and collection validation
 - ASP.NET Core auto-validation (HTTP 422 on failure)
+- Zero-friction DI registration (`AddZeroAllocValidators()`)
+- Source-generated `Microsoft.Extensions.Options` integration (`ValidateWithZeroAlloc()`)
 - Per-rule severity (`Error`, `Warning`, `Info`)
 - Conditional rules (`When` / `Unless` / `[SkipWhen]`)
 - Short-circuit with `[StopOnFirstFailure]`
@@ -71,6 +83,8 @@ See [Performance](docs/performance.md) for full benchmark results.
 - [Custom Validation](docs/custom-validation.md)
 - [Error Messages](docs/error-messages.md)
 - [ASP.NET Core Integration](docs/aspnetcore.md)
+- [DI Registration (Inject)](docs/inject.md)
+- [Options Validation](docs/options.md)
 - [Testing](docs/testing.md)
 - [Performance](docs/performance.md)
 - [Advanced Features](docs/advanced.md)

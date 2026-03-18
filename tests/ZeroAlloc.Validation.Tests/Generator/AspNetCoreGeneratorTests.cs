@@ -20,13 +20,13 @@ public class AspNetCoreGeneratorTests
             [Validate] public class Order    { [NotEmpty] public string Ref  { get; set; } = ""; }
             """;
 
-        var filter = RunAspNetGeneratorGetSource(source, "ZValidationActionFilter.g.cs");
+        var filter = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationActionFilter.g.cs");
         Assert.Contains("global::MyApp.Customer", filter, StringComparison.Ordinal);
         Assert.Contains("global::MyApp.Order",    filter, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Generator_EmitsExtensionMethod_WithTryAddTransient_ForBothValidators()
+    public void Generator_EmitsExtensionMethod_WithTryAddSingleton_ForBothValidators()
     {
         var source = """
             using ZeroAlloc.Validation;
@@ -35,9 +35,9 @@ public class AspNetCoreGeneratorTests
             [Validate] public class Order    { [NotEmpty] public string Ref  { get; set; } = ""; }
             """;
 
-        var ext = RunAspNetGeneratorGetSource(source, "ZValidationServiceCollectionExtensions.g.cs");
-        Assert.Contains("TryAddTransient<global::MyApp.CustomerValidator>", ext, StringComparison.Ordinal);
-        Assert.Contains("TryAddTransient<global::MyApp.OrderValidator>",    ext, StringComparison.Ordinal);
+        var ext = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationServiceCollectionExtensions.g.cs");
+        Assert.Contains("TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.Customer>, global::MyApp.CustomerValidator>", ext, StringComparison.Ordinal);
+        Assert.Contains("TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.Order>, global::MyApp.OrderValidator>",    ext, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -50,12 +50,12 @@ public class AspNetCoreGeneratorTests
             public class NotAModel { public string X { get; set; } = ""; }
             """;
 
-        var filter = RunAspNetGeneratorGetSource(source, "ZValidationActionFilter.g.cs");
+        var filter = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationActionFilter.g.cs");
         Assert.DoesNotContain("NotAModel", filter, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Generator_EmitsAddZValidationAutoValidation_ExtensionMethod()
+    public void Generator_EmitsAddZeroAllocAspNetCoreValidation_ExtensionMethod()
     {
         var source = """
             using ZeroAlloc.Validation;
@@ -63,8 +63,8 @@ public class AspNetCoreGeneratorTests
             [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
             """;
 
-        var ext = RunAspNetGeneratorGetSource(source, "ZValidationServiceCollectionExtensions.g.cs");
-        Assert.Contains("AddZValidationAutoValidation", ext, StringComparison.Ordinal);
+        var ext = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationServiceCollectionExtensions.g.cs");
+        Assert.Contains("AddZeroAllocAspNetCoreValidation", ext, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -77,10 +77,37 @@ public class AspNetCoreGeneratorTests
             public class CreateOrderRequest { [NotEmpty] public string Reference { get; set; } = ""; }
             """;
 
-        var generated = RunAspNetGeneratorGetSource(source, "ZValidationActionFilter.g.cs");
+        var generated = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationActionFilter.g.cs");
         Assert.Contains("IAsyncActionFilter", generated, System.StringComparison.Ordinal);
         Assert.Contains("OnActionExecutionAsync", generated, System.StringComparison.Ordinal);
         Assert.Contains("ValidateAsync", generated, System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsValidatorFor_InExtensionMethod()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace MyApp;
+            [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
+            """;
+
+        var ext = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationServiceCollectionExtensions.g.cs");
+        Assert.Contains("ValidatorFor<global::MyApp.Customer>", ext, StringComparison.Ordinal);
+        Assert.Contains("TryAddSingleton",                      ext, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_DispatchUsesValidatorFor_NotConcreteType()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace MyApp;
+            [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
+            """;
+
+        var filter = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationActionFilter.g.cs");
+        Assert.Contains("ValidatorFor<global::MyApp.Customer>", filter, StringComparison.Ordinal);
     }
 
     private static string RunAspNetGeneratorGetSource(string source, string fileName)

@@ -12,23 +12,31 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.3.0" />
-    <PackageReference Include="ZeroAlloc.Pipeline" Version="0.1.1" GeneratePathProperty="true" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+    <!-- Required so Roslyn can locate ZeroAlloc.Pipeline.Generators when loading ValidatorGenerator -->
     <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="0.1.1" GeneratePathProperty="true" />
+    <PackageReference Include="ZeroAlloc.Pipeline" Version="0.1.1" GeneratePathProperty="true" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj" />
-    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Testing\ZeroAlloc.Validation.Testing.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Options\ZeroAlloc.Validation.Options.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ZeroAlloc.Validation.Generator must also be present for [Validate] attribute to generate validators -->
     <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Generator\ZeroAlloc.Validation.Generator.csproj"
                       OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="true" />
-    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.AspNetCore.Generator\ZeroAlloc.Validation.AspNetCore.Generator.csproj"
-                      ReferenceOutputAssembly="true" />
-    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Inject\ZeroAlloc.Validation.Inject.csproj"
-                      ReferenceOutputAssembly="true" />
+                      ReferenceOutputAssembly="false" />
+    <!-- Options.Generator emits ValidateWithZeroAlloc() overloads -->
     <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Options.Generator\ZeroAlloc.Validation.Options.Generator.csproj"
-                      ReferenceOutputAssembly="true" />
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+    <!-- Inject assembly must also be present in the analyzer load context for Options.Generator to resolve ValidatorRegistrationEmitter -->
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Inject\ZeroAlloc.Validation.Inject.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <!-- Expose generator dependency DLLs as Analyzer items so Roslyn's loader can find them -->

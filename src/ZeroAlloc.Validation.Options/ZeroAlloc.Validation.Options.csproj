@@ -2,12 +2,12 @@
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
-    <PackageId>ZeroAlloc.Validation.AspNetCore</PackageId>
-    <Description>ASP.NET Core integration for ZeroAlloc.Validation. Source-generated action filter validates request models at compile time with zero runtime overhead.</Description>
+    <PackageId>ZeroAlloc.Validation.Options</PackageId>
+    <Description>Source-generated options validation for ZeroAlloc.Validation. Plugs compile-time validators into Microsoft.Extensions.Options with zero reflection.</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -15,10 +15,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ZeroAlloc.Validation.AspNetCore.Generator\ZeroAlloc.Validation.AspNetCore.Generator.csproj"
+    <ProjectReference Include="..\ZeroAlloc.Validation.Options.Generator\ZeroAlloc.Validation.Options.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
-    <!-- Inject assembly must also be present in the analyzer load context -->
+    <!-- Inject assembly must also be present in the analyzer load context for Options.Generator to resolve ValidatorRegistrationEmitter -->
     <ProjectReference Include="..\ZeroAlloc.Validation.Inject\ZeroAlloc.Validation.Inject.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />

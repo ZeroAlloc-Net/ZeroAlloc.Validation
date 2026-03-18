@@ -4,19 +4,13 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <IsRoslynComponent>true</IsRoslynComponent>
-    <IsPackable>false</IsPackable>
+    <PackageId>ZeroAlloc.Validation.Inject</PackageId>
+    <Description>Source generator that emits AddZeroAllocValidators() — zero-reflection DI registration for all ZeroAlloc.Validation validators.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.3.0" PrivateAssets="all" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Share the registration emit helper — not a runtime reference -->
-    <ProjectReference Include="..\ZeroAlloc.Validation.Inject\ZeroAlloc.Validation.Inject.csproj"
-                      ReferenceOutputAssembly="true"
-                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
