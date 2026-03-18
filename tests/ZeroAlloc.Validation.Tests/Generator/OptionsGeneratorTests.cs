@@ -71,7 +71,22 @@ public class OptionsGeneratorTests
         Assert.DoesNotContain("NotOptions", generated, System.StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_NoValidateClasses_EmitsNothing()
+    {
+        var source = """
+            namespace MyApp;
+            public class Plain { public string X { get; set; } = ""; }
+            """;
+
+        var trees = RunOptionsGeneratorAllTrees(source);
+        Assert.Empty(trees);
+    }
+
     private static string RunOptionsGenerator(string source)
+        => RunOptionsGeneratorAllTrees(source).First();
+
+    private static System.Collections.Generic.IReadOnlyList<string> RunOptionsGeneratorAllTrees(string source)
     {
         var systemRuntime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
         var compilation = CSharpCompilation.Create(
@@ -86,8 +101,6 @@ public class OptionsGeneratorTests
 
         var generator = new ZeroAlloc.Validation.Options.Generator.OptionsValidationEmitter();
         var driver    = CSharpGeneratorDriver.Create(generator).RunGenerators(compilation);
-        return driver.GetRunResult().GeneratedTrees
-            .Select(t => t.ToString())
-            .First();
+        return driver.GetRunResult().GeneratedTrees.Select(t => t.ToString()).ToList();
     }
 }

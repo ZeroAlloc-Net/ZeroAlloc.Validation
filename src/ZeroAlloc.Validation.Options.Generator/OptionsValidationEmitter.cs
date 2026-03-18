@@ -40,19 +40,22 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
         sb.AppendLine("public static class ZeroAllocOptionsValidationExtensions");
         sb.AppendLine("{");
 
-        foreach (var model in models)
+        for (var i = 0; i < models.Length; i++)
         {
+            var model    = models[i];
             var modelFqn = model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
             sb.AppendLine($"    public static global::Microsoft.Extensions.Options.OptionsBuilder<{modelFqn}> ValidateWithZeroAlloc(");
             sb.AppendLine($"        this global::Microsoft.Extensions.Options.OptionsBuilder<{modelFqn}> builder)");
             sb.AppendLine("    {");
+            sb.AppendLine("        var services = builder.Services;");
             ValidatorRegistrationEmitter.EmitRegistrations(sb, [model]);
             sb.AppendLine($"        builder.Services.TryAddSingleton<global::Microsoft.Extensions.Options.IValidateOptions<{modelFqn}>,");
             sb.AppendLine($"            global::ZeroAlloc.Validation.Options.ZeroAllocOptionsValidator<{modelFqn}>>();");
             sb.AppendLine("        return builder;");
             sb.AppendLine("    }");
-            sb.AppendLine();
+            if (i < models.Length - 1)
+                sb.AppendLine();
         }
 
         sb.AppendLine("}");
