@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.2.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v0.1.2...v0.2.0) (2026-03-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* rename Z-prefixed generated names to ZeroAlloc-prefixed
+
+### Features
+
+* add ZeroAlloc.Validation.Inject source generator with AddZeroAllocValidators() ([778788e](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/778788ec93e3c7627f524978df106591491d6ec8))
+* add ZeroAlloc.Validation.Inject, ZeroAlloc.Validation.Options, and AspNetCore rename ([c148dba](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/c148dba577b137688fbe59d65d3a698f8432c5a5))
+* add ZeroAlloc.Validation.Options integration tests ([b80caed](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/b80caed7c22b30c3936de0b11bde0b22d0874a11))
+* add ZeroAlloc.Validation.Options runtime project with ZeroAllocOptionsValidator&lt;T&gt; ([ed2cdca](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/ed2cdca1b5c480bcbbaba5e6fadd4b23b23f5c78))
+* add ZeroAlloc.Validation.Options.Generator emitting ValidateWithZeroAlloc() overloads ([4f32ef7](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/4f32ef76fb1598bdcd2e2b27030264c7c07bdda9))
+* rename Z-prefixed generated names to ZeroAlloc-prefixed ([026a720](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/026a7203e8f5b0639ec647f4d023fc73aee0e42a))
+* wire ValidatorRegistrationEmitter into AspNetCore generator, resolve via ValidatorFor&lt;T&gt; ([09716fa](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/09716faf8b887823f5da1a720f9ad637137b4c12))
+
+
+### Bug Fixes
+
+* add PrivateAssets=all on Inject reference in AspNetCore.Generator ([73b83fd](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/73b83fd4e6fa729efb9d583e6371c1da7d40a656))
+* emit services local in ValidateWithZeroAlloc body, add empty-input test ([39ac5eb](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/39ac5ebf7dc9d86eaa37414b2f183536ad7d4d38))
+* rename test method to match ZeroAlloc-prefixed convention ([a9b4589](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/a9b458965ec637a39f648c55e0ee066ad5d4d0e6))
+* skip null options in ZeroAllocOptionsValidator instead of passing to validator ([3642b96](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/3642b96ebd7c5f8a79d2770b3dc3b3683de5f23a))
+
+
+### Documentation
+
+* add Inject and Options design doc ([80f6642](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/80f66420535d84df7ac17d8494c96f94d6f1172a))
+* add Inject and Options implementation plan ([c632c1f](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/c632c1f7d5980f3e98caf8fe196cd0562b976079))
+* rename AddZeroAllocValidation to AddZeroAllocAspNetCoreValidation in design doc ([2f62333](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/2f62333e9d7f78b3438f1f08926b9b4cf9a72f59))
+* update aspnetcore.md, add inject.md and options.md, update README with new packages ([1538f74](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/1538f745d5e3b1ff9988d898418507374d6ffccc))
+
+
+### Tests
+
+* add Inject integration tests and cross-package idempotency test ([006529d](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/006529d4ab81bdf0acaf9d84047da638bc53a9c2))
+
 ## [0.1.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v0.1.1...v0.1.2) (2026-03-17)
 
 
