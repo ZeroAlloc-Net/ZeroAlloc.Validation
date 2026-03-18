@@ -25,6 +25,8 @@
                       ReferenceOutputAssembly="true" />
     <ProjectReference Include="..\..\src\ZeroAlloc.Validation.AspNetCore.Generator\ZeroAlloc.Validation.AspNetCore.Generator.csproj"
                       ReferenceOutputAssembly="true" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Inject\ZeroAlloc.Validation.Inject.csproj"
+                      ReferenceOutputAssembly="true" />
   </ItemGroup>
 
   <!-- Expose generator dependency DLLs as Analyzer items so Roslyn's loader can find them -->
