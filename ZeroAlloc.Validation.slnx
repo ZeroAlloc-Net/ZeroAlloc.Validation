@@ -4,6 +4,8 @@
     <Project Path="src/ZeroAlloc.Validation.AspNetCore.Generator/ZeroAlloc.Validation.AspNetCore.Generator.csproj" />
     <Project Path="src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj" />
     <Project Path="src/ZeroAlloc.Validation.Inject/ZeroAlloc.Validation.Inject.csproj" />
+    <Project Path="src/ZeroAlloc.Validation.Options/ZeroAlloc.Validation.Options.csproj" />
+    <Project Path="src/ZeroAlloc.Validation.Options.Generator/ZeroAlloc.Validation.Options.Generator.csproj" />
     <Project Path="src/ZeroAlloc.Validation.Testing/ZeroAlloc.Validation.Testing.csproj" />
     <Project Path="src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj" />
   </Folder>
