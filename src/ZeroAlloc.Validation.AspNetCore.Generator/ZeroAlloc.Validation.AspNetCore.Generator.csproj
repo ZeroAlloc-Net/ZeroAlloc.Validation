@@ -15,7 +15,8 @@
   <ItemGroup>
     <!-- Share the registration emit helper — not a runtime reference -->
     <ProjectReference Include="..\ZeroAlloc.Validation.Inject\ZeroAlloc.Validation.Inject.csproj"
-                      ReferenceOutputAssembly="true" />
+                      ReferenceOutputAssembly="true"
+                      PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
