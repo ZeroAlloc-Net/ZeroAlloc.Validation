@@ -13,6 +13,7 @@
     <Project Path="tests/ZeroAlloc.Validation.Tests.AspNetCore/ZeroAlloc.Validation.Tests.AspNetCore.csproj" />
     <Project Path="tests/ZeroAlloc.Validation.Tests.MSTest/ZeroAlloc.Validation.Tests.MSTest.csproj" />
     <Project Path="tests/ZeroAlloc.Validation.Tests.NUnit/ZeroAlloc.Validation.Tests.NUnit.csproj" />
+    <Project Path="tests/ZeroAlloc.Validation.Tests.Options/ZeroAlloc.Validation.Tests.Options.csproj" />
     <Project Path="tests/ZeroAlloc.Validation.Tests/ZeroAlloc.Validation.Tests.csproj" />
   </Folder>
 </Solution>

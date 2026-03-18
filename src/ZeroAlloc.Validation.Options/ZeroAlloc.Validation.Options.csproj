@@ -18,6 +18,10 @@
     <ProjectReference Include="..\ZeroAlloc.Validation.Options.Generator\ZeroAlloc.Validation.Options.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
+    <!-- Inject assembly must also be present in the analyzer load context for Options.Generator to resolve ValidatorRegistrationEmitter -->
+    <ProjectReference Include="..\ZeroAlloc.Validation.Inject\ZeroAlloc.Validation.Inject.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>
