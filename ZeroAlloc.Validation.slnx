@@ -11,6 +11,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ZeroAlloc.Validation.Tests.AspNetCore/ZeroAlloc.Validation.Tests.AspNetCore.csproj" />
+    <Project Path="tests/ZeroAlloc.Validation.Tests.Inject/ZeroAlloc.Validation.Tests.Inject.csproj" />
     <Project Path="tests/ZeroAlloc.Validation.Tests.MSTest/ZeroAlloc.Validation.Tests.MSTest.csproj" />
     <Project Path="tests/ZeroAlloc.Validation.Tests.NUnit/ZeroAlloc.Validation.Tests.NUnit.csproj" />
     <Project Path="tests/ZeroAlloc.Validation.Tests.Options/ZeroAlloc.Validation.Tests.Options.csproj" />

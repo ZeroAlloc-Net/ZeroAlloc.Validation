@@ -66,6 +66,23 @@ public class OptionsIntegrationTests
     }
 
     [Fact]
+    public void AddZeroAllocValidators_And_ValidateWithZeroAlloc_NoDuplicateValidatorForT()
+    {
+        var services = new ServiceCollection();
+        services.AddZeroAllocValidators();                // registers ValidatorFor<DatabaseOptions>
+        services.AddOptions<DatabaseOptions>()
+            .Configure(o => { o.ConnectionString = "Server=localhost"; o.MaxPoolSize = 10; })
+            .ValidateWithZeroAlloc();                     // TryAdd — should not duplicate
+
+        var sp         = services.BuildServiceProvider();
+        var validators = sp.GetServices<ValidatorFor<DatabaseOptions>>();
+
+        #pragma warning disable HLQ005
+        Assert.Single(validators);
+        #pragma warning restore HLQ005
+    }
+
+    [Fact]
     public void TwoOptionsClasses_BothValidated_Independently()
     {
         var services = new ServiceCollection();
