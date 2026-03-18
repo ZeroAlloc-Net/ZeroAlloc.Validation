@@ -1,7 +1,7 @@
 ---
 id: getting-started
 title: Getting Started
-slug: /docs/getting-started
+slug: /
 description: Install ZeroAlloc.Validation, annotate your first model, and validate it in three steps.
 sidebar_position: 1
 ---
