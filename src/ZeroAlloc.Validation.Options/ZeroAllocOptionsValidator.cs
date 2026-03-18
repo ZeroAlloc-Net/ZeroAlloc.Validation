@@ -14,6 +14,8 @@ public sealed class ZeroAllocOptionsValidator<T> : IValidateOptions<T> where T :
 
     public ValidateOptionsResult Validate(string? name, T options)
     {
+        if (options is null) return ValidateOptionsResult.Skip;
+
         var result = _validator.Validate(options);
         if (result.IsValid)
             return ValidateOptionsResult.Success;
