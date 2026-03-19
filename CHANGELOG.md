@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v0.2.1...v0.2.2) (2026-03-19)
+
+
+### Bug Fixes
+
+* update PackageProjectUrl and trigger CI on release-please branches ([427fd4c](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/427fd4ca4c321e66e63bdd9d7ed3478196e4711e))
+* update PackageProjectUrl to docs site ([1725caa](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/1725caa1b74ee2eba746b724e4e5fcdaa732cf7c))
+* update PackageProjectUrl to docs site ([ddffeee](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/ddffeeeaea597458505508f4011a31d59ae8558a))
+
 ## [0.2.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v0.2.0...v0.2.1) (2026-03-18)
 
 
