@@ -9,7 +9,7 @@
     <Authors>Marcel Roozekrans</Authors>
     <Company>Marcel Roozekrans</Company>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation</PackageProjectUrl>
+    <PackageProjectUrl>https://validation.zeroalloc.net</PackageProjectUrl>
     <RepositoryUrl>https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>validation;source-generator;zero-allocation;roslyn;attributes</PackageTags>
