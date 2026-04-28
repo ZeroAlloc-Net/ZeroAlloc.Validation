@@ -1,6 +1,7 @@
 # ZeroAlloc.Validation
 
 [![NuGet](https://img.shields.io/nuget/v/ZeroAlloc.Validation)](https://www.nuget.org/packages/ZeroAlloc.Validation)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/MarcelRoozekrans?style=flat&logo=githubsponsors&color=ea4aaa&label=Sponsor)](https://github.com/sponsors/MarcelRoozekrans)
 ![Build](https://img.shields.io/github/actions/workflow/status/ZeroAlloc-Net/ZeroAlloc.Validation/ci.yml?branch=main)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
