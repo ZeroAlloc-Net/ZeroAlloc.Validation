@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v0.2.3...v1.0.0) (2026-04-28)
+
+
+### Miscellaneous Chores
+
+* **release:** promote to 1.0.0 stability milestone ([c52c0a9](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/c52c0a9a96bc159192824481e86b32934e5986aa))
+
 ## 1.0.0
 
 Stability milestone — public API of `ZeroAlloc.Validation` is now considered stable. Bundles PR #20 (CI: publish ZeroAlloc.Validation.Inject and ZeroAlloc.Validation.Options to NuGet). This release marks the transition out of pre-1.0 SemVer.
