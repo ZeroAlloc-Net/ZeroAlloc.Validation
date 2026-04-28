@@ -47,6 +47,8 @@ jobs:
           dotnet pack src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
           dotnet pack src/ZeroAlloc.Validation.AspNetCore.Generator/ZeroAlloc.Validation.AspNetCore.Generator.csproj -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
           dotnet pack src/ZeroAlloc.Validation.Testing/ZeroAlloc.Validation.Testing.csproj -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
+          dotnet pack src/ZeroAlloc.Validation.Inject/ZeroAlloc.Validation.Inject.csproj -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
+          dotnet pack src/ZeroAlloc.Validation.Options/ZeroAlloc.Validation.Options.csproj -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
 
       - name: Push to NuGet
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
