@@ -1,9 +1,10 @@
 # ZeroAlloc.Validation
 
-[![NuGet](https://img.shields.io/nuget/v/ZeroAlloc.Validation)](https://www.nuget.org/packages/ZeroAlloc.Validation)
+[![NuGet](https://img.shields.io/nuget/v/ZeroAlloc.Validation.svg)](https://www.nuget.org/packages/ZeroAlloc.Validation)
+[![Build](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/actions/workflows/ci.yml/badge.svg)](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![AOT](https://img.shields.io/badge/AOT--Compatible-passing-brightgreen)](https://learn.microsoft.com/dotnet/core/deploying/native-aot/)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/MarcelRoozekrans?style=flat&logo=githubsponsors&color=ea4aaa&label=Sponsor)](https://github.com/sponsors/MarcelRoozekrans)
-![Build](https://img.shields.io/github/actions/workflow/status/ZeroAlloc-Net/ZeroAlloc.Validation/ci.yml?branch=main)
-![License](https://img.shields.io/badge/license-MIT-blue)
 
 Source-generated, attribute-based validation for .NET that allocates nothing on the valid path. The source generator emits a strongly-typed validator class at build time — no reflection at runtime. When all rules pass, the entire validation cycle produces zero heap allocations.
 
