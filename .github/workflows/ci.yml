@@ -53,6 +53,12 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
 
+  api-compat:
+    uses: ZeroAlloc-Net/.github/.github/workflows/api-compat.yml@main
+    with:
+      package-id: ZeroAlloc.Validation
+      csproj-path: src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj
+
   aot-smoke:
     runs-on: ubuntu-latest
     # Publishes samples/ZeroAlloc.Validation.AotSmoke with PublishAot=true and
