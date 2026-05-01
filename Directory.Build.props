@@ -4,6 +4,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Lock the public API surface: any addition/removal must update PublicAPI.*.txt -->
+    <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017</WarningsAsErrors>
 
     <!-- NuGet package metadata -->
     <Authors>Marcel Roozekrans</Authors>

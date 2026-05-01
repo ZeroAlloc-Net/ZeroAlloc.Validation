@@ -1,0 +1,132 @@
+#nullable enable
+ZeroAlloc.Validation.CustomValidationAttribute
+ZeroAlloc.Validation.CustomValidationAttribute.CustomValidationAttribute() -> void
+ZeroAlloc.Validation.DisplayNameAttribute
+ZeroAlloc.Validation.DisplayNameAttribute.DisplayName.get -> string!
+ZeroAlloc.Validation.DisplayNameAttribute.DisplayNameAttribute(string! displayName) -> void
+ZeroAlloc.Validation.EmailAddressAttribute
+ZeroAlloc.Validation.EmailAddressAttribute.EmailAddressAttribute() -> void
+ZeroAlloc.Validation.EmptyAttribute
+ZeroAlloc.Validation.EmptyAttribute.EmptyAttribute() -> void
+ZeroAlloc.Validation.EqualAttribute
+ZeroAlloc.Validation.EqualAttribute.EqualAttribute(double value) -> void
+ZeroAlloc.Validation.EqualAttribute.EqualAttribute(string! value) -> void
+ZeroAlloc.Validation.EqualAttribute.NumericValue.get -> double
+ZeroAlloc.Validation.EqualAttribute.StringValue.get -> string?
+ZeroAlloc.Validation.ExclusiveBetweenAttribute
+ZeroAlloc.Validation.ExclusiveBetweenAttribute.ExclusiveBetweenAttribute(double min, double max) -> void
+ZeroAlloc.Validation.ExclusiveBetweenAttribute.Max.get -> double
+ZeroAlloc.Validation.ExclusiveBetweenAttribute.Min.get -> double
+ZeroAlloc.Validation.GreaterThanAttribute
+ZeroAlloc.Validation.GreaterThanAttribute.GreaterThanAttribute(double value) -> void
+ZeroAlloc.Validation.GreaterThanAttribute.Value.get -> double
+ZeroAlloc.Validation.GreaterThanOrEqualToAttribute
+ZeroAlloc.Validation.GreaterThanOrEqualToAttribute.GreaterThanOrEqualToAttribute(double value) -> void
+ZeroAlloc.Validation.GreaterThanOrEqualToAttribute.Value.get -> double
+ZeroAlloc.Validation.InclusiveBetweenAttribute
+ZeroAlloc.Validation.InclusiveBetweenAttribute.InclusiveBetweenAttribute(double min, double max) -> void
+ZeroAlloc.Validation.InclusiveBetweenAttribute.Max.get -> double
+ZeroAlloc.Validation.InclusiveBetweenAttribute.Min.get -> double
+ZeroAlloc.Validation.Internal.DecimalValidator
+ZeroAlloc.Validation.Internal.EmailValidator
+ZeroAlloc.Validation.Internal.FailureBuffer
+ZeroAlloc.Validation.Internal.FailureBuffer.Add(in ZeroAlloc.Validation.ValidationFailure f) -> void
+ZeroAlloc.Validation.Internal.FailureBuffer.Count.get -> int
+ZeroAlloc.Validation.Internal.FailureBuffer.FailureBuffer() -> void
+ZeroAlloc.Validation.Internal.FailureBuffer.FailureBuffer(int initialCapacity) -> void
+ZeroAlloc.Validation.Internal.FailureBuffer.ToResult() -> ZeroAlloc.Validation.ValidationResult
+ZeroAlloc.Validation.IsEnumNameAttribute
+ZeroAlloc.Validation.IsEnumNameAttribute.EnumType.get -> System.Type!
+ZeroAlloc.Validation.IsEnumNameAttribute.IsEnumNameAttribute(System.Type! enumType) -> void
+ZeroAlloc.Validation.IsInEnumAttribute
+ZeroAlloc.Validation.IsInEnumAttribute.IsInEnumAttribute() -> void
+ZeroAlloc.Validation.LengthAttribute
+ZeroAlloc.Validation.LengthAttribute.LengthAttribute(int min, int max) -> void
+ZeroAlloc.Validation.LengthAttribute.Max.get -> int
+ZeroAlloc.Validation.LengthAttribute.Min.get -> int
+ZeroAlloc.Validation.LessThanAttribute
+ZeroAlloc.Validation.LessThanAttribute.LessThanAttribute(double value) -> void
+ZeroAlloc.Validation.LessThanAttribute.Value.get -> double
+ZeroAlloc.Validation.LessThanOrEqualToAttribute
+ZeroAlloc.Validation.LessThanOrEqualToAttribute.LessThanOrEqualToAttribute(double value) -> void
+ZeroAlloc.Validation.LessThanOrEqualToAttribute.Value.get -> double
+ZeroAlloc.Validation.MatchesAttribute
+ZeroAlloc.Validation.MatchesAttribute.MatchesAttribute(string! pattern) -> void
+ZeroAlloc.Validation.MatchesAttribute.Pattern.get -> string!
+ZeroAlloc.Validation.MaxLengthAttribute
+ZeroAlloc.Validation.MaxLengthAttribute.Max.get -> int
+ZeroAlloc.Validation.MaxLengthAttribute.MaxLengthAttribute(int max) -> void
+ZeroAlloc.Validation.MinLengthAttribute
+ZeroAlloc.Validation.MinLengthAttribute.Min.get -> int
+ZeroAlloc.Validation.MinLengthAttribute.MinLengthAttribute(int min) -> void
+ZeroAlloc.Validation.MustAttribute
+ZeroAlloc.Validation.MustAttribute.MethodName.get -> string!
+ZeroAlloc.Validation.MustAttribute.MustAttribute(string! methodName) -> void
+ZeroAlloc.Validation.NotEmptyAttribute
+ZeroAlloc.Validation.NotEmptyAttribute.NotEmptyAttribute() -> void
+ZeroAlloc.Validation.NotEqualAttribute
+ZeroAlloc.Validation.NotEqualAttribute.NotEqualAttribute(double value) -> void
+ZeroAlloc.Validation.NotEqualAttribute.NotEqualAttribute(string! value) -> void
+ZeroAlloc.Validation.NotEqualAttribute.NumericValue.get -> double
+ZeroAlloc.Validation.NotEqualAttribute.StringValue.get -> string?
+ZeroAlloc.Validation.NotNullAttribute
+ZeroAlloc.Validation.NotNullAttribute.NotNullAttribute() -> void
+ZeroAlloc.Validation.NullAttribute
+ZeroAlloc.Validation.NullAttribute.NullAttribute() -> void
+ZeroAlloc.Validation.PrecisionScaleAttribute
+ZeroAlloc.Validation.PrecisionScaleAttribute.Precision.get -> int
+ZeroAlloc.Validation.PrecisionScaleAttribute.PrecisionScaleAttribute(int precision, int scale) -> void
+ZeroAlloc.Validation.PrecisionScaleAttribute.Scale.get -> int
+ZeroAlloc.Validation.Severity
+ZeroAlloc.Validation.Severity.Error = 0 -> ZeroAlloc.Validation.Severity
+ZeroAlloc.Validation.Severity.Info = 2 -> ZeroAlloc.Validation.Severity
+ZeroAlloc.Validation.Severity.Warning = 1 -> ZeroAlloc.Validation.Severity
+ZeroAlloc.Validation.SkipWhenAttribute
+ZeroAlloc.Validation.SkipWhenAttribute.MethodName.get -> string!
+ZeroAlloc.Validation.SkipWhenAttribute.SkipWhenAttribute(string! methodName) -> void
+ZeroAlloc.Validation.StopOnFirstFailureAttribute
+ZeroAlloc.Validation.StopOnFirstFailureAttribute.StopOnFirstFailureAttribute() -> void
+ZeroAlloc.Validation.ValidateAttribute
+ZeroAlloc.Validation.ValidateAttribute.StopOnFirstFailure.get -> bool
+ZeroAlloc.Validation.ValidateAttribute.StopOnFirstFailure.set -> void
+ZeroAlloc.Validation.ValidateAttribute.ValidateAttribute() -> void
+ZeroAlloc.Validation.ValidateWithAttribute
+ZeroAlloc.Validation.ValidateWithAttribute.ValidateWithAttribute(System.Type! validatorType) -> void
+ZeroAlloc.Validation.ValidateWithAttribute.ValidatorType.get -> System.Type!
+ZeroAlloc.Validation.ValidationAttribute
+ZeroAlloc.Validation.ValidationAttribute.ErrorCode.get -> string?
+ZeroAlloc.Validation.ValidationAttribute.ErrorCode.set -> void
+ZeroAlloc.Validation.ValidationAttribute.Message.get -> string?
+ZeroAlloc.Validation.ValidationAttribute.Message.set -> void
+ZeroAlloc.Validation.ValidationAttribute.Severity.get -> ZeroAlloc.Validation.Severity
+ZeroAlloc.Validation.ValidationAttribute.Severity.set -> void
+ZeroAlloc.Validation.ValidationAttribute.Unless.get -> string?
+ZeroAlloc.Validation.ValidationAttribute.Unless.set -> void
+ZeroAlloc.Validation.ValidationAttribute.ValidationAttribute() -> void
+ZeroAlloc.Validation.ValidationAttribute.When.get -> string?
+ZeroAlloc.Validation.ValidationAttribute.When.set -> void
+ZeroAlloc.Validation.ValidationContext<T>
+ZeroAlloc.Validation.ValidationContext<T>.Instance.get -> T
+ZeroAlloc.Validation.ValidationContext<T>.ValidationContext() -> void
+ZeroAlloc.Validation.ValidationContext<T>.ValidationContext(T instance) -> void
+ZeroAlloc.Validation.ValidationFailure
+ZeroAlloc.Validation.ValidationFailure.ErrorCode.get -> string?
+ZeroAlloc.Validation.ValidationFailure.ErrorCode.init -> void
+ZeroAlloc.Validation.ValidationFailure.ErrorMessage.get -> string!
+ZeroAlloc.Validation.ValidationFailure.ErrorMessage.init -> void
+ZeroAlloc.Validation.ValidationFailure.PropertyName.get -> string!
+ZeroAlloc.Validation.ValidationFailure.PropertyName.init -> void
+ZeroAlloc.Validation.ValidationFailure.Severity.get -> ZeroAlloc.Validation.Severity
+ZeroAlloc.Validation.ValidationFailure.Severity.init -> void
+ZeroAlloc.Validation.ValidationFailure.ValidationFailure() -> void
+ZeroAlloc.Validation.ValidationResult
+ZeroAlloc.Validation.ValidationResult.Failures.get -> System.ReadOnlySpan<ZeroAlloc.Validation.ValidationFailure>
+ZeroAlloc.Validation.ValidationResult.IsValid.get -> bool
+ZeroAlloc.Validation.ValidationResult.ValidationResult() -> void
+ZeroAlloc.Validation.ValidationResult.ValidationResult(ZeroAlloc.Validation.ValidationFailure[]! failures) -> void
+ZeroAlloc.Validation.ValidatorFor<T>
+ZeroAlloc.Validation.ValidatorFor<T>.ValidatorFor() -> void
+abstract ZeroAlloc.Validation.ValidatorFor<T>.Validate(T instance) -> ZeroAlloc.Validation.ValidationResult
+static ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale(decimal value, int precision, int scale) -> bool
+static ZeroAlloc.Validation.Internal.EmailValidator.IsValid(string? email) -> bool
+virtual ZeroAlloc.Validation.ValidatorFor<T>.ValidateAsync(T instance, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Validation.ValidationResult>
