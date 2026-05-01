@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.0.0...v1.1.0) (2026-05-01)
+
+
+### Features
+
+* lock public API surface (PublicApiAnalyzers + api-compat gate) ([#25](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/25)) ([9613e27](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/9613e27b6f1639c6d05e87c1fa08f1084e82ebb1))
+
 ## [1.0.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v0.2.3...v1.0.0) (2026-04-28)
 
 
