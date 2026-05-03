@@ -49,10 +49,6 @@ jobs:
           dotnet pack src/ZeroAlloc.Validation.AspNetCore.Generator/ZeroAlloc.Validation.AspNetCore.Generator.csproj --no-build -c Release -p:PackageVersion=${{ steps.gitversion.outputs.version }} -o ./artifacts
           dotnet pack src/ZeroAlloc.Validation.Testing/ZeroAlloc.Validation.Testing.csproj --no-build -c Release -p:PackageVersion=${{ steps.gitversion.outputs.version }} -o ./artifacts
 
-      - name: Push to NuGet (pre-release)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
-
   api-compat:
     uses: ZeroAlloc-Net/.github/.github/workflows/api-compat.yml@main
     with:
