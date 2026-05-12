@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.1.0...v1.1.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* **readme:** absolute GitHub URLs so nuget.org links resolve ([#33](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/33)) ([eea3e84](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/eea3e84d077c99e8695a4e346658f6d482d9376a))
+
 ## [1.1.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.0.0...v1.1.0) (2026-05-01)
 
 
