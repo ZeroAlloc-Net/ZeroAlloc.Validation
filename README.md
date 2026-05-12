@@ -50,7 +50,7 @@ if (!result.IsValid)
 | Nested model     |             10.1 ns  |         619 ns   |  ~61×   |        0 B         |
 | Collection (3×)  |             14.3 ns  |        2,043 ns  | ~143×   |        0 B         |
 
-See [Performance](docs/performance.md) for full benchmark results.
+See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/performance.md) for full benchmark results.
 
 ## Packages
 
@@ -78,15 +78,15 @@ See [Performance](docs/performance.md) for full benchmark results.
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md)
-- [Attribute Reference](docs/attributes.md)
-- [Nested Validation](docs/nested-validation.md)
-- [Collection Validation](docs/collection-validation.md)
-- [Custom Validation](docs/custom-validation.md)
-- [Error Messages](docs/error-messages.md)
-- [ASP.NET Core Integration](docs/aspnetcore.md)
-- [DI Registration (Inject)](docs/inject.md)
-- [Options Validation](docs/options.md)
-- [Testing](docs/testing.md)
-- [Performance](docs/performance.md)
-- [Advanced Features](docs/advanced.md)
+- [Getting Started](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/getting-started.md)
+- [Attribute Reference](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/attributes.md)
+- [Nested Validation](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/nested-validation.md)
+- [Collection Validation](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/collection-validation.md)
+- [Custom Validation](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/custom-validation.md)
+- [Error Messages](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/error-messages.md)
+- [ASP.NET Core Integration](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/aspnetcore.md)
+- [DI Registration (Inject)](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/inject.md)
+- [Options Validation](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/options.md)
+- [Testing](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/testing.md)
+- [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/performance.md)
+- [Advanced Features](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/advanced.md)
