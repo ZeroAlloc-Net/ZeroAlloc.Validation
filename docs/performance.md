@@ -81,11 +81,17 @@ A cart with a string ID and a list of three line items.
 
 ## Summary
 
-| Scenario   | ZA valid  | FV valid   | Speedup | ZA alloc (valid) | FV alloc (valid) |
-|------------|:---------:|:----------:|:-------:|:----------------:|:----------------:|
-| Flat       |  6.7 ns   |  327 ns    |  ~49x   |       0 B        |      664 B       |
-| Nested     | 10.1 ns   |  619 ns    |  ~61x   |       0 B        |    1,488 B       |
-| Collection | 14.3 ns   | 2,043 ns   | ~143x   |       0 B        |    3,456 B       |
+<!-- BENCH:START -->
+_Last refreshed: 2026-05-13_
+
+| Scenario | ZA valid | FluentValidation valid | Speedup | ZA alloc (valid) | FV alloc (valid) |
+|---|---:|---:|---:|---:|---:|
+| Flat | 6.7 ns | 327 ns | **~49×** | **0 B** | 664 B |
+| Nested | 10.1 ns | 619 ns | **~61×** | **0 B** | 1,488 B |
+| Collection (3 items) | 14.3 ns | 2,043 ns | **~143×** | **0 B** | 3,456 B |
+
+ZeroAlloc.Validation is **49–143× faster** than FluentValidation on the valid path with **zero heap allocation**. On the invalid path it's 31–56× faster and allocates 10–18× less. The gap widens as the model shape grows — FluentValidation's per-call `List<ValidationFailure>` and cached expression-tree delegates pay a larger fixed cost as more rules fire.
+<!-- BENCH:END -->
 
 ## Running the benchmarks yourself
 
