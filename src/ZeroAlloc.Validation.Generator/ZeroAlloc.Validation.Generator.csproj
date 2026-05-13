@@ -2,20 +2,73 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>ZeroAlloc.Validation.Generator</RootNamespace>
+    <PackageId>ZeroAlloc.Validation.Generator</PackageId>
+    <Description>Roslyn source generator for ZeroAlloc.Validation. Emits the strongly-typed validator class for each [Validate]-annotated type at build time.</Description>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <IsRoslynComponent>true</IsRoslynComponent>
-    <IsPackable>false</IsPackable>
+
+    <!--
+      Source-generator packaging: ship the generator DLL under analyzers/dotnet/cs so
+      Roslyn loads it as an analyzer. Without IncludeBuildOutput=false the build output
+      ends up under lib/ and consumers silently get no source generator.
+    -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <DevelopmentDependency>true</DevelopmentDependency>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.3.0" PrivateAssets="all" />
     <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="0.1.1" PrivateAssets="all" GeneratePathProperty="true" />
+    <PackageReference Include="ZeroAlloc.Pipeline" Version="0.1.1" PrivateAssets="all" GeneratePathProperty="true" />
   </ItemGroup>
 
   <ItemGroup>
     <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
     <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
+
+  <!--
+    Source generators run in an isolated context: Roslyn loads the generator DLL but does NOT
+    automatically load its package-reference dependencies. We work around this by emitting
+    the dependency DLLs next to the generator DLL so dotnet pack can place them under
+    analyzers/dotnet/cs alongside the generator itself.
+  -->
+  <Target Name="CopyGeneratorHelperDlls" AfterTargets="Build">
+    <ItemGroup>
+      <_GeneratorHelperDll Include="$(PkgZeroAlloc_Pipeline_Generators)\lib\netstandard2.0\ZeroAlloc.Pipeline.Generators.dll" />
+      <_GeneratorHelperDll Include="$(PkgZeroAlloc_Pipeline)\lib\netstandard2.0\ZeroAlloc.Pipeline.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_GeneratorHelperDll)"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <!--
+    Pack the generator DLL (and its helper dependencies, which Roslyn must register as
+    additional analyzers) under analyzers/dotnet/cs. Without this, dotnet pack falls back
+    to the default lib/<tfm>/ layout and consumers do not pick up the generator at all.
+  -->
+  <ItemGroup>
+    <None Include="$(OutputPath)\$(AssemblyName).dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
+    <None Include="$(OutputPath)\$(AssemblyName).pdb"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false"
+          Condition="Exists('$(OutputPath)\$(AssemblyName).pdb')" />
+    <None Include="$(OutputPath)\ZeroAlloc.Pipeline.Generators.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
+    <None Include="$(OutputPath)\ZeroAlloc.Pipeline.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
   </ItemGroup>
 
 </Project>

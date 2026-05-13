@@ -19,14 +19,17 @@
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 
-  <!-- Bundle the source generator into this NuGet package -->
+  <!-- Run the source generator against THIS project's local build (so e.g. tests pick it up).
+       Consumer projects get the generator via the separate ZeroAlloc.Validation.Generator
+       nupkg (mirrors the ZeroAlloc.Mediator + ZeroAlloc.Mediator.Generator package split). -->
   <ItemGroup>
     <ProjectReference Include="..\ZeroAlloc.Validation.Generator\ZeroAlloc.Validation.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 
-  <!-- Expose generator dependency DLLs as Analyzer items so Roslyn's loader can find them -->
+  <!-- Expose generator dependency DLLs as Analyzer items so Roslyn's loader finds them
+       during *this* project's build. -->
   <ItemGroup>
     <Analyzer Include="$(PkgZeroAlloc_Pipeline_Generators)\lib\netstandard2.0\ZeroAlloc.Pipeline.Generators.dll" />
     <Analyzer Include="$(PkgZeroAlloc_Pipeline)\lib\netstandard2.0\ZeroAlloc.Pipeline.dll" />
