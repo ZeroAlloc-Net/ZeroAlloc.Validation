@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.1.2...v1.2.0) (2026-05-13)
+
+
+### Features
+
+* **generator:** accept record declarations on top of class ([#38](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/38)) ([990f5de](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/990f5de803f46966c3b95fde32c7ed8d6396333a))
+
 ## [1.1.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.1.1...v1.1.2) (2026-05-13)
 
 
