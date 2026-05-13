@@ -287,7 +287,7 @@ internal static class RuleEmitter
             var prefix = (stopMode && i > 0) ? "        else if" : "        if";
             var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
+            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type);
             var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
@@ -407,7 +407,7 @@ internal static class RuleEmitter
             var prefix = (stopMode && i > 0) ? "        else if" : "        if";
             var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName);
+            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type);
             var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
@@ -624,11 +624,11 @@ internal static class RuleEmitter
         return attr.ConstructorArguments[index].Type?.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String;
     }
 
-    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "", string modelParamName = "instance") =>
+    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "", string modelParamName = "instance", ITypeSymbol? propType = null) =>
         fqn switch
         {
             NotNullFqn               => $"{access} is null",
-            NotEmptyFqn              => $"string.IsNullOrEmpty({access})",
+            NotEmptyFqn              => BuildNotEmptyCondition(access, propType),
             MinLengthFqn             => $"{access}.Length < {GetIntArg(attr, 0)}",
             MaxLengthFqn             => $"{access}.Length > {GetIntArg(attr, 0)}",
             GreaterThanFqn           => $"System.Convert.ToDouble({access}) <= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
@@ -693,6 +693,94 @@ internal static class RuleEmitter
             && string.Equals(named.OriginalDefinition.ToDisplayString(), "System.Nullable<T>", StringComparison.Ordinal))
             type = named.TypeArguments[0];
         return type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    }
+
+    /// <summary>
+    /// Emits the right "is empty" predicate for the property's actual type.
+    /// Supports strings, Guid, arrays, Span/Memory family, ICollection / IReadOnlyCollection
+    /// (covering List, HashSet, Dictionary, etc.), and falls back to IEnumerable + LINQ Any
+    /// for non-counting sequences. Without a type symbol (e.g. legacy call site) falls back
+    /// to the string-only check so existing behavior is preserved.
+    /// </summary>
+    private static string BuildNotEmptyCondition(string access, ITypeSymbol? propType)
+    {
+        if (propType is null)
+            return $"string.IsNullOrEmpty({access})";
+
+        // Nullable<T>: [NotEmpty] on T? treats both null AND empty-underlying as "empty".
+        // We emit "(!access.HasValue || <inner check on access.Value>)".
+        if (propType is INamedTypeSymbol named && named.IsGenericType
+            && string.Equals(named.OriginalDefinition.ToDisplayString(), "System.Nullable<T>", StringComparison.Ordinal))
+        {
+            var inner = BuildNotEmptyCondition($"{access}.Value", named.TypeArguments[0]);
+            return $"(!{access}.HasValue || {inner})";
+        }
+
+        // string — the original behavior.
+        if (propType.SpecialType == SpecialType.System_String)
+            return $"string.IsNullOrEmpty({access})";
+
+        // Guid — "empty" means Guid.Empty.
+        if (string.Equals(propType.ToDisplayString(), "System.Guid", StringComparison.Ordinal))
+            return $"{access} == global::System.Guid.Empty";
+
+        // Arrays — T[] has Length; null-check then check.
+        if (propType is IArrayTypeSymbol)
+            return $"({access} is null || {access}.Length == 0)";
+
+        // Span<T> / ReadOnlySpan<T> / Memory<T> / ReadOnlyMemory<T> — value types with .IsEmpty.
+        var originalDef = propType.OriginalDefinition.ToDisplayString();
+        if (originalDef is "System.Span<T>"
+            or "System.ReadOnlySpan<T>"
+            or "System.Memory<T>"
+            or "System.ReadOnlyMemory<T>")
+        {
+            return $"{access}.IsEmpty";
+        }
+
+        // ICollection / ICollection<T> / IReadOnlyCollection<T> — covers List<T>, HashSet<T>,
+        // Dictionary<K,V>, Queue<T>, Stack<T>, etc. via the .Count property.
+        if (HasCountProperty(propType))
+            return $"({access} is null || {access}.Count == 0)";
+
+        // IEnumerable / IEnumerable<T> — no Count, fall back to LINQ Any.
+        if (ImplementsEnumerable(propType))
+            return $"({access} is null || !global::System.Linq.Enumerable.Any({access}))";
+
+        // Unknown type — preserve old behavior so we don't silently break existing code.
+        return $"string.IsNullOrEmpty({access})";
+    }
+
+    private static bool HasCountProperty(ITypeSymbol type)
+    {
+        // Check the type itself + all its interfaces for an int Count property.
+        // This catches ICollection (non-generic), ICollection<T>, IReadOnlyCollection<T>,
+        // and any custom collection that exposes Count.
+        foreach (var member in type.GetMembers("Count"))
+        {
+            if (member is IPropertySymbol { Type.SpecialType: SpecialType.System_Int32 })
+                return true;
+        }
+        foreach (var iface in type.AllInterfaces)
+        {
+            foreach (var member in iface.GetMembers("Count"))
+            {
+                if (member is IPropertySymbol { Type.SpecialType: SpecialType.System_Int32 })
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool ImplementsEnumerable(ITypeSymbol type)
+    {
+        foreach (var iface in type.AllInterfaces)
+        {
+            var def = iface.OriginalDefinition.ToDisplayString();
+            if (def is "System.Collections.IEnumerable" or "System.Collections.Generic.IEnumerable<T>")
+                return true;
+        }
+        return false;
     }
 
     private static string EscapeString(string s) =>
