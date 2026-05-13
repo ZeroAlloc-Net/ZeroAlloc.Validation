@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.1.1...v1.1.2) (2026-05-13)
+
+
+### Documentation
+
+* **performance:** add BENCH sentinels for template aggregator import ([#35](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/35)) ([b98e0bc](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/b98e0bcf77d3e8b8d33236b93eb2fc698b9933cc))
+
 ## [1.1.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.1.0...v1.1.1) (2026-05-12)
 
 
