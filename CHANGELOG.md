@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.2.0...v1.3.0) (2026-05-13)
+
+
+### Features
+
+* **generator:** [NotEmpty] now supports arrays, collections, Span, Memory, Guid ([#40](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/40)) ([0415d53](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/0415d53060c5f27b0bacf31529fbb37d2e0f4485))
+
 ## [1.2.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.1.2...v1.2.0) (2026-05-13)
 
 
