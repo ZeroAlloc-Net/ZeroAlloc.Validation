@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.3.0...v1.4.0) (2026-05-27)
+
+
+### Features
+
+* **generator:** [Validate] now accepts struct and record struct ([#42](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/42)) ([8e00948](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/8e00948fe0a1eb260954c4d33e8e95bae4afe772))
+
 ## [1.3.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.2.0...v1.3.0) (2026-05-13)
 
 
