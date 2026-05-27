@@ -4,6 +4,23 @@ Candidate enhancements identified during real-world usage. Each item is independ
 
 ---
 
+## B3 — Nested-validator emits `is not null` against value-type elements
+
+**What.** When a `[Validate]` type contains `IReadOnlyList<T>` (where T is `[Validate]`-decorated) or a scalar property whose type is `[Validate]`-decorated, the generator emits `if (... is not null)` unconditionally. Class T and `Nullable<T>` compile correctly; **non-nullable value types fail with `CS0037`** (cannot convert null to a non-nullable value type).
+
+**Why.** Surfaced 2026-05-27 while migrating `za-clean`'s `CreateOrderCommand` + `OrderItem` from `sealed record` to `readonly record struct` ([ZeroAlloc.Templates](https://github.com/ZeroAlloc-Net/ZeroAlloc.Templates) follow-up to the 1.4.0 ship). `CreateOrderCommand` migrates fine; `OrderItem` (inside `IReadOnlyList<OrderItem> Items`) trips the generator. Same code path emits the same guard for scalar `[Validate]` nested properties — latent bug there too, fixed in the same release.
+
+**Sketch.** Predicate `NeedsNullGuard(ITypeSymbol)` returning `false` only for non-nullable value types. Applied at both nested emission sites in `RuleEmitter.cs` (`EmitCollectionValidatorForProp` and `EmitNestedValidatorForProp`). Class types keep the guard. `Nullable<T>` doesn't currently reach the emission site at all — `HasValidateAttribute` filtering on the wrapped type rejects it upstream — but the predicate's `Nullable<T>` arm stays as a defensive belt-and-braces against any future loosening of that filter.
+
+**Tradeoff / risks.**
+
+- Indentation drift in the generated `.g.cs` when the guard is omitted (no harm — `csc` ignores indentation; nobody hand-reads generator output).
+- Public API surface unchanged; pure subtractive fix at the generator-output level.
+
+**Graduation signal.** Same template surfaced the bug; landing it is the graduation. Ships as **1.4.1** (patch).
+
+---
+
 ## B1 — Value-object aware property validators
 
 **What.** Teach the `[Validate]` generator to recognize properties whose declared type is a `ZeroAlloc.ValueObjects` `[ValueObject]` partial struct, and emit comparison/range/predicate validators (`[GreaterThan]`, `[LessThan]`, `[InRange]`, `[NotEmpty]`, …) against the unwrapped underlying value rather than the wrapper. So this becomes legal:

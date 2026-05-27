@@ -189,7 +189,7 @@ internal static class RuleEmitter
             if (member is not IPropertySymbol prop) continue;
 
             FindPropertyGroups(prop, byProperty, nestedProperties, collectionProperties,
-                out var directProp, out var directRules, out var nestedProp, out var collProp);
+                out var directProp, out var directRules, out var nestedProp, out var collProp, out var collElementType);
 
             if (directProp is null && nestedProp is null && collProp is null) continue;
 
@@ -205,8 +205,8 @@ internal static class RuleEmitter
             if (nestedProp is not null)
                 EmitNestedValidatorForProp(sb, nestedProp, modelParamName);
 
-            if (collProp is not null)
-                EmitCollectionValidatorForProp(sb, collProp, collCi++, modelParamName);
+            if (collProp is not null && collElementType is not null)
+                EmitCollectionValidatorForProp(sb, collProp, collElementType, collCi++, modelParamName);
 
             sb.AppendLine($"        if (_buf.Count > _b{groupIdx}) return _buf.ToResult();");
             sb.AppendLine();
@@ -222,7 +222,8 @@ internal static class RuleEmitter
         out IPropertySymbol? directProp,
         out List<AttributeData>? directRules,
         out IPropertySymbol? nestedProp,
-        out IPropertySymbol? collProp)
+        out IPropertySymbol? collProp,
+        out INamedTypeSymbol? collElementType)
     {
         directProp = null;
         directRules = null;
@@ -247,11 +248,13 @@ internal static class RuleEmitter
         }
 
         collProp = null;
+        collElementType = null;
         for (int ci = 0; ci < collectionProperties.Count; ci++)
         {
             if (SymbolEqualityComparer.Default.Equals(collectionProperties[ci].Property, prop))
             {
                 collProp = collectionProperties[ci].Property;
+                collElementType = collectionProperties[ci].ElementType;
                 break;
             }
         }
@@ -314,12 +317,19 @@ internal static class RuleEmitter
         var propName = nestedProp.Name;
         var camelN = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture) + propName.Substring(1);
 
-        sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
-        sb.AppendLine("        {");
+        var needsPropGuard = NeedsNullGuard(nestedProp.Type);
+        if (needsPropGuard)
+        {
+            sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
+            sb.AppendLine("        {");
+        }
         sb.AppendLine($"            var nestedResult = _{camelN}Validator.Validate({modelParamName}.{propName});");
         sb.AppendLine("            foreach (ref readonly var f in nestedResult.Failures)");
         sb.AppendLine($"                _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
-        sb.AppendLine("        }");
+        if (needsPropGuard)
+        {
+            sb.AppendLine("        }");
+        }
         sb.AppendLine();
     }
 
@@ -329,10 +339,10 @@ internal static class RuleEmitter
         string modelParamName)
     {
         for (int ci = 0; ci < collectionProperties.Count; ci++)
-            EmitCollectionValidatorForProp(sb, collectionProperties[ci].Property, ci, modelParamName);
+            EmitCollectionValidatorForProp(sb, collectionProperties[ci].Property, collectionProperties[ci].ElementType, ci, modelParamName);
     }
 
-    private static void EmitCollectionValidatorForProp(StringBuilder sb, IPropertySymbol collProp, int ci, string modelParamName)
+    private static void EmitCollectionValidatorForProp(StringBuilder sb, IPropertySymbol collProp, INamedTypeSymbol elementType, int ci, string modelParamName)
     {
         var propName = collProp.Name;
         var varName = $"_c{ci.ToString(CultureInfo.InvariantCulture)}";
@@ -343,12 +353,19 @@ internal static class RuleEmitter
         sb.AppendLine($"            int {varName}Idx = 0;");
         sb.AppendLine($"            foreach (var {varName}Item in {modelParamName}.{propName})");
         sb.AppendLine("            {");
-        sb.AppendLine($"                if ({varName}Item is not null)");
-        sb.AppendLine("                {");
+        var needsItemGuard = NeedsNullGuard(elementType);
+        if (needsItemGuard)
+        {
+            sb.AppendLine($"                if ({varName}Item is not null)");
+            sb.AppendLine("                {");
+        }
         sb.AppendLine($"                    var {varName}Result = _{camelC}Validator.Validate({varName}Item);");
         sb.AppendLine($"                    foreach (ref readonly var f in {varName}Result.Failures)");
         sb.AppendLine($"                        _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
-        sb.AppendLine("                }");
+        if (needsItemGuard)
+        {
+            sb.AppendLine("                }");
+        }
         sb.AppendLine($"                {varName}Idx++;");
         sb.AppendLine("            }");
         sb.AppendLine("        }");
@@ -942,4 +959,15 @@ internal static class RuleEmitter
         EmitValidateBody(sb, classSymbol, modelParamName);
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Returns true when an `is not null` guard against a value of this type
+    /// would compile and have meaningful runtime semantics. Class types always
+    /// need the guard. <c>Nullable&lt;T&gt;</c> keeps it (the guard lowers to
+    /// <c>HasValue</c>). Non-nullable value types cannot take the guard (CS0037),
+    /// so the generator omits it.
+    /// </summary>
+    private static bool NeedsNullGuard(ITypeSymbol type) =>
+        !type.IsValueType
+        || type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T;
 }
