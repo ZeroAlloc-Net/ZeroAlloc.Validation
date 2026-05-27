@@ -47,6 +47,18 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor ZV0014 = new DiagnosticDescriptor(
+        id: "ZV0014",
+        title: "[Validate] on non-readonly struct",
+        messageFormat:
+            "Struct '{0}' is decorated with [Validate] but is not declared `readonly`. " +
+            "A caller can mutate the instance between the validator returning success " +
+            "and the consumer reading the value, making validation results stale. " +
+            "Declare the struct as `readonly struct` or `readonly record struct`.",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     private static readonly DiagnosticDescriptor ZV0015 = new DiagnosticDescriptor(
         id: "ZV0015",
         title: "Duplicate pipeline behavior Order",
@@ -85,6 +97,16 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
     private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymbol, BehaviorCache allBehaviors)
     {
+        // ZV0014 — surface mutability hazard on non-readonly structs. Generator
+        // still proceeds to emit the validator; the warning is informational.
+        if (classSymbol.TypeKind == TypeKind.Struct && !classSymbol.IsReadOnly)
+        {
+            ctx.ReportDiagnostic(Diagnostic.Create(
+                ZV0014,
+                classSymbol.Locations.FirstOrDefault() ?? Location.None,
+                classSymbol.Name));
+        }
+
         var modelFqn = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var (syncBehaviors, asyncBehaviors) = BehaviorDiscoverer.ForModel(allBehaviors.Sync, allBehaviors.Async, modelFqn);
 
