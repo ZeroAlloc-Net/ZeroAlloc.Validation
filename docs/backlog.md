@@ -21,7 +21,20 @@ Candidate enhancements identified during real-world usage. Each item is independ
 
 ---
 
-## B1 — Value-object aware property validators
+## ~~B1 — Value-object aware property validators~~ — ✅ shipped 1.5.0 (2026-05-27)
+
+**Shipped:** Three private helpers in `RuleEmitter.cs` (`GetValueObjectUnwrapMember` / `HasValueObjectAttribute` / `BuildPropertyAccess`) drive the unwrap at three call sites — the two per-property emission paths and `BuildPropertyValueExpr`. Built-in operand-taking validators (`[GreaterThan]`, `[NotEmpty]`, `[Matches]`, `[InclusiveBetween]`, …) participate uniformly. `[Must]` keeps the wrapper via an explicit `rawPropAccess` parameter routed through `BuildCondition`'s switch. `[CustomValidation]` and `[ValidateWith]` weren't affected — they don't route through `BuildCondition` at all. New `ZV0016` Warning fires when a property carries a built-in validator and the type is a multi-property `[ValueObject]` (e.g. `Money { Amount, Currency }`); the diagnostic is reported only from the sync emission path (nullable `SourceProductionContext?` threading) so it fires exactly once per offending property even when `Validate` + `ValidateAsync` both emit. Shipped as ZeroAlloc.Validation 1.5.0 via [PR #46](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/pull/46). Strictly additive — existing class/primitive consumers see byte-identical generator output.
+
+**Design + plan:** [`docs/plans/2026-05-27-value-object-property-validators-design.md`](plans/2026-05-27-value-object-property-validators-design.md) + [`docs/plans/2026-05-27-value-object-property-validators.md`](plans/2026-05-27-value-object-property-validators.md).
+
+**Decisions worth flagging** (durable record for whoever picks up the next ZA.Validation enhancement):
+
+- **FQN-based attribute detection.** ZA.Validation never references ZA.ValueObjects at runtime — only matches `ZeroAlloc.ValueObjects.ValueObjectAttribute` by metadata name. Adopters who don't pull in ZA.ValueObjects pay nothing.
+- **Single-property requirement.** Multi-property value-objects (`Money`-style) fall through with `ZV0016` Warning and the build fails on the underlying type mismatch. Use `[Must]` or `[CustomValidation]` for those.
+- **Predicate-validator carve-out is explicit, not automatic.** The design doc initially claimed predicate validators "naturally don't participate" — wrong. `[Must]` routes through `BuildCondition` and the rewrite leaked in. Phase 5's regression test caught it; fix was the new `rawPropAccess` parameter in `BuildCondition`. Future predicate-like validators that route through the same switch must use `rawPropAccess`.
+
+<details>
+<summary>Original B1 proposal (kept for context)</summary>
 
 **What.** Teach the `[Validate]` generator to recognize properties whose declared type is a `ZeroAlloc.ValueObjects` `[ValueObject]` partial struct, and emit comparison/range/predicate validators (`[GreaterThan]`, `[LessThan]`, `[InRange]`, `[NotEmpty]`, …) against the unwrapped underlying value rather than the wrapper. So this becomes legal:
 
@@ -53,6 +66,8 @@ Non-comparable / multi-field value-objects (e.g. `Money(Amount, Currency)`) fall
 - Bigger alternative (option B from the brainstorm): push invariants into `ZeroAlloc.ValueObjects` itself (`[Positive]` on the partial struct → guarded ctor). Stronger correctness story but a much larger API change, and conflicts with EF Core "construct-with-sentinel, DB picks id" patterns (`new OrderId(0)` would fail at construction). This backlog item deliberately scopes to the lighter-touch option.
 
 **Graduation signal.** A second consumer codebase hits the same papercut, OR `za-vertical-slice` reaches v1 and the workaround (raw primitive in request, wrap in handler) is judged too lossy to ship as the documented convention.
+
+</details>
 
 ---
 
