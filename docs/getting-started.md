@@ -58,6 +58,12 @@ public class RegisterUserRequest
 
 The generator emits `RegisterUserRequestValidator` in the same namespace as your model. For flat models like this one (no nested validated properties), the generated validator has a parameterless constructor.
 
+> **Target types.** `[Validate]` works on `class`, `record`, `readonly struct`, and
+> `readonly record struct`. Decorating a non-readonly `struct` or `record struct`
+> emits `ZV0014` (Warning) — a caller can mutate the instance between the
+> validator returning success and the consumer reading the value, making the
+> validation result stale. Prefer the `readonly` form for request types.
+
 ## Call the validator
 
 Instantiate the generated validator and call `Validate`. The returned `ValidationResult` exposes `IsValid` and a zero-allocation `Failures` span:
