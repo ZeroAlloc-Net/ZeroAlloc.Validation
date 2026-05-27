@@ -25,7 +25,35 @@ public class StructValidationTests
         Assert.Equal(1, result.Failures.Length);
         Assert.Equal(nameof(RrsCommand.Total), result.Failures[0].PropertyName);
     }
+
+    [Fact]
+    public void ReadonlyStruct_Validate_HappyPath_ReportsValid()
+    {
+        var validator = new RsCommandValidator();
+        var result = validator.Validate(new RsCommand(10));
+        Assert.True(result.IsValid);
+        Assert.True(result.Failures.IsEmpty);
+    }
+
+    [Fact]
+    public void ReadonlyStruct_Validate_SadPath_ReportsFailureOnTotal()
+    {
+        var validator = new RsCommandValidator();
+        var result = validator.Validate(new RsCommand(0));
+        Assert.False(result.IsValid);
+        Assert.Equal(1, result.Failures.Length);
+        Assert.Equal(nameof(RsCommand.Total), result.Failures[0].PropertyName);
+    }
 }
 
 [Validate]
 public readonly record struct RrsCommand([property: GreaterThan(0)] int Total);
+
+[Validate]
+public readonly struct RsCommand
+{
+    [GreaterThan(0)]
+    public int Total { get; }
+
+    public RsCommand(int total) => Total = total;
+}
