@@ -93,6 +93,44 @@ Each `ValidationFailure` carries:
 - `ErrorCode` — an optional machine-readable code
 - `Severity` — `Error`, `Warning`, or `Info`
 
+## Validating value-object properties
+
+If a property's type is decorated with `[ZeroAlloc.ValueObjects.ValueObject]` and exposes exactly one public instance property (a typed-id wrapper, for example), the built-in operand-style validators auto-unwrap through the wrapper. You annotate the wrapper; the generator emits the comparison against the underlying value.
+
+```csharp
+using ZeroAlloc.Validation;
+using ZeroAlloc.ValueObjects;
+
+[ValueObject]
+public readonly partial struct CustomerId
+{
+    public int Value { get; }
+    public CustomerId(int value) => Value = value;
+}
+
+[Validate]
+public readonly record struct PlaceOrderCommand(
+    [property: GreaterThan(0)] CustomerId CustomerId,
+    [property: GreaterThan(0)] decimal Total);
+```
+
+The generator emits `instance.CustomerId.Value > 0` rather than trying to compare the wrapper itself — so `[GreaterThan]`, `[NotEmpty]`, `[InclusiveBetween]`, and the other operand-taking attributes "just work" against typed ids and other single-property value-objects.
+
+**Predicate validators preserve the wrapper.** `[Must(nameof(IsKnown))]` passes the wrapper into your method, not the unwrap — the method signature is what the user wrote:
+
+```csharp
+[Validate]
+public partial class PlaceOrderCommand
+{
+    [Must(nameof(IsKnown))]
+    public CustomerId CustomerId { get; set; }
+
+    public bool IsKnown(CustomerId id) => id.Value > 0;
+}
+```
+
+**Multi-property value-objects.** Auto-unwrap only applies when the wrapper has a single underlying property. If you put a built-in operand validator on a multi-property value-object (e.g. a `Money { decimal Amount; string Currency; }`), the generator emits `ZV0016` (Warning) — there is no single property to unwrap through. Use `[Must]` with a custom predicate instead.
+
 ## Next steps
 
 - [Attribute Reference](attributes.md) — all 25+ built-in attributes
