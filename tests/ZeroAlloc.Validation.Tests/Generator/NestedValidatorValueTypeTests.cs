@@ -32,6 +32,28 @@ public class NestedValidatorValueTypeTests
         Assert.DoesNotContain("_c0Item is not null", outerValidator, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Collection_Of_Class_Still_Emits_ItemNullGuard()
+    {
+        var source = """
+            using System.Collections.Generic;
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            [Validate]
+            public sealed record Outer([property: NotEmpty] IReadOnlyList<Item> Items);
+
+            [Validate]
+            public sealed record Item([property: GreaterThan(0)] int Qty);
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics);
+        var outerValidator = GetGeneratedSource(result, "OuterValidator.g.cs");
+        Assert.Contains("_c0Item is not null", outerValidator, StringComparison.Ordinal);
+    }
+
     private static string GetGeneratedSource(GeneratorDriverRunResult result, string filenameSuffix) =>
         result.GeneratedTrees
             .First(t => t.FilePath.EndsWith(filenameSuffix, StringComparison.Ordinal))
