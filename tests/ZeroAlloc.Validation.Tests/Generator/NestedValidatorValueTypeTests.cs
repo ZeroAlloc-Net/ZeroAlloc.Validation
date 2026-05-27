@@ -54,6 +54,27 @@ public class NestedValidatorValueTypeTests
         Assert.Contains("_c0Item is not null", outerValidator, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Scalar_NestedValidator_Of_ReadonlyRecordStruct_Compiles_WithoutNullGuard()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            [Validate]
+            public sealed record Outer(Inner Inner);
+
+            [Validate]
+            public readonly record struct Inner([property: GreaterThan(0)] int Qty);
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics);
+        var outerValidator = GetGeneratedSource(result, "OuterValidator.g.cs");
+        Assert.DoesNotContain("instance.Inner is not null", outerValidator, StringComparison.Ordinal);
+    }
+
     private static string GetGeneratedSource(GeneratorDriverRunResult result, string filenameSuffix) =>
         result.GeneratedTrees
             .First(t => t.FilePath.EndsWith(filenameSuffix, StringComparison.Ordinal))

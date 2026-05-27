@@ -317,12 +317,19 @@ internal static class RuleEmitter
         var propName = nestedProp.Name;
         var camelN = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture) + propName.Substring(1);
 
-        sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
-        sb.AppendLine("        {");
+        var needsPropGuard = NeedsNullGuard(nestedProp.Type);
+        if (needsPropGuard)
+        {
+            sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
+            sb.AppendLine("        {");
+        }
         sb.AppendLine($"            var nestedResult = _{camelN}Validator.Validate({modelParamName}.{propName});");
         sb.AppendLine("            foreach (ref readonly var f in nestedResult.Failures)");
         sb.AppendLine($"                _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
-        sb.AppendLine("        }");
+        if (needsPropGuard)
+        {
+            sb.AppendLine("        }");
+        }
         sb.AppendLine();
     }
 
