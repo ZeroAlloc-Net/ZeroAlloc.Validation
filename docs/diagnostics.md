@@ -15,9 +15,8 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0011](#zv0011) | Warning | Redundant [ValidateWith] attribute |
 | [ZV0012](#zv0012) | Error | Invalid [ValidateWith] validator type |
 | [ZV0013](#zv0013) | Error | Invalid [CustomValidation] method signature |
+| [ZV0014](#zv0014) | Warning | [Validate] on non-readonly struct |
 | [ZV0015](#zv0015) | Error | Duplicate pipeline behavior Order |
-
-> **Note:** ZV0014 is reserved for a planned future diagnostic ("async-only behavior used with sync-only call site") and is not yet emitted.
 
 ---
 
@@ -62,6 +61,33 @@ public IEnumerable<ValidationFailure> ValidateBusinessRules()
     // yield return failures as needed
 }
 ```
+
+---
+
+## ZV0014
+
+**Severity:** Warning
+
+**Title:** `[Validate]` on non-readonly struct
+
+**When fired:** You decorated a `struct` or `record struct` with `[Validate]`,
+but the type is not declared `readonly`. A caller can mutate the instance
+between the validator returning `IsValid == true` and the consumer reading
+the value — making the validation result stale.
+
+**Fix:** Declare the type as `readonly struct` or `readonly record struct`:
+
+```csharp
+[Validate]
+public readonly record struct PlaceOrderCommand(
+    [property: GreaterThan(0)] int CustomerId,
+    [property: GreaterThan(0)] decimal Total);
+```
+
+**Suppressing:** If your call site cooperates with the hazard (e.g. you validate
+inside the same method that constructs the struct and never mutate after),
+suppress with `#pragma warning disable ZV0014` around the type declaration,
+or add `<NoWarn>$(NoWarn);ZV0014</NoWarn>` in the consuming project.
 
 ---
 
