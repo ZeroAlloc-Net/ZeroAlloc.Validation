@@ -39,7 +39,22 @@ Non-comparable / multi-field value-objects (e.g. `Money(Amount, Currency)`) fall
 
 ---
 
-## B2 — `[Validate]` on `record`, `record struct`, and `struct` targets
+## ~~B2 — `[Validate]` on `record`, `record struct`, and `struct` targets~~ — ✅ shipped 1.4.0 (2026-05-27)
+
+**Shipped:** `AttributeTargets.Class | AttributeTargets.Struct` widening on `ValidateAttribute`, generator syntax predicate extended to cover `StructDeclarationSyntax` (`record struct` is already represented by `RecordDeclarationSyntax` in Roslyn — no separate type), plus the `ZV0014` Warning when `[Validate]` decorates a non-readonly struct. Shipped as ZeroAlloc.Validation 1.4.0 via [PR #42](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/pull/42) (release [PR #43](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/pull/43)). Strictly additive — existing class/record consumers see no behaviour change.
+
+**Design + plan:** [`docs/plans/2026-05-27-validate-struct-target-design.md`](plans/2026-05-27-validate-struct-target-design.md) + [`docs/plans/2026-05-27-validate-struct-target.md`](plans/2026-05-27-validate-struct-target.md).
+
+**Decisions worth flagging** (durable record for future maintainers):
+
+- Pass-by-value `Validate(T instance)` retained for structs — no `Validate(in T)` overload on `ValidatorFor<T>`. Stack copy is below noise on the measured profile (Validator_Generated at 2.18 ns / 0 B in the za-vertical-slice benchmarks). Deferred until a consumer measures it as load-bearing.
+- `ZV0014` is a **Warning**, not Error. Hard refusal would block legitimate mutable-then-frozen patterns; pragma-disable opt-out is trivial.
+- No restriction to `readonly` — all four shapes (`class` / `record` / `struct` / `record struct`) participate; ZV0014 raises the loud signal at compile time on non-readonly structs without blocking the build.
+
+---
+
+<details>
+<summary>Original B2 proposal (kept for context)</summary>
 
 **What.** Allow `[Validate]` to decorate `record` (class) **and** `struct` / `record struct` declarations, not just `class`. Today the attribute is declared with `AttributeTargets.Class`, so:
 
@@ -68,3 +83,5 @@ public readonly record struct PlaceOrderCommand(             // CS0592
 **Graduation signal.** A second `[Validate]`-using codebase requests struct / record-struct support, OR `za-vertical-slice` reaches v1 with `sealed record` as the documented request shape and the team judges the loss of `readonly record struct` ergonomics too high to ship as the convention.
 
 **Relationship to B1.** Independent. B1 unlocks value-object properties; B2 unlocks struct-shaped requests. Same template surfaced both; either can ship first.
+
+</details>
