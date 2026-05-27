@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.4.1...v1.5.0) (2026-05-27)
+
+
+### Features
+
+* **generator:** unwrap [ValueObject] properties in built-in validators ([#46](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/46)) ([e44690f](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/e44690f50757a0fd4d26d7371e4c70e0ba9d0968))
+
 ## [1.4.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.4.0...v1.4.1) (2026-05-27)
 
 
