@@ -60,10 +60,15 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         var validateClasses = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 ValidateAttributeFqn,
-                // Accept both classes and records (positional records are
-                // RecordDeclarationSyntax, not ClassDeclarationSyntax — the
-                // generator walks symbol properties identically for both).
-                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
+                // All four C# shapes — class, record (class), struct, record struct — hit
+                // the same emission path; the downstream generator walks symbol properties
+                // identically regardless of TypeKind. Note: Roslyn represents both
+                // `record` and `record struct` with RecordDeclarationSyntax (kind
+                // differs at the token level), so only three syntax types are needed.
+                predicate: static (node, _) =>
+                    node is ClassDeclarationSyntax
+                         or RecordDeclarationSyntax
+                         or StructDeclarationSyntax,
                 transform: static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol);
 
 #pragma warning disable EPS06 // IncrementalValuesProvider<T> is a struct; Combine is the standard Roslyn API
