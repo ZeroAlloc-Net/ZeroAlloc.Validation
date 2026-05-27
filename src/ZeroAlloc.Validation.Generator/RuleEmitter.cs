@@ -280,7 +280,7 @@ internal static class RuleEmitter
     {
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
-        var propAccess = $"{modelParamName}.{propName}";
+        var propAccess = BuildPropertyAccess(modelParamName, prop);
         var stopMode = HasStopOnFirstFailure(prop);
 
         for (int i = 0; i < rules.Count; i++)
@@ -414,7 +414,7 @@ internal static class RuleEmitter
     {
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
-        var propAccess = $"{modelParamName}.{propName}";
+        var propAccess = BuildPropertyAccess(modelParamName, prop);
         var stopMode = HasStopOnFirstFailure(prop);
 
         for (int i = 0; i < rules.Count; i++)
@@ -808,7 +808,7 @@ internal static class RuleEmitter
 
     private static string BuildPropertyValueExpr(IPropertySymbol prop, string modelParamName)
     {
-        var access = $"{modelParamName}.{prop.Name}";
+        var access = BuildPropertyAccess(modelParamName, prop);
         var type = prop.Type;
 
         // Nullable value type: int?, double?, etc.
@@ -970,4 +970,57 @@ internal static class RuleEmitter
     private static bool NeedsNullGuard(ITypeSymbol type) =>
         !type.IsValueType
         || type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T;
+
+    private const string ValueObjectAttributeFqn = "ZeroAlloc.ValueObjects.ValueObjectAttribute";
+
+    /// <summary>
+    /// If <paramref name="type"/> is a single-property value-object (decorated
+    /// with <c>[ZeroAlloc.ValueObjects.ValueObject]</c> and declaring exactly one
+    /// public instance property), returns that property's name. Returns null for
+    /// everything else — class types, primitives, multi-property value-objects,
+    /// or types without the marker attribute.
+    /// </summary>
+    private static string? GetValueObjectUnwrapMember(ITypeSymbol type)
+    {
+        if (type is not INamedTypeSymbol named) return null;
+
+        var hasMarker = named.GetAttributes()
+            .Any(a => string.Equals(
+                a.AttributeClass?.ToDisplayString(),
+                ValueObjectAttributeFqn,
+                StringComparison.Ordinal));
+        if (!hasMarker) return null;
+
+        var properties = named.GetMembers()
+            .OfType<IPropertySymbol>()
+            .Where(p => !p.IsStatic && p.DeclaredAccessibility == Accessibility.Public)
+            .ToArray();
+
+        return properties.Length == 1 ? properties[0].Name : null;
+    }
+
+    /// <summary>
+    /// True when <paramref name="type"/> carries <c>[ZeroAlloc.ValueObjects.ValueObject]</c>,
+    /// regardless of property count. Used by the multi-property diagnostic (ZV0016)
+    /// to detect "this is a value-object that auto-unwrap can't help with."
+    /// </summary>
+    private static bool HasValueObjectAttribute(ITypeSymbol type) =>
+        type is INamedTypeSymbol named
+        && named.GetAttributes().Any(a => string.Equals(
+            a.AttributeClass?.ToDisplayString(),
+            ValueObjectAttributeFqn,
+            StringComparison.Ordinal));
+
+    /// <summary>
+    /// Builds the access expression for a property's value. When the property's
+    /// type is a single-property <c>[ValueObject]</c>, the expression unwraps
+    /// through that property (e.g. <c>instance.CustomerId.Value</c>). Otherwise
+    /// returns the raw access (<c>instance.CustomerId</c>).
+    /// </summary>
+    private static string BuildPropertyAccess(string modelParamName, IPropertySymbol prop)
+    {
+        var raw = $"{modelParamName}.{prop.Name}";
+        var unwrapMember = GetValueObjectUnwrapMember(prop.Type);
+        return unwrapMember is not null ? $"{raw}.{unwrapMember}" : raw;
+    }
 }
