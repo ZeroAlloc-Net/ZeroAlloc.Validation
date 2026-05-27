@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.0...v1.5.1) (2026-05-27)
+
+
+### Documentation
+
+* **backlog:** mark B1 shipped (1.5.0) ([238323d](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/238323d649ae855e4c6dab9765495dcab016b4f2))
+
 ## [1.5.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.4.1...v1.5.0) (2026-05-27)
 
 
