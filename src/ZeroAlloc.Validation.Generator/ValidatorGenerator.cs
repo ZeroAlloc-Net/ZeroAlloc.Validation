@@ -129,7 +129,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         var nestedFields = RuleEmitter.CollectNestedValidatorFields(classSymbol);
         EmitFieldsAndConstructor(sb, validatorName, nestedFields);
 
-        EmitValidateMethod(sb, classSymbol, modelName, syncBehaviors);
+        EmitValidateMethod(ctx, sb, classSymbol, modelName, syncBehaviors);
         EmitValidateAsyncOverride(sb, classSymbol, modelName, asyncBehaviors);
 
         sb.AppendLine("}");
@@ -138,6 +138,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     }
 
     private static void EmitValidateMethod(
+        SourceProductionContext ctx,
         System.Text.StringBuilder sb,
         INamedTypeSymbol classSymbol,
         string modelName,
@@ -147,11 +148,12 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         sb.AppendLine("    {");
         if (syncBehaviors.Count == 0)
         {
-            RuleEmitter.EmitValidateBody(sb, classSymbol);
+            RuleEmitter.EmitValidateBody(sb, classSymbol, "instance", ctx);
         }
         else
         {
             var fullyQualifiedModel = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var capturedCtx = ctx;
             var syncShape = new global::ZeroAlloc.Pipeline.Generators.PipelineShape
             {
                 TypeArguments           = new[] { fullyQualifiedModel },
@@ -161,7 +163,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 {
                     var paramName = depth == 0 ? "instance" : $"r{depth}";
                     return "{\n"
-                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName)
+                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName, capturedCtx)
                         + "        }";
                 }
             };

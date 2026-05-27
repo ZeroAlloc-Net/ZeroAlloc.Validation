@@ -57,6 +57,61 @@ public class ValueObjectPropertyDiagnosticTests
         Assert.DoesNotContain("instance.CustomerId.Value", validatorSource, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void MultiProperty_ValueObject_With_BuiltIn_Validator_Fires_ZV0016()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            using ZeroAlloc.ValueObjects;
+            namespace TestModels;
+
+            [ValueObject]
+            public readonly partial struct Money
+            {
+                public decimal Amount { get; }
+                public string Currency { get; }
+                public Money(decimal amount, string currency)
+                {
+                    Amount = amount;
+                    Currency = currency;
+                }
+            }
+
+            [Validate]
+            public readonly record struct PriceCommand(
+                [property: GreaterThan(0)] Money Total);
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Contains(result.Diagnostics, d => string.Equals(d.Id, "ZV0016", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void SingleProperty_ValueObject_Does_Not_Fire_ZV0016()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            using ZeroAlloc.ValueObjects;
+            namespace TestModels;
+
+            [ValueObject]
+            public readonly partial struct CustomerId
+            {
+                public int Value { get; }
+                public CustomerId(int value) => Value = value;
+            }
+
+            [Validate]
+            public readonly record struct PlaceOrderCommand(
+                [property: GreaterThan(0)] CustomerId CustomerId);
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.DoesNotContain(result.Diagnostics, d => string.Equals(d.Id, "ZV0016", StringComparison.Ordinal));
+    }
+
     private static string GetGeneratedSource(GeneratorDriverRunResult result, string filenameSuffix) =>
         result.GeneratedTrees
             .First(t => t.FilePath.EndsWith(filenameSuffix, StringComparison.Ordinal))
