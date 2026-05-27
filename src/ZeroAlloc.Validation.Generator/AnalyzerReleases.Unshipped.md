@@ -10,3 +10,4 @@ ZV0012 | ZeroAlloc.Validation | Error | Invalid [ValidateWith] validator type
 ZV0013 | ZeroAlloc.Validation | Error | Invalid [CustomValidation] method signature
 ZV0014 | ZeroAlloc.Validation | Warning | [Validate] on non-readonly struct
 ZV0015 | ZeroAlloc.Validation | Error | Duplicate pipeline behavior Order
+ZV0016 | ZeroAlloc.Validation | Warning | Multi-property value-object can't be auto-unwrapped

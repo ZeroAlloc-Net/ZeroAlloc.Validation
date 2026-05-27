@@ -57,7 +57,7 @@ internal static class RuleEmitter
         prop.GetAttributes().Any(a =>
             string.Equals(a.AttributeClass?.ToDisplayString(), StopOnFirstFailureFqn, StringComparison.Ordinal));
 
-    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance")
+    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance", SourceProductionContext? ctx = null)
     {
         var skipWhenMethod = GetSkipWhenMethod(classSymbol);
         if (skipWhenMethod is not null)
@@ -79,9 +79,9 @@ internal static class RuleEmitter
         bool validatorStop = GetBoolNamedArg(validateAttr, "StopOnFirstFailure");
 
         if (hasNested)
-            EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, customMethods, modelParamName, validatorStop, totalDirectRules);
+            EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, customMethods, modelParamName, validatorStop, totalDirectRules, ctx);
         else
-            EmitFlatPath(sb, byProperty, totalDirectRules, modelParamName, validatorStop);
+            EmitFlatPath(sb, byProperty, totalDirectRules, modelParamName, validatorStop, ctx);
     }
 
     private static List<(IPropertySymbol Property, List<AttributeData> Rules)> CollectPropertyRules(INamedTypeSymbol classSymbol)
@@ -111,20 +111,21 @@ internal static class RuleEmitter
         List<string> customMethods,
         string modelParamName,
         bool validatorStop,
-        int totalDirectRules)
+        int totalDirectRules,
+        SourceProductionContext? ctx)
     {
         sb.AppendLine($"        var _buf = new global::ZeroAlloc.Validation.Internal.FailureBuffer({totalDirectRules});");
         sb.AppendLine();
 
         if (!validatorStop)
         {
-            EmitPropertyRulesWithAdd(sb, byProperty, modelParamName);
+            EmitPropertyRulesWithAdd(sb, byProperty, modelParamName, ctx);
             EmitNestedValidators(sb, nestedProperties, modelParamName);
             EmitCollectionValidators(sb, collectionProperties, modelParamName);
         }
         else
         {
-            EmitNestedPathStop(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName);
+            EmitNestedPathStop(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName, ctx);
         }
 
         // [CustomValidation] methods always run last.
@@ -179,7 +180,8 @@ internal static class RuleEmitter
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         List<IPropertySymbol> nestedProperties,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
-        string modelParamName)
+        string modelParamName,
+        SourceProductionContext? ctx)
     {
         int groupIdx = 0;
         int collCi = 0;
@@ -200,7 +202,7 @@ internal static class RuleEmitter
             sb.AppendLine($"        int _b{groupIdx} = _buf.Count;");
 
             if (directProp is not null && directRules is not null)
-                EmitPropertyRulesForProp(sb, directProp, directRules, modelParamName);
+                EmitPropertyRulesForProp(sb, directProp, directRules, modelParamName, ctx);
 
             if (nestedProp is not null)
                 EmitNestedValidatorForProp(sb, nestedProp, modelParamName);
@@ -263,12 +265,13 @@ internal static class RuleEmitter
     private static void EmitPropertyRulesWithAdd(
         StringBuilder sb,
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
-        string modelParamName)
+        string modelParamName,
+        SourceProductionContext? ctx)
     {
         for (int pi = 0; pi < byProperty.Count; pi++)
         {
             var (prop, rules) = byProperty[pi];
-            EmitPropertyRulesForProp(sb, prop, rules, modelParamName);
+            EmitPropertyRulesForProp(sb, prop, rules, modelParamName, ctx);
         }
     }
 
@@ -276,12 +279,16 @@ internal static class RuleEmitter
         StringBuilder sb,
         IPropertySymbol prop,
         List<AttributeData> rules,
-        string modelParamName)
+        string modelParamName,
+        SourceProductionContext? ctx)
     {
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
-        var propAccess = $"{modelParamName}.{propName}";
+        var propAccess = BuildPropertyAccess(modelParamName, prop);
+        var rawPropAccess = $"{modelParamName}.{prop.Name}";
         var stopMode = HasStopOnFirstFailure(prop);
+
+        ReportZV0016IfApplicable(ctx, prop, rules);
 
         for (int i = 0; i < rules.Count; i++)
         {
@@ -290,7 +297,7 @@ internal static class RuleEmitter
             var prefix = (stopMode && i > 0) ? "        else if" : "        if";
             var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type);
+            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess);
             var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
@@ -377,7 +384,8 @@ internal static class RuleEmitter
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         int totalDirectRules,
         string modelParamName,
-        bool validatorStop)
+        bool validatorStop,
+        SourceProductionContext? ctx)
     {
         // Lazy allocation: buffer is only created on the first failure.
         // On the valid path (0 failures) no heap allocation occurs.
@@ -390,7 +398,7 @@ internal static class RuleEmitter
             if (validatorStop)
                 sb.AppendLine($"        int _b{pi} = _count;");
 
-            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName);
+            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx);
 
             if (validatorStop)
                 EmitFlatPathStopOnFirstFailureReturn(sb, pi);
@@ -410,12 +418,16 @@ internal static class RuleEmitter
         IPropertySymbol prop,
         List<AttributeData> rules,
         int totalDirectRules,
-        string modelParamName)
+        string modelParamName,
+        SourceProductionContext? ctx)
     {
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
-        var propAccess = $"{modelParamName}.{propName}";
+        var propAccess = BuildPropertyAccess(modelParamName, prop);
+        var rawPropAccess = $"{modelParamName}.{prop.Name}";
         var stopMode = HasStopOnFirstFailure(prop);
+
+        ReportZV0016IfApplicable(ctx, prop, rules);
 
         for (int i = 0; i < rules.Count; i++)
         {
@@ -424,7 +436,7 @@ internal static class RuleEmitter
             var prefix = (stopMode && i > 0) ? "        else if" : "        if";
             var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type);
+            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess);
             var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
@@ -641,8 +653,16 @@ internal static class RuleEmitter
         return attr.ConstructorArguments[index].Type?.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String;
     }
 
-    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "", string modelParamName = "instance", ITypeSymbol? propType = null) =>
-        fqn switch
+    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "", string modelParamName = "instance", ITypeSymbol? propType = null, string? rawAccess = null)
+    {
+        // Predicate-style validators (e.g. [Must]) pass the property value as an argument
+        // to a user-defined method whose parameter type matches the declared property type.
+        // For value-object properties, the access string is unwrapped (e.g. instance.Id.Value),
+        // which is correct for built-in operand validators (GreaterThan, NotEmpty, ...) but
+        // wrong for predicates — the user's method expects the wrapper. Predicate branches
+        // therefore use rawAccess (the un-unwrapped form) when provided.
+        var rawForPredicate = rawAccess ?? access;
+        return fqn switch
         {
             NotNullFqn               => $"{access} is null",
             NotEmptyFqn              => BuildNotEmptyCondition(access, propType),
@@ -668,9 +688,10 @@ internal static class RuleEmitter
             IsInEnumFqn              => $"!global::System.Enum.IsDefined(typeof({propTypeFullName}), {access})",
             IsEnumNameFqn            => $"!global::System.Enum.IsDefined(typeof({GetTypeArgFullName(attr, 0)}), {access})",
             PrecisionScaleFqn        => $"global::ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale({access}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})",
-            MustFqn                  => $"!{modelParamName}.{GetStringArg(attr, 0)}({access})",
+            MustFqn                  => $"!{modelParamName}.{GetStringArg(attr, 0)}({rawForPredicate})",
             _                        => "false"
         };
+    }
 
     private static string GetDefaultMessage(string fqn, AttributeData attr, string propName) =>
         fqn switch
@@ -808,7 +829,7 @@ internal static class RuleEmitter
 
     private static string BuildPropertyValueExpr(IPropertySymbol prop, string modelParamName)
     {
-        var access = $"{modelParamName}.{prop.Name}";
+        var access = BuildPropertyAccess(modelParamName, prop);
         var type = prop.Type;
 
         // Nullable value type: int?, double?, etc.
@@ -953,10 +974,10 @@ internal static class RuleEmitter
     /// Returns the Validate method body as a string (multi-statement block WITHOUT outer braces),
     /// using <paramref name="modelParamName"/> as the instance variable.
     /// </summary>
-    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, string modelParamName)
+    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, string modelParamName, SourceProductionContext? ctx = null)
     {
         var sb = new System.Text.StringBuilder();
-        EmitValidateBody(sb, classSymbol, modelParamName);
+        EmitValidateBody(sb, classSymbol, modelParamName, ctx);
         return sb.ToString();
     }
 
@@ -970,4 +991,92 @@ internal static class RuleEmitter
     private static bool NeedsNullGuard(ITypeSymbol type) =>
         !type.IsValueType
         || type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T;
+
+    private const string ValueObjectAttributeFqn = "ZeroAlloc.ValueObjects.ValueObjectAttribute";
+
+    /// <summary>
+    /// If <paramref name="type"/> is a single-property value-object (decorated
+    /// with <c>[ZeroAlloc.ValueObjects.ValueObject]</c> and declaring exactly one
+    /// public instance property), returns that property's name. Returns null for
+    /// everything else — class types, primitives, multi-property value-objects,
+    /// or types without the marker attribute.
+    /// </summary>
+    private static string? GetValueObjectUnwrapMember(ITypeSymbol type)
+    {
+        if (type is not INamedTypeSymbol named) return null;
+
+        var hasMarker = named.GetAttributes()
+            .Any(a => string.Equals(
+                a.AttributeClass?.ToDisplayString(),
+                ValueObjectAttributeFqn,
+                StringComparison.Ordinal));
+        if (!hasMarker) return null;
+
+        var properties = named.GetMembers()
+            .OfType<IPropertySymbol>()
+            .Where(p => !p.IsStatic && p.DeclaredAccessibility == Accessibility.Public)
+            .ToArray();
+
+        return properties.Length == 1 ? properties[0].Name : null;
+    }
+
+    /// <summary>
+    /// True when <paramref name="type"/> carries <c>[ZeroAlloc.ValueObjects.ValueObject]</c>,
+    /// regardless of property count. Used by the multi-property diagnostic (ZV0016)
+    /// to detect "this is a value-object that auto-unwrap can't help with."
+    /// </summary>
+    private static bool HasValueObjectAttribute(ITypeSymbol type) =>
+        type is INamedTypeSymbol named
+        && named.GetAttributes().Any(a => string.Equals(
+            a.AttributeClass?.ToDisplayString(),
+            ValueObjectAttributeFqn,
+            StringComparison.Ordinal));
+
+    /// <summary>
+    /// Builds the access expression for a property's value. When the property's
+    /// type is a single-property <c>[ValueObject]</c>, the expression unwraps
+    /// through that property (e.g. <c>instance.CustomerId.Value</c>). Otherwise
+    /// returns the raw access (<c>instance.CustomerId</c>).
+    /// </summary>
+    private static string BuildPropertyAccess(string modelParamName, IPropertySymbol prop)
+    {
+        var raw = $"{modelParamName}.{prop.Name}";
+        var unwrapMember = GetValueObjectUnwrapMember(prop.Type);
+        return unwrapMember is not null ? $"{raw}.{unwrapMember}" : raw;
+    }
+
+    private static readonly DiagnosticDescriptor ZV0016 = new DiagnosticDescriptor(
+        id: "ZV0016",
+        title: "Value-object with multiple properties can't be auto-unwrapped",
+        messageFormat:
+            "Property '{0}' of type '{1}' carries a built-in validator but '{1}' is a multi-property value-object ({2} properties). " +
+            "Auto-unwrap requires exactly one underlying property. " +
+            "Either declare the validator on a single-property value-object, or use [Must] / [CustomValidation] with a custom predicate.",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// Fires ZV0016 when a property has built-in validation rules and its type is a
+    /// multi-property <c>[ValueObject]</c> (i.e. has the marker attribute but no
+    /// single property to auto-unwrap through). Single-property value-objects are
+    /// handled by <see cref="BuildPropertyAccess"/>; primitives/class types are
+    /// emitted as-is.
+    /// </summary>
+    private static void ReportZV0016IfApplicable(SourceProductionContext? ctx, IPropertySymbol prop, List<AttributeData> rules)
+    {
+        if (ctx is null) return;
+        if (rules.Count == 0) return;
+        if (!HasValueObjectAttribute(prop.Type)) return;
+        if (GetValueObjectUnwrapMember(prop.Type) is not null) return;
+
+        var propCount = ((INamedTypeSymbol)prop.Type).GetMembers()
+            .OfType<IPropertySymbol>()
+            .Count(p => !p.IsStatic && p.DeclaredAccessibility == Accessibility.Public);
+
+        ctx.Value.ReportDiagnostic(Diagnostic.Create(
+            ZV0016,
+            prop.Locations.FirstOrDefault() ?? Location.None,
+            prop.Name, prop.Type.Name, propCount));
+    }
 }
