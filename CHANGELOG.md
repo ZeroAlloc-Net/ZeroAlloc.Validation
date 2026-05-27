@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.4.0...v1.4.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **generator:** skip is-not-null on value-type nested validators ([#45](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/45)) ([71d0b95](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/71d0b95b17590ca0664df4840478565301ee84d7))
+
+
+### Documentation
+
+* **backlog:** mark B2 shipped (1.4.0) ([5154fbb](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/5154fbb32b546f81fda130c9d072ff216368c248))
+
 ## [1.4.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.3.0...v1.4.0) (2026-05-27)
 
 
