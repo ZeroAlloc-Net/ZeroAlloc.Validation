@@ -13,6 +13,7 @@ public class StructValidationTests
         var validator = new RrsCommandValidator();
         var result = validator.Validate(new RrsCommand(Total: 10));
         Assert.True(result.IsValid);
+        Assert.True(result.Failures.IsEmpty);
     }
 
     [Fact]
@@ -21,6 +22,7 @@ public class StructValidationTests
         var validator = new RrsCommandValidator();
         var result = validator.Validate(new RrsCommand(Total: 0));
         Assert.False(result.IsValid);
+        Assert.Equal(1, result.Failures.Length);
         Assert.Equal(nameof(RrsCommand.Total), result.Failures[0].PropertyName);
     }
 }
