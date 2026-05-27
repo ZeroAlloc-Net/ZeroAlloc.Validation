@@ -112,6 +112,40 @@ public class ValueObjectPropertyDiagnosticTests
         Assert.DoesNotContain(result.Diagnostics, d => string.Equals(d.Id, "ZV0016", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Must_Predicate_On_ValueObject_Property_Passes_Wrapper_Not_Unwrap()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            using ZeroAlloc.ValueObjects;
+            namespace TestModels;
+
+            [ValueObject]
+            public readonly partial struct CustomerId
+            {
+                public int Value { get; }
+                public CustomerId(int value) => Value = value;
+            }
+
+            [Validate]
+            public partial class PlaceOrderCommand
+            {
+                [Must(nameof(IsKnown))]
+                public CustomerId CustomerId { get; set; }
+
+                public bool IsKnown(CustomerId id) => id.Value > 0;
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics);
+        var validatorSource = GetGeneratedSource(result, "PlaceOrderCommandValidator.g.cs");
+        // The Must predicate receives the wrapper, NOT instance.CustomerId.Value.
+        Assert.Contains("instance.CustomerId", validatorSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("instance.CustomerId.Value", validatorSource, StringComparison.Ordinal);
+    }
+
     private static string GetGeneratedSource(GeneratorDriverRunResult result, string filenameSuffix) =>
         result.GeneratedTrees
             .First(t => t.FilePath.EndsWith(filenameSuffix, StringComparison.Ordinal))
@@ -127,12 +161,15 @@ public class ValueObjectPropertyDiagnosticTests
             }
             """;
 
+        var systemRuntime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
         var compilation = CSharpCompilation.Create(
             "TestAssembly",
             [CSharpSyntaxTree.ParseText(source), CSharpSyntaxTree.ParseText(valueObjectStub)],
             [
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(ValidateAttribute).Assembly.Location),
+                MetadataReference.CreateFromFile(System.IO.Path.Combine(systemRuntime, "System.Runtime.dll")),
+                MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
             ],
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 

@@ -285,6 +285,7 @@ internal static class RuleEmitter
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
         var propAccess = BuildPropertyAccess(modelParamName, prop);
+        var rawPropAccess = $"{modelParamName}.{prop.Name}";
         var stopMode = HasStopOnFirstFailure(prop);
 
         ReportZV0016IfApplicable(ctx, prop, rules);
@@ -296,7 +297,7 @@ internal static class RuleEmitter
             var prefix = (stopMode && i > 0) ? "        else if" : "        if";
             var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type);
+            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess);
             var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
@@ -423,6 +424,7 @@ internal static class RuleEmitter
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
         var propAccess = BuildPropertyAccess(modelParamName, prop);
+        var rawPropAccess = $"{modelParamName}.{prop.Name}";
         var stopMode = HasStopOnFirstFailure(prop);
 
         ReportZV0016IfApplicable(ctx, prop, rules);
@@ -434,7 +436,7 @@ internal static class RuleEmitter
             var prefix = (stopMode && i > 0) ? "        else if" : "        if";
             var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type);
+            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess);
             var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
@@ -651,8 +653,16 @@ internal static class RuleEmitter
         return attr.ConstructorArguments[index].Type?.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String;
     }
 
-    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "", string modelParamName = "instance", ITypeSymbol? propType = null) =>
-        fqn switch
+    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "", string modelParamName = "instance", ITypeSymbol? propType = null, string? rawAccess = null)
+    {
+        // Predicate-style validators (e.g. [Must]) pass the property value as an argument
+        // to a user-defined method whose parameter type matches the declared property type.
+        // For value-object properties, the access string is unwrapped (e.g. instance.Id.Value),
+        // which is correct for built-in operand validators (GreaterThan, NotEmpty, ...) but
+        // wrong for predicates — the user's method expects the wrapper. Predicate branches
+        // therefore use rawAccess (the un-unwrapped form) when provided.
+        var rawForPredicate = rawAccess ?? access;
+        return fqn switch
         {
             NotNullFqn               => $"{access} is null",
             NotEmptyFqn              => BuildNotEmptyCondition(access, propType),
@@ -678,9 +688,10 @@ internal static class RuleEmitter
             IsInEnumFqn              => $"!global::System.Enum.IsDefined(typeof({propTypeFullName}), {access})",
             IsEnumNameFqn            => $"!global::System.Enum.IsDefined(typeof({GetTypeArgFullName(attr, 0)}), {access})",
             PrecisionScaleFqn        => $"global::ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale({access}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})",
-            MustFqn                  => $"!{modelParamName}.{GetStringArg(attr, 0)}({access})",
+            MustFqn                  => $"!{modelParamName}.{GetStringArg(attr, 0)}({rawForPredicate})",
             _                        => "false"
         };
+    }
 
     private static string GetDefaultMessage(string fqn, AttributeData attr, string propName) =>
         fqn switch
