@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.3](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.2...v1.5.3) (2026-05-28)
+
+
+### Performance Improvements
+
+* **generator:** compile [Matches] regex with RegexOptions.Compiled ([#52](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/52)) ([6be2ddf](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/6be2ddf26aaa3378e9549af492382cead1a611e1))
+
 ## [1.5.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.1...v1.5.2) (2026-05-28)
 
 
