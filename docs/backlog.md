@@ -21,6 +21,26 @@ Candidate enhancements identified during real-world usage. Each item is independ
 
 ---
 
+## B4 — Extend aot-smoke to cover `[ValidateWith]`, nested chains, cross-property `[Must]` predicates
+
+**What.** The existing `aot-smoke` project exercises `[Validate]` happy-path and fail-path validators on simple types. It does NOT touch three of the more reflective-feeling code paths the generator emits: `[ValidateWith]` with a custom validator class, nested property-validation chains (a `[Validate]` type containing a `[Validate]` collection / property), and cross-property rules (`[Must]` predicates that compare two properties). Under Native AOT + the trimmer, any of these could regress silently.
+
+**Why.** Surfaced 2026-05-27 during the org-wide AOT-smoke coverage survey done after [ZeroAlloc.Serialisation](https://github.com/ZeroAlloc-Net/ZeroAlloc.Serialisation) shipped 2.3.1 + 2.3.2 reactively. ZA.Serialisation's smoke covered only the V0 path; V1 `[ValueObject]` paths were untouched — two patches shipped reactively. Same "smoke exists but partial" risk applies here.
+
+**Sketch.** Extend `samples/ZeroAlloc.Validation.AotSmoke/Program.cs` with three fixtures + assertions:
+
+- A `[Validate]` type with a property carrying `[ValidateWith(typeof(MyCustomValidator))]`; assert the custom validator fires on bad input and is skipped on good input.
+- A `[Validate]` `OrderCommand` with an `IReadOnlyList<[Validate] OrderItem> Items` property; assert per-item validation fires and indices match.
+- A `[Validate]` type with a `[Must]` cross-property predicate (e.g. `EndDate > StartDate`); assert the predicate fires on bad input.
+
+The existing happy/fail-path tests stay; this is purely additive.
+
+**Tradeoff / risks.** Same shape as the existing smoke — no new CI infrastructure. Risk: nested-collection validation is sensitive to indentation/scoping in the generated code; the regression net is a runtime invariant, not a snapshot, so it tolerates surface refactoring.
+
+**Graduation signal.** Pair with the next ZA.Validation generator change. Or proactive: ship as a 1.5.x chore commit.
+
+---
+
 ## ~~B1 — Value-object aware property validators~~ — ✅ shipped 1.5.0 (2026-05-27)
 
 **Shipped:** Three private helpers in `RuleEmitter.cs` (`GetValueObjectUnwrapMember` / `HasValueObjectAttribute` / `BuildPropertyAccess`) drive the unwrap at three call sites — the two per-property emission paths and `BuildPropertyValueExpr`. Built-in operand-taking validators (`[GreaterThan]`, `[NotEmpty]`, `[Matches]`, `[InclusiveBetween]`, …) participate uniformly. `[Must]` keeps the wrapper via an explicit `rawPropAccess` parameter routed through `BuildCondition`'s switch. `[CustomValidation]` and `[ValidateWith]` weren't affected — they don't route through `BuildCondition` at all. New `ZV0016` Warning fires when a property carries a built-in validator and the type is a multi-property `[ValueObject]` (e.g. `Money { Amount, Currency }`); the diagnostic is reported only from the sync emission path (nullable `SourceProductionContext?` threading) so it fires exactly once per offending property even when `Validate` + `ValidateAsync` both emit. Shipped as ZeroAlloc.Validation 1.5.0 via [PR #46](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/pull/46). Strictly additive — existing class/primitive consumers see byte-identical generator output.
