@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.1...v1.5.2) (2026-05-28)
+
+
+### Documentation
+
+* **backlog:** file B4 — extend aot-smoke for ValidateWith / nested / cross-property paths ([#49](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/49)) ([9f97345](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/9f973452fc207ad41fa4aacaa0be767bfed7861d))
+
 ## [1.5.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.0...v1.5.1) (2026-05-27)
 
 
