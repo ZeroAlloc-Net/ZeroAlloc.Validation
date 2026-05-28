@@ -72,5 +72,59 @@ if (!validLetter.IsValid)
     return 1;
 }
 
+// Fixture 2: Nested IReadOnlyList<[Validate] OrderItem> with per-item indexing.
+// Generator emits a foreach over Items, validating each via OrderItemValidator
+// and emitting failures with PropertyName "Items[N].Sku" — the indexed
+// PropertyName is the load-bearing invariant.
+var orderValidator = new OrderValidator(new OrderItemValidator());
+
+// Invalid: one valid item at [0], one invalid item at [1].
+var mixedOrder = orderValidator.Validate(new Order
+{
+    CustomerName = "Alice",
+    Items = new[]
+    {
+        new OrderItem { Sku = "SKU-1" },
+        new OrderItem { Sku = "" }, // index 1 — invalid
+    },
+});
+if (mixedOrder.IsValid)
+{
+    Console.Error.WriteLine("AOT smoke: FAIL — Order with one invalid item should be invalid");
+    return 1;
+}
+
+int mixedFailureCount = 0;
+bool mixedHasIndexedPropertyName = false;
+foreach (ref readonly var f in mixedOrder.Failures)
+{
+    mixedFailureCount++;
+#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
+    if (f.PropertyName.Contains("Items[1]", System.StringComparison.Ordinal))
+#pragma warning restore EPS06
+        mixedHasIndexedPropertyName = true;
+}
+if (mixedFailureCount != 1 || !mixedHasIndexedPropertyName)
+{
+    Console.Error.WriteLine($"AOT smoke: FAIL — Order expected 1 failure with 'Items[1]' in PropertyName, got {mixedFailureCount} failures (IndexedMatch={mixedHasIndexedPropertyName})");
+    foreach (ref readonly var f in mixedOrder.Failures)
+#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
+        Console.Error.WriteLine($"  failure: PropertyName='{f.PropertyName}', ErrorMessage='{f.ErrorMessage}'");
+#pragma warning restore EPS06
+    return 1;
+}
+
+// Valid: all items valid + valid CustomerName.
+var validOrder = orderValidator.Validate(new Order
+{
+    CustomerName = "Alice",
+    Items = new[] { new OrderItem { Sku = "SKU-1" } },
+});
+if (!validOrder.IsValid)
+{
+    Console.Error.WriteLine("AOT smoke: FAIL — fully-valid Order should be valid");
+    return 1;
+}
+
 Console.WriteLine("AOT smoke: PASS");
 return 0;
