@@ -126,5 +126,56 @@ if (!validOrder.IsValid)
     return 1;
 }
 
+// Fixture 3: Cross-property [Must] predicate.
+// Generator emits a direct call to the instance method IsAfterStart(endValue),
+// which sees this.StartDate via implicit capture — that's the cross-property
+// semantic. PropertyName should be exactly "EndDate" (no method-name suffix).
+var dateRangeValidator = new DateRangeValidator();
+var anchor = new DateTime(2026, 1, 1);
+
+// Invalid: EndDate before StartDate → 1 failure on EndDate.
+var badRange = dateRangeValidator.Validate(new DateRange
+{
+    StartDate = anchor.AddDays(1),
+    EndDate = anchor,
+});
+if (badRange.IsValid)
+{
+    Console.Error.WriteLine("AOT smoke: FAIL — DateRange with EndDate before StartDate should be invalid");
+    return 1;
+}
+
+int dateRangeFailureCount = 0;
+bool dateRangeHasEndDatePropertyName = false;
+foreach (ref readonly var f in badRange.Failures)
+{
+    dateRangeFailureCount++;
+#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
+    if (string.Equals(f.PropertyName, "EndDate", StringComparison.Ordinal))
+#pragma warning restore EPS06
+        dateRangeHasEndDatePropertyName = true;
+}
+if (dateRangeFailureCount != 1 || !dateRangeHasEndDatePropertyName)
+{
+    Console.Error.WriteLine($"AOT smoke: FAIL — DateRange expected 1 failure with PropertyName=='EndDate', got {dateRangeFailureCount} failures (EndDateMatch={dateRangeHasEndDatePropertyName})");
+    foreach (ref readonly var f in badRange.Failures)
+#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
+        Console.Error.WriteLine($"  failure: PropertyName='{f.PropertyName}', ErrorMessage='{f.ErrorMessage}'");
+#pragma warning restore EPS06
+    return 1;
+}
+
+// Valid: EndDate after StartDate → 0 failures.
+var goodRange = dateRangeValidator.Validate(new DateRange
+{
+    StartDate = anchor,
+    EndDate = anchor.AddDays(1),
+});
+if (!goodRange.IsValid)
+{
+    Console.Error.WriteLine("AOT smoke: FAIL — DateRange with EndDate after StartDate should be valid");
+    return 1;
+}
+
 Console.WriteLine("AOT smoke: PASS");
 return 0;
