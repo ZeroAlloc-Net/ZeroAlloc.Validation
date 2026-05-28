@@ -30,5 +30,47 @@ if (!ok.IsValid)
     return 1;
 }
 
+// Fixture 1: [ValidateWith] pointing at an external ValidatorFor<T>.
+// Generator emits a ctor that takes the external ValidatorFor<T> via DI,
+// then calls into it at the [ValidateWith] site. Failure flows back into
+// the parent Letter's failures.
+var letterValidator = new LetterValidator(new PostcodeValidator());
+
+// Invalid: empty Postcode.Value → 1 failure routed through PostcodeValidator.
+var emptyLetter = letterValidator.Validate(new Letter { Postcode = new() });
+if (emptyLetter.IsValid)
+{
+    Console.Error.WriteLine("AOT smoke: FAIL — Letter with empty Postcode should be invalid");
+    return 1;
+}
+
+int letterFailureCount = 0;
+bool letterHasPostcodePropertyName = false;
+foreach (ref readonly var f in emptyLetter.Failures)
+{
+    letterFailureCount++;
+#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
+    if (f.PropertyName.Contains("Postcode", System.StringComparison.Ordinal))
+#pragma warning restore EPS06
+        letterHasPostcodePropertyName = true;
+}
+if (letterFailureCount != 1 || !letterHasPostcodePropertyName)
+{
+    Console.Error.WriteLine($"AOT smoke: FAIL — Letter expected 1 failure with Postcode in PropertyName, got {letterFailureCount} failures (PostcodeMatch={letterHasPostcodePropertyName})");
+    foreach (ref readonly var f in emptyLetter.Failures)
+#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
+        Console.Error.WriteLine($"  failure: PropertyName='{f.PropertyName}', ErrorMessage='{f.ErrorMessage}'");
+#pragma warning restore EPS06
+    return 1;
+}
+
+// Valid: populated Postcode.Value → 0 failures.
+var validLetter = letterValidator.Validate(new Letter { Postcode = new() { Value = "1234 AB" } });
+if (!validLetter.IsValid)
+{
+    Console.Error.WriteLine("AOT smoke: FAIL — Letter with populated Postcode should be valid");
+    return 1;
+}
+
 Console.WriteLine("AOT smoke: PASS");
 return 0;
