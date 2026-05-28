@@ -129,8 +129,28 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         var nestedFields = RuleEmitter.CollectNestedValidatorFields(classSymbol);
         EmitFieldsAndConstructor(sb, validatorName, nestedFields);
 
-        EmitValidateMethod(ctx, sb, classSymbol, modelName, syncBehaviors);
-        EmitValidateAsyncOverride(sb, classSymbol, modelName, asyncBehaviors);
+        // 1.5.3: shared dictionary so both sync (Validate) and async (ValidateAsync)
+        // emission paths populate the same set of [Matches] regex methods.
+        // Emitting partial method declarations once after both paths run guarantees
+        // each property's __Regex_<Prop>() appears exactly once at class scope
+        // (no CS0111 duplicate-member errors when both paths reference the same prop).
+        var regexMethods = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.Ordinal);
+        EmitValidateMethod(ctx, sb, classSymbol, modelName, syncBehaviors, regexMethods);
+        EmitValidateAsyncOverride(sb, classSymbol, modelName, asyncBehaviors, regexMethods);
+
+        // 1.5.3: emit [GeneratedRegex] partial methods for every [Matches] use
+        // collected during rule emission. One method per unique property name.
+        // Both sync (Validate) and async (ValidateAsync) emission paths share
+        // this dictionary, so the same pattern declaration is emitted at most once
+        // per validator class.
+        foreach (var kvp in regexMethods)
+        {
+            var methodName = kvp.Key;
+            var pattern = kvp.Value;
+            sb.AppendLine();
+            sb.AppendLine($"    [global::System.Text.RegularExpressions.GeneratedRegex(\"{RuleEmitter.EscapeString(pattern)}\")]");
+            sb.AppendLine($"    private static partial global::System.Text.RegularExpressions.Regex {methodName}();");
+        }
 
         sb.AppendLine("}");
 
@@ -142,11 +162,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         System.Text.StringBuilder sb,
         INamedTypeSymbol classSymbol,
         string modelName,
-        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> syncBehaviors)
+        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> syncBehaviors,
+        System.Collections.Generic.Dictionary<string, string> regexMethods)
     {
         sb.AppendLine($"    public override global::ZeroAlloc.Validation.ValidationResult Validate({modelName} instance)");
         sb.AppendLine("    {");
-        var regexMethods = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.Ordinal);
         if (syncBehaviors.Count == 0)
         {
             RuleEmitter.EmitValidateBody(sb, classSymbol, "instance", ctx, regexMethods);
@@ -178,13 +198,13 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         System.Text.StringBuilder sb,
         INamedTypeSymbol classSymbol,
         string modelName,
-        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> asyncBehaviors)
+        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> asyncBehaviors,
+        System.Collections.Generic.Dictionary<string, string> regexMethods)
     {
         if (asyncBehaviors.Count == 0)
             return;
 
         var fullyQualifiedModel = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        var regexMethods = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.Ordinal);
         var asyncShape = new global::ZeroAlloc.Pipeline.Generators.PipelineShape
         {
             TypeArguments           = new[] { fullyQualifiedModel },

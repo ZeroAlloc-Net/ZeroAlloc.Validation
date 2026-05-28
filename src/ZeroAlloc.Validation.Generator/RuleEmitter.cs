@@ -848,7 +848,7 @@ internal static class RuleEmitter
         return false;
     }
 
-    private static string EscapeString(string s) =>
+    internal static string EscapeString(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
     private static bool HasPropertyValuePlaceholder(string message) =>
