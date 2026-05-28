@@ -21,23 +21,17 @@ Candidate enhancements identified during real-world usage. Each item is independ
 
 ---
 
-## B4 — Extend aot-smoke to cover `[ValidateWith]`, nested chains, cross-property `[Must]` predicates
+## ~~B4 — Extend aot-smoke to cover `[ValidateWith]`, nested chains, cross-property `[Must]` predicates~~ — ✅ shipped 2026-05-28
 
-**What.** The existing `aot-smoke` project exercises `[Validate]` happy-path and fail-path validators on simple types. It does NOT touch three of the more reflective-feeling code paths the generator emits: `[ValidateWith]` with a custom validator class, nested property-validation chains (a `[Validate]` type containing a `[Validate]` collection / property), and cross-property rules (`[Must]` predicates that compare two properties). Under Native AOT + the trimmer, any of these could regress silently.
+**Shipped:** Three new fixtures in `samples/ZeroAlloc.Validation.AotSmoke/` (`Letter.cs` + `Postcode.cs` + `PostcodeValidator.cs` for `[ValidateWith]`; `Order.cs` + `OrderItem.cs` for nested `IReadOnlyList<[Validate]>`; `DateRange.cs` for cross-property `[Must]`) plus matching assertion blocks in `Program.cs`. Asserts both invalid + valid input, both failure count + PropertyName patterns — including the load-bearing `Items[1]` indexed PropertyName for the nested-collection case (confirmed against the generator's documented `{parent}[{idx}].{child}` PropertyName format).
 
-**Why.** Surfaced 2026-05-27 during the org-wide AOT-smoke coverage survey done after [ZeroAlloc.Serialisation](https://github.com/ZeroAlloc-Net/ZeroAlloc.Serialisation) shipped 2.3.1 + 2.3.2 reactively. ZA.Serialisation's smoke covered only the V0 path; V1 `[ValueObject]` paths were untouched — two patches shipped reactively. Same "smoke exists but partial" risk applies here.
+**Findings worth flagging** (durable record):
 
-**Sketch.** Extend `samples/ZeroAlloc.Validation.AotSmoke/Program.cs` with three fixtures + assertions:
+- **Generator emits DI-ctor injection for nested `[Validate]` types AND `[ValidateWith]` references.** `new OrderValidator(new OrderItemValidator())` not `new OrderValidator()`. `[Must]` is a predicate (not a sub-validator) and does NOT trigger ctor injection.
+- **`EPS06` analyzer false-positives on `ref readonly var f in result.Failures`** despite `ValidationFailure` being a `readonly struct`. Same `#pragma warning disable EPS06` workaround that `src/ZeroAlloc.Validation/Testing/ValidationAssert.cs` already uses.
+- **`MA0048` enforces one-type-per-file** — `Letter`/`Postcode`/`PostcodeValidator` ended up in three separate files, `Order`/`OrderItem` in two.
 
-- A `[Validate]` type with a property carrying `[ValidateWith(typeof(MyCustomValidator))]`; assert the custom validator fires on bad input and is skipped on good input.
-- A `[Validate]` `OrderCommand` with an `IReadOnlyList<[Validate] OrderItem> Items` property; assert per-item validation fires and indices match.
-- A `[Validate]` type with a `[Must]` cross-property predicate (e.g. `EndDate > StartDate`); assert the predicate fires on bad input.
-
-The existing happy/fail-path tests stay; this is purely additive.
-
-**Tradeoff / risks.** Same shape as the existing smoke — no new CI infrastructure. Risk: nested-collection validation is sensitive to indentation/scoping in the generated code; the regression net is a runtime invariant, not a snapshot, so it tolerates surface refactoring.
-
-**Graduation signal.** Pair with the next ZA.Validation generator change. Or proactive: ship as a 1.5.x chore commit.
+**Design + plan:** [`docs/plans/2026-05-28-aot-smoke-validation-paths-design.md`](plans/2026-05-28-aot-smoke-validation-paths-design.md) + [`docs/plans/2026-05-28-aot-smoke-validation-paths.md`](plans/2026-05-28-aot-smoke-validation-paths.md).
 
 ---
 
