@@ -57,7 +57,7 @@ internal static class RuleEmitter
         prop.GetAttributes().Any(a =>
             string.Equals(a.AttributeClass?.ToDisplayString(), StopOnFirstFailureFqn, StringComparison.Ordinal));
 
-    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance", SourceProductionContext? ctx = null)
+    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance", SourceProductionContext? ctx = null, System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
     {
         var skipWhenMethod = GetSkipWhenMethod(classSymbol);
         if (skipWhenMethod is not null)
@@ -79,9 +79,9 @@ internal static class RuleEmitter
         bool validatorStop = GetBoolNamedArg(validateAttr, "StopOnFirstFailure");
 
         if (hasNested)
-            EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, customMethods, modelParamName, validatorStop, totalDirectRules, ctx);
+            EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, customMethods, modelParamName, validatorStop, totalDirectRules, ctx, regexMethods);
         else
-            EmitFlatPath(sb, byProperty, totalDirectRules, modelParamName, validatorStop, ctx);
+            EmitFlatPath(sb, byProperty, totalDirectRules, modelParamName, validatorStop, ctx, regexMethods);
     }
 
     private static List<(IPropertySymbol Property, List<AttributeData> Rules)> CollectPropertyRules(INamedTypeSymbol classSymbol)
@@ -112,20 +112,21 @@ internal static class RuleEmitter
         string modelParamName,
         bool validatorStop,
         int totalDirectRules,
-        SourceProductionContext? ctx)
+        SourceProductionContext? ctx,
+        System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
     {
         sb.AppendLine($"        var _buf = new global::ZeroAlloc.Validation.Internal.FailureBuffer({totalDirectRules});");
         sb.AppendLine();
 
         if (!validatorStop)
         {
-            EmitPropertyRulesWithAdd(sb, byProperty, modelParamName, ctx);
+            EmitPropertyRulesWithAdd(sb, byProperty, modelParamName, ctx, regexMethods);
             EmitNestedValidators(sb, nestedProperties, modelParamName);
             EmitCollectionValidators(sb, collectionProperties, modelParamName);
         }
         else
         {
-            EmitNestedPathStop(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName, ctx);
+            EmitNestedPathStop(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName, ctx, regexMethods);
         }
 
         // [CustomValidation] methods always run last.
@@ -181,7 +182,8 @@ internal static class RuleEmitter
         List<IPropertySymbol> nestedProperties,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
         string modelParamName,
-        SourceProductionContext? ctx)
+        SourceProductionContext? ctx,
+        System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
     {
         int groupIdx = 0;
         int collCi = 0;
@@ -202,7 +204,7 @@ internal static class RuleEmitter
             sb.AppendLine($"        int _b{groupIdx} = _buf.Count;");
 
             if (directProp is not null && directRules is not null)
-                EmitPropertyRulesForProp(sb, directProp, directRules, modelParamName, ctx);
+                EmitPropertyRulesForProp(sb, directProp, directRules, modelParamName, ctx, regexMethods);
 
             if (nestedProp is not null)
                 EmitNestedValidatorForProp(sb, nestedProp, modelParamName);
@@ -266,12 +268,13 @@ internal static class RuleEmitter
         StringBuilder sb,
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         string modelParamName,
-        SourceProductionContext? ctx)
+        SourceProductionContext? ctx,
+        System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
     {
         for (int pi = 0; pi < byProperty.Count; pi++)
         {
             var (prop, rules) = byProperty[pi];
-            EmitPropertyRulesForProp(sb, prop, rules, modelParamName, ctx);
+            EmitPropertyRulesForProp(sb, prop, rules, modelParamName, ctx, regexMethods);
         }
     }
 
@@ -280,7 +283,8 @@ internal static class RuleEmitter
         IPropertySymbol prop,
         List<AttributeData> rules,
         string modelParamName,
-        SourceProductionContext? ctx)
+        SourceProductionContext? ctx,
+        System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
     {
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
@@ -297,7 +301,7 @@ internal static class RuleEmitter
             var prefix = (stopMode && i > 0) ? "        else if" : "        if";
             var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess);
+            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, regexMethods: regexMethods);
             var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
@@ -385,7 +389,8 @@ internal static class RuleEmitter
         int totalDirectRules,
         string modelParamName,
         bool validatorStop,
-        SourceProductionContext? ctx)
+        SourceProductionContext? ctx,
+        System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
     {
         // Lazy allocation: buffer is only created on the first failure.
         // On the valid path (0 failures) no heap allocation occurs.
@@ -398,7 +403,7 @@ internal static class RuleEmitter
             if (validatorStop)
                 sb.AppendLine($"        int _b{pi} = _count;");
 
-            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx);
+            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx, regexMethods);
 
             if (validatorStop)
                 EmitFlatPathStopOnFirstFailureReturn(sb, pi);
@@ -419,7 +424,8 @@ internal static class RuleEmitter
         List<AttributeData> rules,
         int totalDirectRules,
         string modelParamName,
-        SourceProductionContext? ctx)
+        SourceProductionContext? ctx,
+        System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
     {
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
@@ -436,7 +442,7 @@ internal static class RuleEmitter
             var prefix = (stopMode && i > 0) ? "        else if" : "        if";
             var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess);
+            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, regexMethods: regexMethods);
             var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
@@ -653,7 +659,7 @@ internal static class RuleEmitter
         return attr.ConstructorArguments[index].Type?.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String;
     }
 
-    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "", string modelParamName = "instance", ITypeSymbol? propType = null, string? rawAccess = null)
+    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "", string modelParamName = "instance", ITypeSymbol? propType = null, string? rawAccess = null, string propName = "", System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
     {
         // Predicate-style validators (e.g. [Must]) pass the property value as an argument
         // to a user-defined method whose parameter type matches the declared property type.
@@ -974,10 +980,10 @@ internal static class RuleEmitter
     /// Returns the Validate method body as a string (multi-statement block WITHOUT outer braces),
     /// using <paramref name="modelParamName"/> as the instance variable.
     /// </summary>
-    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, string modelParamName, SourceProductionContext? ctx = null)
+    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, string modelParamName, SourceProductionContext? ctx = null, System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
     {
         var sb = new System.Text.StringBuilder();
-        EmitValidateBody(sb, classSymbol, modelParamName, ctx);
+        EmitValidateBody(sb, classSymbol, modelParamName, ctx, regexMethods);
         return sb.ToString();
     }
 

@@ -146,9 +146,10 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     {
         sb.AppendLine($"    public override global::ZeroAlloc.Validation.ValidationResult Validate({modelName} instance)");
         sb.AppendLine("    {");
+        var regexMethods = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.Ordinal);
         if (syncBehaviors.Count == 0)
         {
-            RuleEmitter.EmitValidateBody(sb, classSymbol, "instance", ctx);
+            RuleEmitter.EmitValidateBody(sb, classSymbol, "instance", ctx, regexMethods);
         }
         else
         {
@@ -163,7 +164,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 {
                     var paramName = depth == 0 ? "instance" : $"r{depth}";
                     return "{\n"
-                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName, capturedCtx)
+                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName, capturedCtx, regexMethods)
                         + "        }";
                 }
             };
@@ -183,6 +184,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             return;
 
         var fullyQualifiedModel = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var regexMethods = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.Ordinal);
         var asyncShape = new global::ZeroAlloc.Pipeline.Generators.PipelineShape
         {
             TypeArguments           = new[] { fullyQualifiedModel },
@@ -198,7 +200,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 // wrapClose adds one extra closing paren for FromResult(...) and the semicolon.
                 // The closing paren for ValidationResult(...) is already included in the matched substring.
                 const string wrapClose    = ");";
-                var body = RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName);
+                var body = RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName, regexMethods: regexMethods);
                 var asyncBody = WrapReturnSites(body, returnPrefix, wrapOpen, wrapClose);
                 return "{\n" + asyncBody + "        }";
             }
