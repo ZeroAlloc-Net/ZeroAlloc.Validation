@@ -682,7 +682,7 @@ internal static class RuleEmitter
             ExclusiveBetweenFqn      => $"System.Convert.ToDouble({access}) <= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)} || System.Convert.ToDouble({access}) >= {GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture)}",
             LengthFqn                => $"{access}.Length < {GetIntArg(attr, 0)} || {access}.Length > {GetIntArg(attr, 1)}",
             EmailAddressFqn          => $"!global::ZeroAlloc.Validation.Internal.EmailValidator.IsValid({access})",
-            MatchesFqn               => $"!global::System.Text.RegularExpressions.Regex.IsMatch({access} ?? \"\", \"{EscapeString(GetStringArg(attr, 0))}\")",
+            MatchesFqn               => BuildMatchesCondition(access, propName, attr, regexMethods),
             NullFqn                  => $"{access} is not null",
             EmptyFqn                 => $"!string.IsNullOrEmpty({access})",
             EqualFqn                 => IsStringArg(attr, 0)
@@ -697,6 +697,27 @@ internal static class RuleEmitter
             MustFqn                  => $"!{modelParamName}.{GetStringArg(attr, 0)}({rawForPredicate})",
             _                        => "false"
         };
+    }
+
+    private static string BuildMatchesCondition(
+        string access,
+        string propName,
+        AttributeData attr,
+        System.Collections.Generic.Dictionary<string, string>? regexMethods)
+    {
+        var methodName = $"__Regex_{propName}";
+        var pattern = GetStringArg(attr, 0);
+
+        // If we have a collector, register the pattern so the emitting class
+        // can produce the [GeneratedRegex] partial method declaration.
+        // Dictionary deduplicates if the same property is visited twice
+        // (sync + async paths share the same Phase 1 dictionary per method scope).
+        if (regexMethods is not null)
+        {
+            regexMethods[methodName] = pattern;
+        }
+
+        return $"!{methodName}().IsMatch({access} ?? \"\")";
     }
 
     private static string GetDefaultMessage(string fqn, AttributeData attr, string propName) =>
