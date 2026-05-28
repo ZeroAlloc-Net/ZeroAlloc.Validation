@@ -705,19 +705,20 @@ internal static class RuleEmitter
         AttributeData attr,
         System.Collections.Generic.Dictionary<string, string>? regexMethods)
     {
-        var methodName = $"__Regex_{propName}";
+        var fieldName = $"__Regex_{propName}";
         var pattern = GetStringArg(attr, 0);
 
         // If we have a collector, register the pattern so the emitting class
-        // can produce the [GeneratedRegex] partial method declaration.
-        // Dictionary deduplicates if the same property is visited twice
-        // (sync + async paths share the same Phase 1 dictionary per method scope).
+        // can produce the `private static readonly Regex __Regex_<Prop>`
+        // field declaration with RegexOptions.Compiled. Dictionary deduplicates
+        // sync+async double-visit (both share a single dictionary at the outer
+        // class-emission scope).
         if (regexMethods is not null)
         {
-            regexMethods[methodName] = pattern;
+            regexMethods[fieldName] = pattern;
         }
 
-        return $"!{methodName}().IsMatch({access} ?? \"\")";
+        return $"!{fieldName}.IsMatch({access} ?? \"\")";
     }
 
     private static string GetDefaultMessage(string fqn, AttributeData attr, string propName) =>

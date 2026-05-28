@@ -1,7 +1,9 @@
-# `[Matches]` → `[GeneratedRegex]` Migration — Design
+# `[Matches]` → Compiled Regex Migration — Design
 
 **Date:** 2026-05-28
-**Scope:** ZeroAlloc.Validation generator emission for the `[Matches(pattern)]` validation attribute. Migrate from the static `Regex.IsMatch(input, pattern)` call (interpreted, per-call cached-lookup) to a `[GeneratedRegex(pattern)] private static partial Regex` source-generated regex (compile-time emitted, single static dispatch). Ships as ZA.Validation **1.5.3** (patch — strictly additive perf improvement).
+**Scope:** ZeroAlloc.Validation generator emission for the `[Matches(pattern)]` validation attribute. Migrate from the static `Regex.IsMatch(input, pattern)` call (interpreted, per-call cached-lookup) to a **`private static readonly Regex` field** initialized with `RegexOptions.Compiled` (JIT-compiled matcher, no per-call cache lookup). Ships as ZA.Validation **1.5.3** (patch — strictly additive perf improvement).
+
+> **Pivot 2026-05-28 (during Phase 3 implementation):** the original plan called for emitting `[GeneratedRegex]` partial methods that the .NET 7+ `RegexGenerator` would close. Implementer surfaced that Roslyn source generators cannot see syntax trees added by other source generators in the same compilation pass — our generator's `[GeneratedRegex]` declarations are invisible to `RegexGenerator`, so the partial methods never get an implementation (`CS8795` × N at consumer compile time). Same root-cause class as ZA.Serialisation 2.3.0 → 2.3.1 (gens-can't-see-gens). Pivoted to static compiled-Regex fields: simpler, smaller diff, ~60% of the perf win (vs ~95% for the ideal source-gen path), no Roslyn-limitation dependency. The original Phase 3 work (`[GeneratedRegex]` partial methods) is preserved as a future enhancement if Roslyn ever surfaces inter-generator visibility.
 
 ## Background
 

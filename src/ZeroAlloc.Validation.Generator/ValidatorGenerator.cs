@@ -138,23 +138,40 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         EmitValidateMethod(ctx, sb, classSymbol, modelName, syncBehaviors, regexMethods);
         EmitValidateAsyncOverride(sb, classSymbol, modelName, asyncBehaviors, regexMethods);
 
-        // 1.5.3: emit [GeneratedRegex] partial methods for every [Matches] use
-        // collected during rule emission. One method per unique property name.
-        // Both sync (Validate) and async (ValidateAsync) emission paths share
-        // this dictionary, so the same pattern declaration is emitted at most once
-        // per validator class.
-        foreach (var kvp in regexMethods)
-        {
-            var methodName = kvp.Key;
-            var pattern = kvp.Value;
-            sb.AppendLine();
-            sb.AppendLine($"    [global::System.Text.RegularExpressions.GeneratedRegex(\"{RuleEmitter.EscapeString(pattern)}\")]");
-            sb.AppendLine($"    private static partial global::System.Text.RegularExpressions.Regex {methodName}();");
-        }
+        EmitMatchesRegexFields(sb, regexMethods);
 
         sb.AppendLine("}");
 
         ctx.AddSource($"{validatorName}.g.cs", sb.ToString());
+    }
+
+    /// <summary>
+    /// Emits one <c>private static readonly Regex</c> field per unique
+    /// <c>[Matches]</c>-decorated property collected during rule emission.
+    /// Initialised with <c>RegexOptions.Compiled</c> so the matcher is JIT'd
+    /// once and the per-call hot path is a direct method dispatch.
+    /// </summary>
+    /// <remarks>
+    /// Initial design called for <c>[GeneratedRegex]</c> partial methods, but
+    /// Roslyn source generators cannot see syntax trees added by other
+    /// generators in the same compilation pass — the .NET RegexGenerator
+    /// never sees our partial method declarations and never emits the
+    /// implementation half (CS8795). Static compiled-Regex fields give the
+    /// bulk of the perf win without the inter-generator visibility
+    /// dependency.
+    /// </remarks>
+    private static void EmitMatchesRegexFields(
+        System.Text.StringBuilder sb,
+        System.Collections.Generic.Dictionary<string, string> regexMethods)
+    {
+        foreach (var kvp in regexMethods)
+        {
+            var fieldName = kvp.Key;
+            var pattern = kvp.Value;
+            sb.AppendLine();
+            sb.AppendLine($"    private static readonly global::System.Text.RegularExpressions.Regex {fieldName}");
+            sb.AppendLine($"        = new global::System.Text.RegularExpressions.Regex(\"{RuleEmitter.EscapeString(pattern)}\", global::System.Text.RegularExpressions.RegexOptions.Compiled);");
+        }
     }
 
     private static void EmitValidateMethod(
