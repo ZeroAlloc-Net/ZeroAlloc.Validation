@@ -129,12 +129,49 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         var nestedFields = RuleEmitter.CollectNestedValidatorFields(classSymbol);
         EmitFieldsAndConstructor(sb, validatorName, nestedFields);
 
-        EmitValidateMethod(ctx, sb, classSymbol, modelName, syncBehaviors);
-        EmitValidateAsyncOverride(sb, classSymbol, modelName, asyncBehaviors);
+        // 1.5.3: shared dictionary so both sync (Validate) and async (ValidateAsync)
+        // emission paths populate the same set of [Matches] regex methods.
+        // Emitting partial method declarations once after both paths run guarantees
+        // each property's __Regex_<Prop>() appears exactly once at class scope
+        // (no CS0111 duplicate-member errors when both paths reference the same prop).
+        var regexMethods = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.Ordinal);
+        EmitValidateMethod(ctx, sb, classSymbol, modelName, syncBehaviors, regexMethods);
+        EmitValidateAsyncOverride(sb, classSymbol, modelName, asyncBehaviors, regexMethods);
+
+        EmitMatchesRegexFields(sb, regexMethods);
 
         sb.AppendLine("}");
 
         ctx.AddSource($"{validatorName}.g.cs", sb.ToString());
+    }
+
+    /// <summary>
+    /// Emits one <c>private static readonly Regex</c> field per unique
+    /// <c>[Matches]</c>-decorated property collected during rule emission.
+    /// Initialised with <c>RegexOptions.Compiled</c> so the matcher is JIT'd
+    /// once and the per-call hot path is a direct method dispatch.
+    /// </summary>
+    /// <remarks>
+    /// Initial design called for <c>[GeneratedRegex]</c> partial methods, but
+    /// Roslyn source generators cannot see syntax trees added by other
+    /// generators in the same compilation pass — the .NET RegexGenerator
+    /// never sees our partial method declarations and never emits the
+    /// implementation half (CS8795). Static compiled-Regex fields give the
+    /// bulk of the perf win without the inter-generator visibility
+    /// dependency.
+    /// </remarks>
+    private static void EmitMatchesRegexFields(
+        System.Text.StringBuilder sb,
+        System.Collections.Generic.Dictionary<string, string> regexMethods)
+    {
+        foreach (var kvp in regexMethods)
+        {
+            var fieldName = kvp.Key;
+            var pattern = kvp.Value;
+            sb.AppendLine();
+            sb.AppendLine($"    private static readonly global::System.Text.RegularExpressions.Regex {fieldName}");
+            sb.AppendLine($"        = new global::System.Text.RegularExpressions.Regex(\"{RuleEmitter.EscapeString(pattern)}\", global::System.Text.RegularExpressions.RegexOptions.Compiled);");
+        }
     }
 
     private static void EmitValidateMethod(
@@ -142,13 +179,14 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         System.Text.StringBuilder sb,
         INamedTypeSymbol classSymbol,
         string modelName,
-        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> syncBehaviors)
+        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> syncBehaviors,
+        System.Collections.Generic.Dictionary<string, string> regexMethods)
     {
         sb.AppendLine($"    public override global::ZeroAlloc.Validation.ValidationResult Validate({modelName} instance)");
         sb.AppendLine("    {");
         if (syncBehaviors.Count == 0)
         {
-            RuleEmitter.EmitValidateBody(sb, classSymbol, "instance", ctx);
+            RuleEmitter.EmitValidateBody(sb, classSymbol, "instance", ctx, regexMethods);
         }
         else
         {
@@ -163,7 +201,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 {
                     var paramName = depth == 0 ? "instance" : $"r{depth}";
                     return "{\n"
-                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName, capturedCtx)
+                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName, capturedCtx, regexMethods)
                         + "        }";
                 }
             };
@@ -177,7 +215,8 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         System.Text.StringBuilder sb,
         INamedTypeSymbol classSymbol,
         string modelName,
-        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> asyncBehaviors)
+        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> asyncBehaviors,
+        System.Collections.Generic.Dictionary<string, string> regexMethods)
     {
         if (asyncBehaviors.Count == 0)
             return;
@@ -198,7 +237,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 // wrapClose adds one extra closing paren for FromResult(...) and the semicolon.
                 // The closing paren for ValidationResult(...) is already included in the matched substring.
                 const string wrapClose    = ");";
-                var body = RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName);
+                var body = RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName, regexMethods: regexMethods);
                 var asyncBody = WrapReturnSites(body, returnPrefix, wrapOpen, wrapClose);
                 return "{\n" + asyncBody + "        }";
             }

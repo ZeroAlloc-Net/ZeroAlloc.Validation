@@ -1099,9 +1099,16 @@ public class GeneratorRuleEmissionTests
             public class Foo { [Matches(@"^\d{5}$")] public string Zip { get; set; } = ""; }
             """;
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("Regex.IsMatch", generated, StringComparison.Ordinal);
+        // 1.5.3: [Matches] emits a `private static readonly Regex __Regex_<Prop>` field
+        // initialised with RegexOptions.Compiled, plus a call site `!__Regex_<Prop>.IsMatch(input ?? "")`.
+        Assert.Contains("__Regex_Zip", generated, StringComparison.Ordinal);
+        Assert.Contains("__Regex_Zip.IsMatch(", generated, StringComparison.Ordinal);
+        Assert.Contains("private static readonly global::System.Text.RegularExpressions.Regex __Regex_Zip", generated, StringComparison.Ordinal);
+        Assert.Contains("global::System.Text.RegularExpressions.RegexOptions.Compiled", generated, StringComparison.Ordinal);
         // EscapeString in the generator converts \ to \\, so the emitted literal contains ^\\d{5}$
         Assert.Contains(@"^\\d{5}$", generated, StringComparison.Ordinal);
+        // Old shape must be gone — static Regex.IsMatch(input, pattern) is the pre-1.5.3 emission.
+        Assert.DoesNotContain("Regex.IsMatch(instance", generated, StringComparison.Ordinal);
     }
 
     [Fact]
