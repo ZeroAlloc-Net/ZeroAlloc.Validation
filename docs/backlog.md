@@ -4,7 +4,14 @@ Candidate enhancements identified during real-world usage. Each item is independ
 
 ---
 
-## B3 — Nested-validator emits `is not null` against value-type elements
+## ~~B3 — Nested-validator emits `is not null` against value-type elements~~ — ✅ shipped 1.4.1 ([PR #45](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/pull/45))
+
+**Shipped:** `NeedsNullGuard(ITypeSymbol)` predicate in `src/ZeroAlloc.Validation.Generator/RuleEmitter.cs` returns `false` for non-nullable value types (and `true` for class types + `Nullable<T>`). Applied at both nested emission sites — `EmitNestedValidatorForProp` (scalar nested) and `EmitCollectionValidatorForProp` (list-element nested). [PR #45](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/pull/45), merged 2026-05-27.
+
+**Regression coverage:** `samples/ZeroAlloc.Validation.AotSmoke/` gained a `readonly record struct OrderTag` fixture included as `IReadOnlyList<OrderTag>` on `Order`. The aot-smoke CI check fails with `CS0037` if the `NeedsNullGuard` predicate ever regresses.
+
+<details>
+<summary>Original B3 proposal (kept for context)</summary>
 
 **What.** When a `[Validate]` type contains `IReadOnlyList<T>` (where T is `[Validate]`-decorated) or a scalar property whose type is `[Validate]`-decorated, the generator emits `if (... is not null)` unconditionally. Class T and `Nullable<T>` compile correctly; **non-nullable value types fail with `CS0037`** (cannot convert null to a non-nullable value type).
 
@@ -18,6 +25,8 @@ Candidate enhancements identified during real-world usage. Each item is independ
 - Public API surface unchanged; pure subtractive fix at the generator-output level.
 
 **Graduation signal.** Same template surfaced the bug; landing it is the graduation. Ships as **1.4.1** (patch).
+
+</details>
 
 ---
 

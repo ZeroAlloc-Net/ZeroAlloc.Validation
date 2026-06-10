@@ -76,37 +76,48 @@ if (!validLetter.IsValid)
 // Generator emits a foreach over Items, validating each via OrderItemValidator
 // and emitting failures with PropertyName "Items[N].Sku" — the indexed
 // PropertyName is the load-bearing invariant.
-var orderValidator = new OrderValidator(new OrderItemValidator());
+var orderValidator = new OrderValidator(new OrderItemValidator(), new OrderTagValidator());
 
-// Invalid: one valid item at [0], one invalid item at [1].
+// Invalid: one valid item at Items[0], one invalid item at Items[1],
+// plus one invalid tag at Tags[0]. The Tags[0] case is B3 regression
+// coverage — IReadOnlyList<OrderTag> where OrderTag is a [Validate]
+// readonly record struct. If the generator's NeedsNullGuard predicate
+// regresses, this build fails with CS0037 before this assertion ever runs.
 var mixedOrder = orderValidator.Validate(new Order
 {
     CustomerName = "Alice",
     Items = new[]
     {
         new OrderItem { Sku = "SKU-1" },
-        new OrderItem { Sku = "" }, // index 1 — invalid
+        new OrderItem { Sku = "" }, // Items[1] — invalid
+    },
+    Tags = new[]
+    {
+        new OrderTag(Label: ""), // Tags[0] — invalid
     },
 });
 if (mixedOrder.IsValid)
 {
-    Console.Error.WriteLine("AOT smoke: FAIL — Order with one invalid item should be invalid");
+    Console.Error.WriteLine("AOT smoke: FAIL — Order with one invalid item + one invalid tag should be invalid");
     return 1;
 }
 
 int mixedFailureCount = 0;
-bool mixedHasIndexedPropertyName = false;
+bool mixedHasIndexedItemPropertyName = false;
+bool mixedHasIndexedTagPropertyName = false;
 foreach (ref readonly var f in mixedOrder.Failures)
 {
     mixedFailureCount++;
 #pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
     if (f.PropertyName.Contains("Items[1]", System.StringComparison.Ordinal))
+        mixedHasIndexedItemPropertyName = true;
+    if (f.PropertyName.Contains("Tags[0]", System.StringComparison.Ordinal))
+        mixedHasIndexedTagPropertyName = true;
 #pragma warning restore EPS06
-        mixedHasIndexedPropertyName = true;
 }
-if (mixedFailureCount != 1 || !mixedHasIndexedPropertyName)
+if (mixedFailureCount != 2 || !mixedHasIndexedItemPropertyName || !mixedHasIndexedTagPropertyName)
 {
-    Console.Error.WriteLine($"AOT smoke: FAIL — Order expected 1 failure with 'Items[1]' in PropertyName, got {mixedFailureCount} failures (IndexedMatch={mixedHasIndexedPropertyName})");
+    Console.Error.WriteLine($"AOT smoke: FAIL — Order expected 2 failures with 'Items[1]' + 'Tags[0]' in PropertyName, got {mixedFailureCount} failures (ItemsMatch={mixedHasIndexedItemPropertyName}, TagsMatch={mixedHasIndexedTagPropertyName})");
     foreach (ref readonly var f in mixedOrder.Failures)
 #pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
         Console.Error.WriteLine($"  failure: PropertyName='{f.PropertyName}', ErrorMessage='{f.ErrorMessage}'");
@@ -114,11 +125,12 @@ if (mixedFailureCount != 1 || !mixedHasIndexedPropertyName)
     return 1;
 }
 
-// Valid: all items valid + valid CustomerName.
+// Valid: all items + all tags valid + valid CustomerName.
 var validOrder = orderValidator.Validate(new Order
 {
     CustomerName = "Alice",
     Items = new[] { new OrderItem { Sku = "SKU-1" } },
+    Tags = new[] { new OrderTag(Label: "priority") },
 });
 if (!validOrder.IsValid)
 {
