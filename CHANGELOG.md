@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.4](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.3...v1.5.4) (2026-08-07)
+
+
+### Bug Fixes
+
+* **generator:** document generated public members instead of suppressing CS1591 ([#56](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/56)) ([6b6009a](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/6b6009a4010a3012ee4745f88063fe971134e253)), closes [#55](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/55)
+
 ## [1.5.3](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.2...v1.5.3) (2026-05-28)
 
 
