@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.5](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.4...v1.5.5) (2026-08-07)
+
+
+### Bug Fixes
+
+* **ci:** remove the duplicate release workflow ([#65](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/65)) ([d238dbc](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/d238dbc748b6c156fe0ea52f15dec95ddafe6b9e))
+
 ## [1.5.4](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.3...v1.5.4) (2026-08-07)
 
 
