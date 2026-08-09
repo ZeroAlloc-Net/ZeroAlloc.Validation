@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.6](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.5...v1.5.6) (2026-08-09)
+
+
+### Bug Fixes
+
+* **tests:** satisfy MA0002/MA0074 introduced by Meziantou.Analyzer 3.0.139 ([#77](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/77)) ([76e52a6](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/76e52a6fdd7ad6147fc6d4d2e2280ab796bc5c84))
+
 ## [1.5.5](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.4...v1.5.5) (2026-08-07)
 
 
