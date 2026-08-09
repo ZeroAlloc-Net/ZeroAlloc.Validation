@@ -41,7 +41,7 @@ public class PipelineBehaviorTests
         var result = await validator.ValidateAsync(order);
 
         Assert.True(result.IsValid);
-        Assert.Equal(new[] { "pre", "post" }, AsyncAuditBehavior.CallLog);
+        Assert.Equal(new[] { "pre", "post" }, AsyncAuditBehavior.CallLog, StringComparer.Ordinal);
     }
 
     [Fact]

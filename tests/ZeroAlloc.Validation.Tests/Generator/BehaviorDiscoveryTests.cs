@@ -110,7 +110,7 @@ public class BehaviorDiscoveryTests
         Assert.Empty(result.Diagnostics);
         var generated = result.GeneratedTrees
             .Select(t => t.ToString())
-            .FirstOrDefault(s => s.Contains("OrderValidator"));
+            .FirstOrDefault(s => s.Contains("OrderValidator", StringComparison.Ordinal));
 
         Assert.NotNull(generated);
         Assert.Contains("LoggingBehavior.Handle", generated, System.StringComparison.Ordinal);
@@ -189,7 +189,7 @@ public class BehaviorDiscoveryTests
         Assert.DoesNotContain(result.Diagnostics, d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error);
         var customerValidator = result.GeneratedTrees
             .Select(t => t.ToString())
-            .FirstOrDefault(s => s.Contains("CustomerValidator"));
+            .FirstOrDefault(s => s.Contains("CustomerValidator", StringComparison.Ordinal));
         Assert.NotNull(customerValidator);
         Assert.Contains("ValidateAsync", customerValidator, System.StringComparison.Ordinal);
         Assert.Contains("ValueTask.FromResult", customerValidator, System.StringComparison.Ordinal);
