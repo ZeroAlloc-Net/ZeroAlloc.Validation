@@ -1386,7 +1386,7 @@ public class GeneratorRuleEmissionTests
             """;
 
         var generated = RunGeneratorGetSources(source)
-            .First(s => s.Contains("class OuterValidator"));
+            .First(s => s.Contains("class OuterValidator", StringComparison.Ordinal));
         Assert.Contains("_b0 = _buf.Count", generated, StringComparison.Ordinal);
         Assert.Contains("_buf.Count > _b0", generated, StringComparison.Ordinal);
         Assert.Contains("_b1 = _buf.Count", generated, StringComparison.Ordinal);
@@ -1428,7 +1428,7 @@ public class GeneratorRuleEmissionTests
             """;
 
         var generated = RunGeneratorGetSources(source)
-            .First(s => s.Contains("class OuterValidator"));
+            .First(s => s.Contains("class OuterValidator", StringComparison.Ordinal));
         Assert.Contains("FailureBuffer", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("List<global::ZeroAlloc.Validation.ValidationFailure>", generated, StringComparison.Ordinal);
     }
