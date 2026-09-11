@@ -12,7 +12,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <!-- Required so Roslyn can locate ZeroAlloc.Pipeline.Generators when loading ValidatorGenerator -->
     <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="0.1.1" GeneratePathProperty="true" />
     <PackageReference Include="ZeroAlloc.Pipeline" Version="0.1.1" GeneratePathProperty="true" />
