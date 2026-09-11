@@ -67,6 +67,14 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor ZV0017 = new DiagnosticDescriptor(
+        id: "ZV0017",
+        title: "Validation rules depending on an inaccessible base member are ignored",
+        messageFormat: "Base type member '{0}.{1}' is not accessible to the generated validator for '{2}', so the validation rules that depend on it are not enforced. Make the member public or internal, or move it to '{2}'.",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var validateClasses = context.SyntaxProvider
@@ -418,7 +426,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
     private static void ReportNestedDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
     {
-        foreach (var member in classSymbol.GetMembers())
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
         {
             if (member is not IPropertySymbol prop) continue;
 
@@ -429,6 +437,36 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             ReportZV0012IfApplicable(ctx, prop, member, validateWithAttr);
         }
         ReportCustomValidationDiagnostics(ctx, classSymbol);
+        ReportInaccessibleBaseMemberDiagnostics(ctx, classSymbol);
+    }
+
+    private static void ReportInaccessibleBaseMemberDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
+    {
+        foreach (var member in MemberWalker.GetInaccessibleBaseMembers(classSymbol))
+        {
+            ctx.ReportDiagnostic(Diagnostic.Create(
+                ZV0017,
+                member.Locations.FirstOrDefault(),
+                member.ContainingType?.Name,
+                member.Name,
+                classSymbol.Name));
+        }
+
+        // A reachable property can still carry a rule guarded by an unreachable base helper.
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
+        {
+            if (member is not IPropertySymbol prop) continue;
+
+            foreach (var methodName in RuleEmitter.GetUnreachableConditionMethods(classSymbol, prop))
+            {
+                ctx.ReportDiagnostic(Diagnostic.Create(
+                    ZV0017,
+                    prop.Locations.FirstOrDefault(),
+                    prop.ContainingType?.Name,
+                    methodName,
+                    classSymbol.Name));
+            }
+        }
     }
 
     private static void ReportCustomValidationDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
@@ -436,7 +474,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         const string customValidationFqn = "ZeroAlloc.Validation.CustomValidationAttribute";
         const string expectedReturnType = "System.Collections.Generic.IEnumerable<ZeroAlloc.Validation.ValidationFailure>";
 
-        foreach (var member in classSymbol.GetMembers())
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
         {
             if (member is not IMethodSymbol method) continue;
 

@@ -87,13 +87,13 @@ internal static class RuleEmitter
     private static List<(IPropertySymbol Property, List<AttributeData> Rules)> CollectPropertyRules(INamedTypeSymbol classSymbol)
     {
         var byProperty = new List<(IPropertySymbol Property, List<AttributeData> Rules)>();
-        foreach (var member in classSymbol.GetMembers())
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
         {
             if (member is not IPropertySymbol prop) continue;
             var propRules = new List<AttributeData>();
             foreach (var attr in prop.GetAttributes())
             {
-                if (IsRuleAttribute(attr))
+                if (IsRuleAttribute(attr) && HasReachableCondition(classSymbol, attr))
                     propRules.Add(attr);
             }
             if (propRules.Count > 0)
@@ -150,7 +150,7 @@ internal static class RuleEmitter
     private static List<string> CollectCustomValidationMethods(INamedTypeSymbol classSymbol)
     {
         var result = new List<string>();
-        foreach (var member in classSymbol.GetMembers())
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
         {
             if (member is not IMethodSymbol method) continue;
             bool hasAttr = false;
@@ -188,7 +188,7 @@ internal static class RuleEmitter
         int groupIdx = 0;
         int collCi = 0;
 
-        foreach (var member in classSymbol.GetMembers())
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
         {
             if (member is not IPropertySymbol prop) continue;
 
@@ -517,6 +517,45 @@ internal static class RuleEmitter
             if (string.Equals(named.Key, "Message", StringComparison.Ordinal) && named.Value.Value is string s)
                 return s;
         return null;
+    }
+
+    /// <summary>
+    /// Names of <c>When</c>/<c>Unless</c> methods referenced by <paramref name="prop"/>'s rules
+    /// that the generated validator for <paramref name="classSymbol"/> cannot reach. Each one
+    /// means a dropped rule, reported as ZV0017.
+    /// </summary>
+    public static IEnumerable<string> GetUnreachableConditionMethods(INamedTypeSymbol classSymbol, IPropertySymbol prop)
+    {
+        foreach (var attr in prop.GetAttributes())
+        {
+            if (!IsRuleAttribute(attr)) continue;
+
+            var when = GetWhen(attr);
+            if (when is not null && !MemberWalker.IsConditionMethodAccessible(classSymbol, when))
+                yield return when;
+
+            var unless = GetUnless(attr);
+            if (unless is not null && !MemberWalker.IsConditionMethodAccessible(classSymbol, unless))
+                yield return unless;
+        }
+    }
+
+    /// <summary>
+    /// Whether both the <c>When</c> and <c>Unless</c> methods a rule names can be called from the
+    /// generated validator. A rule guarded by an unreachable base-type helper is dropped here and
+    /// surfaced as ZV0017, rather than emitted as a call that would not compile.
+    /// </summary>
+    public static bool HasReachableCondition(INamedTypeSymbol classSymbol, AttributeData attr)
+    {
+        var when = GetWhen(attr);
+        if (when is not null && !MemberWalker.IsConditionMethodAccessible(classSymbol, when))
+            return false;
+
+        var unless = GetUnless(attr);
+        if (unless is not null && !MemberWalker.IsConditionMethodAccessible(classSymbol, unless))
+            return false;
+
+        return true;
     }
 
     private static string? GetWhen(AttributeData attr)
@@ -897,7 +936,7 @@ internal static class RuleEmitter
     }
 
     private static IEnumerable<IPropertySymbol> GetNestedValidateProperties(INamedTypeSymbol classSymbol) =>
-        classSymbol.GetMembers()
+        MemberWalker.GetMembersIncludingBase(classSymbol)
             .OfType<IPropertySymbol>()
             // First arm: type has [Validate] (auto-compose) — also covers the overlap where [ValidateWith] is present on a [Validate] type; [ValidateWith] wins in CollectNestedValidatorFields.
             // Second arm: [ValidateWith] on a non-collection property whose type has no [Validate].
@@ -935,7 +974,7 @@ internal static class RuleEmitter
     }
 
     private static IEnumerable<(IPropertySymbol Property, INamedTypeSymbol ElementType)> GetCollectionValidateProperties(INamedTypeSymbol classSymbol) =>
-        classSymbol.GetMembers()
+        MemberWalker.GetMembersIncludingBase(classSymbol)
             .OfType<IPropertySymbol>()
             .Select(p =>
             {
@@ -953,7 +992,7 @@ internal static class RuleEmitter
         CollectNestedValidatorFields(INamedTypeSymbol classSymbol)
     {
         var result = new System.Collections.Generic.List<(string, string, string)>();
-        foreach (var member in classSymbol.GetMembers())
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
         {
             if (member is not IPropertySymbol prop) continue;
 
