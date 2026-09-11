@@ -93,6 +93,22 @@ _Last refreshed: 2026-05-13_
 ZeroAlloc.Validation is **49–143× faster** than FluentValidation on the valid path with **zero heap allocation**. On the invalid path it's 31–56× faster and allocates 10–18× less. The gap widens as the model shape grows — FluentValidation's per-call `List<ValidationFailure>` and cached expression-tree delegates pay a larger fixed cost as more rules fire.
 <!-- BENCH:END -->
 
+## Allocation on the invalid path
+
+The valid path never allocates. The invalid path must allocate the result array itself — a failure has to be handed back somehow — but nothing else needs to be allocated on the way there.
+
+Under `[Validate(StopOnFirstFailure = true)]`, a property that can only ever produce one failure (a single rule, or several rules behind `[StopOnFirstFailure]`) returns its result array directly rather than staging the failure in a scratch buffer and copying out of it. That removes one array allocation and one `Array.Copy` per failing validation:
+
+| | Before | After |
+|---|---:|---:|
+| First property fails | 208 B | **56 B** |
+| Later property fails | 208 B | **56 B** |
+| Valid | 0 B | **0 B** |
+
+The saving grows with the model: the old scratch buffer was sized to the model's *total* rule count, so a model with more rules wasted proportionally more per failure. What remains — 56 B — is the single-element result array and nothing else.
+
+Properties with several rules and no `[StopOnFirstFailure]` can still report multiple failures, so they keep the buffer; both shapes coexist in one model. See [Model-level short-circuit](./advanced.md#validatestoponfirstfailure--true--model-level-short-circuit).
+
 ## Running the benchmarks yourself
 
 ```bash

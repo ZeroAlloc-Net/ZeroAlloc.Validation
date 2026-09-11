@@ -1345,6 +1345,36 @@ public class GeneratorRuleEmissionTests
     [Fact]
     public void Generator_ValidatorStop_FlatPath_EmitsCountCheckAfterEachPropertyGroup()
     {
+        // Both groups can produce several failures (two rules, no per-property stop), so each
+        // keeps its own buffer snapshot and count check.
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+            [Validate(StopOnFirstFailure = true)]
+            public class M
+            {
+                [NotEmpty]
+                [MinLength(3)]
+                public string Name { get; set; } = "";
+
+                [GreaterThan(0)]
+                [LessThan(150)]
+                public int Age { get; set; }
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("_b0 = _count", generated, StringComparison.Ordinal);
+        Assert.Contains("_count > _b0", generated, StringComparison.Ordinal);
+        Assert.Contains("_b1 = _count", generated, StringComparison.Ordinal);
+        Assert.Contains("_count > _b1", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_ValidatorStop_FlatPath_SingleFailureGroups_ReturnDirectly()
+    {
+        // Each group carries one rule, so under model-level fail-fast each returns its result
+        // array directly — no snapshot, no count check, no buffer.
         var source = """
             using ZeroAlloc.Validation;
             namespace TestModels;
@@ -1360,10 +1390,9 @@ public class GeneratorRuleEmissionTests
             """;
 
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("_b0 = _count", generated, StringComparison.Ordinal);
-        Assert.Contains("_count > _b0", generated, StringComparison.Ordinal);
-        Assert.Contains("_b1 = _count", generated, StringComparison.Ordinal);
-        Assert.Contains("_count > _b1", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("_b0 = _count", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("_buf", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("Array.Copy", generated, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -392,23 +392,43 @@ internal static class RuleEmitter
         SourceProductionContext? ctx,
         System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
     {
-        // Lazy allocation: buffer is only created on the first failure.
-        // On the valid path (0 failures) no heap allocation occurs.
-        sb.AppendLine($"        global::ZeroAlloc.Validation.ValidationFailure[]? _buf = null;");
-        sb.AppendLine("        int _count = 0;");
-        sb.AppendLine();
+        // Under model-level fail-fast, a group that can only ever produce one failure returns
+        // that failure's array directly — no scratch buffer, no copy. When every group is like
+        // that the buffer is never touched at all, so it is not even declared.
+        var direct = new bool[byProperty.Count];
+        bool needsBuffer = false;
+        for (int pi = 0; pi < byProperty.Count; pi++)
+        {
+            direct[pi] = validatorStop && YieldsAtMostOneFailure(byProperty[pi].Property, byProperty[pi].Rules);
+            if (!direct[pi]) needsBuffer = true;
+        }
+
+        if (needsBuffer)
+        {
+            // Lazy allocation: buffer is only created on the first failure.
+            // On the valid path (0 failures) no heap allocation occurs.
+            sb.AppendLine($"        global::ZeroAlloc.Validation.ValidationFailure[]? _buf = null;");
+            sb.AppendLine("        int _count = 0;");
+            sb.AppendLine();
+        }
 
         for (int pi = 0; pi < byProperty.Count; pi++)
         {
-            if (validatorStop)
+            if (validatorStop && !direct[pi])
                 sb.AppendLine($"        int _b{pi} = _count;");
 
-            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx, regexMethods);
+            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx, regexMethods, direct[pi]);
 
-            if (validatorStop)
+            if (validatorStop && !direct[pi])
                 EmitFlatPathStopOnFirstFailureReturn(sb, pi);
 
             sb.AppendLine();
+        }
+
+        if (!needsBuffer)
+        {
+            sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult(global::System.Array.Empty<global::ZeroAlloc.Validation.ValidationFailure>());");
+            return;
         }
 
         sb.AppendLine("        if (_count == 0)");
@@ -418,6 +438,15 @@ internal static class RuleEmitter
         sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult(_result);");
     }
 
+    /// <summary>
+    /// Whether a property group can contribute at most one failure: either it carries a single
+    /// rule, or property-level <c>[StopOnFirstFailure]</c> chains its rules so only the first
+    /// matching one fires. Under model-level fail-fast such a group is the last thing the
+    /// validator does, so its failure can be returned directly.
+    /// </summary>
+    private static bool YieldsAtMostOneFailure(IPropertySymbol prop, List<AttributeData> rules) =>
+        rules.Count == 1 || HasStopOnFirstFailure(prop);
+
     private static void EmitFlatPathPropertyRules(
         StringBuilder sb,
         IPropertySymbol prop,
@@ -425,7 +454,8 @@ internal static class RuleEmitter
         int totalDirectRules,
         string modelParamName,
         SourceProductionContext? ctx,
-        System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
+        System.Collections.Generic.Dictionary<string, string>? regexMethods = null,
+        bool directReturn = false)
     {
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
@@ -451,8 +481,18 @@ internal static class RuleEmitter
 
             sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
             sb.AppendLine("        {");
-            sb.AppendLine($"            _buf ??= new global::ZeroAlloc.Validation.ValidationFailure[{totalDirectRules}];");
-            sb.AppendLine($"            _buf[_count++] = {BuildFailureInitializer(propName, message, attr, propertyValueExpr)};");
+            if (directReturn)
+            {
+                sb.AppendLine("            return new global::ZeroAlloc.Validation.ValidationResult(new global::ZeroAlloc.Validation.ValidationFailure[]");
+                sb.AppendLine("            {");
+                sb.AppendLine($"                {BuildFailureInitializer(propName, message, attr, propertyValueExpr)}");
+                sb.AppendLine("            });");
+            }
+            else
+            {
+                sb.AppendLine($"            _buf ??= new global::ZeroAlloc.Validation.ValidationFailure[{totalDirectRules}];");
+                sb.AppendLine($"            _buf[_count++] = {BuildFailureInitializer(propName, message, attr, propertyValueExpr)};");
+            }
             sb.AppendLine("        }");
         }
     }
