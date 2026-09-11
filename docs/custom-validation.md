@@ -59,13 +59,35 @@ public string Sku { get; set; } = "";
 
 Place `[CustomValidation]` on an instance method of the model class (not a property) to run cross-property validation logic with full access to `this`.
 
-**Method signature requirement:** no parameters, returns `IEnumerable<ValidationFailure>`.
+**Method signature requirement:** no parameters, returning one of `IEnumerable<ValidationFailure>`, `ValidationFailure[]`, or `ReadOnlySpan<ValidationFailure>`.
 
 The generator produces:
 
 ```csharp
 foreach (var _cf in instance.MethodName()) _buf.Add(_cf);
 ```
+
+### Which return type to use
+
+The three are interchangeable in behaviour, but not in cost. A method written with `yield return` is an iterator, and calling an iterator allocates its state machine — **before it has yielded anything**. So a model that passes validation still pays for it on every call:
+
+| return type | allocation when the model is valid |
+|---|---:|
+| `IEnumerable<ValidationFailure>` via `yield` | 56 B |
+| `ValidationFailure[]` | **0 B** |
+| `ReadOnlySpan<ValidationFailure>` | **0 B** |
+
+`yield return` reads well and is fine when validation failures are the common case or the path is cold. For anything hot, return an array and hand back a cached empty one when there is nothing to report:
+
+```csharp
+[CustomValidation]
+public ValidationFailure[] ValidateBudget() =>
+    Budget >= 0
+        ? Array.Empty<ValidationFailure>()
+        : [new ValidationFailure { PropertyName = nameof(Budget), ErrorMessage = "Budget must not be negative." }];
+```
+
+`ReadOnlySpan<ValidationFailure>` behaves the same way and lets you return a span over pre-built static failures. Remember a span cannot point at a local array, so the failures need to live in a field or a static.
 
 `[CustomValidation]` methods run **after** all property-level rules have been evaluated. When `[Validate].StopOnFirstFailure = true`, custom methods are only reached if all property groups pass.
 
@@ -113,9 +135,9 @@ Multiple `[CustomValidation]` methods are allowed on the same class. They run in
 
 ## ZV0013 compiler diagnostic
 
-If a method decorated with `[CustomValidation]` has the wrong signature — has parameters, or does not return `IEnumerable<ValidationFailure>` — the generator emits a **ZV0013** compile-time error:
+If a method decorated with `[CustomValidation]` has the wrong signature — has parameters, or returns something other than `IEnumerable<ValidationFailure>`, `ValidationFailure[]` or `ReadOnlySpan<ValidationFailure>` — the generator emits a **ZV0013** compile-time error:
 
-> Method 'MethodName' decorated with [CustomValidation] must have no parameters and return IEnumerable\<ValidationFailure\>
+> Method 'MethodName' decorated with [CustomValidation] must have no parameters and return IEnumerable\<ValidationFailure\>, ValidationFailure[] or ReadOnlySpan\<ValidationFailure\>
 
 This is caught at compile time, not at runtime.
 

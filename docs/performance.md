@@ -125,7 +125,7 @@ How a collection property is declared decides how it is walked, and `foreach` ov
 
 `IEnumerable<T>` exposes no count and no indexer, so its enumerator is unavoidable. Prefer any of the other four for a collection that is validated on a hot path.
 
-A `[CustomValidation]` method written with `yield return` also allocates its iterator state machine on every call, even when it yields nothing. Returning `Array.Empty<ValidationFailure>()` when there is nothing to report avoids that.
+A `[CustomValidation]` method written with `yield return` also allocates its iterator state machine on every call, even when it yields nothing. Declaring it to return `ValidationFailure[]` or `ReadOnlySpan<ValidationFailure>` instead, and handing back an empty one when there is nothing to report, costs 0 B. See [choosing a return type](./custom-validation.md#which-return-type-to-use).
 
 ## Running the benchmarks yourself
 
