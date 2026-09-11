@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.9](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.8...v1.5.9) (2026-09-11)
+
+
+### Performance Improvements
+
+* **generator:** pool the flat path's failure buffer ([#136](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/136)) ([588a4e7](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/588a4e7a5184452c5a2432b6b4312faa847d20cf))
+* **generator:** stop boxing the enumerator for interface-typed collections ([#137](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/137)) ([526ea9b](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/526ea9bb03f35825dafc39f1302c40161780389a))
+
 ## [1.5.8](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.7...v1.5.8) (2026-09-11)
 
 
