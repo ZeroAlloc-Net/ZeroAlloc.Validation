@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.7](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.6...v1.5.7) (2026-09-11)
+
+
+### Bug Fixes
+
+* **generator:** validate rules declared on base types ([#131](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/131)) ([d5929c1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/d5929c1c0a3ff307609b6d9e2f2f55e23f266dd4)), closes [#130](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/130)
+
 ## [1.5.6](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.5...v1.5.6) (2026-08-09)
 
 
