@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.9...v1.6.0) (2026-09-11)
+
+
+### Features
+
+* **generator:** allow [CustomValidation] to return an array or span ([#142](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/142)) ([b93764d](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/b93764d28499dd6338f2db4416020258e496f1c7)), closes [#135](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/135)
+
 ## [1.5.9](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.8...v1.5.9) (2026-09-11)
 
 
