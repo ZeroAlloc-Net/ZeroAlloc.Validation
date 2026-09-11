@@ -405,17 +405,17 @@ internal static class RuleEmitter
 
         if (needsBuffer)
         {
-            // Lazy allocation: buffer is only created on the first failure.
-            // On the valid path (0 failures) no heap allocation occurs.
-            sb.AppendLine($"        global::ZeroAlloc.Validation.ValidationFailure[]? _buf = null;");
-            sb.AppendLine("        int _count = 0;");
+            // FailureBuffer rents from ArrayPool and only on the first Add, so the valid path
+            // neither allocates nor touches the pool, and a failing path costs the result array
+            // alone rather than a scratch array plus the result.
+            sb.AppendLine($"        var _buf = new global::ZeroAlloc.Validation.Internal.FailureBuffer({totalDirectRules});");
             sb.AppendLine();
         }
 
         for (int pi = 0; pi < byProperty.Count; pi++)
         {
             if (validatorStop && !direct[pi])
-                sb.AppendLine($"        int _b{pi} = _count;");
+                sb.AppendLine($"        int _b{pi} = _buf.Count;");
 
             EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx, regexMethods, direct[pi]);
 
@@ -431,11 +431,7 @@ internal static class RuleEmitter
             return;
         }
 
-        sb.AppendLine("        if (_count == 0)");
-        sb.AppendLine("            return new global::ZeroAlloc.Validation.ValidationResult(global::System.Array.Empty<global::ZeroAlloc.Validation.ValidationFailure>());");
-        sb.AppendLine("        var _result = new global::ZeroAlloc.Validation.ValidationFailure[_count];");
-        sb.AppendLine("        global::System.Array.Copy(_buf!, _result, _count);");
-        sb.AppendLine("        return new global::ZeroAlloc.Validation.ValidationResult(_result);");
+        sb.AppendLine("        return _buf.ToResult();");
     }
 
     /// <summary>
@@ -490,8 +486,7 @@ internal static class RuleEmitter
             }
             else
             {
-                sb.AppendLine($"            _buf ??= new global::ZeroAlloc.Validation.ValidationFailure[{totalDirectRules}];");
-                sb.AppendLine($"            _buf[_count++] = {BuildFailureInitializer(propName, message, attr, propertyValueExpr)};");
+                sb.AppendLine($"            _buf.Add({BuildFailureInitializer(propName, message, attr, propertyValueExpr)});");
             }
             sb.AppendLine("        }");
         }
@@ -499,12 +494,7 @@ internal static class RuleEmitter
 
     private static void EmitFlatPathStopOnFirstFailureReturn(StringBuilder sb, int pi)
     {
-        sb.AppendLine($"        if (_count > _b{pi})");
-        sb.AppendLine("        {");
-        sb.AppendLine("            var _r = new global::ZeroAlloc.Validation.ValidationFailure[_count];");
-        sb.AppendLine("            global::System.Array.Copy(_buf!, _r, _count);");
-        sb.AppendLine("            return new global::ZeroAlloc.Validation.ValidationResult(_r);");
-        sb.AppendLine("        }");
+        sb.AppendLine($"        if (_buf.Count > _b{pi}) return _buf.ToResult();");
     }
 
     private static bool IsGlobalOrEmpty(string? namespaceName) =>
