@@ -359,11 +359,36 @@ internal static class RuleEmitter
         var varName = $"_c{ci.ToString(CultureInfo.InvariantCulture)}";
         var camelC = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture) + propName.Substring(1);
 
+        var style = ClassifyCollectionIteration(collProp.Type);
+
         sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
         sb.AppendLine("        {");
-        sb.AppendLine($"            int {varName}Idx = 0;");
-        sb.AppendLine($"            foreach (var {varName}Item in {modelParamName}.{propName})");
-        sb.AppendLine("            {");
+        sb.AppendLine($"            var {varName}Src = {modelParamName}.{propName};");
+
+        switch (style)
+        {
+            case CollectionIteration.ListSpan:
+                // A span over the backing array: no enumerator, and no interface dispatch per item.
+                sb.AppendLine($"            int {varName}Idx = 0;");
+                sb.AppendLine($"            foreach (var {varName}Item in global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan({varName}Src))");
+                sb.AppendLine("            {");
+                break;
+
+            case CollectionIteration.Indexed:
+                // foreach over an interface-typed collection boxes its enumerator on every call,
+                // valid path included. Indexing avoids creating one at all.
+                sb.AppendLine($"            for (int {varName}Idx = 0; {varName}Idx < {varName}Src.Count; {varName}Idx++)");
+                sb.AppendLine("            {");
+                sb.AppendLine($"                var {varName}Item = {varName}Src[{varName}Idx];");
+                break;
+
+            default:
+                sb.AppendLine($"            int {varName}Idx = 0;");
+                sb.AppendLine($"            foreach (var {varName}Item in {varName}Src)");
+                sb.AppendLine("            {");
+                break;
+        }
+
         var needsItemGuard = NeedsNullGuard(elementType);
         if (needsItemGuard)
         {
@@ -377,10 +402,44 @@ internal static class RuleEmitter
         {
             sb.AppendLine("                }");
         }
-        sb.AppendLine($"                {varName}Idx++;");
+        if (style != CollectionIteration.Indexed)
+            sb.AppendLine($"                {varName}Idx++;");
         sb.AppendLine("            }");
         sb.AppendLine("        }");
         sb.AppendLine();
+    }
+
+    private enum CollectionIteration
+    {
+        /// <summary>Arrays and anything else whose foreach is already allocation-free.</summary>
+        Foreach,
+        /// <summary><c>List&lt;T&gt;</c>, iterated as a span over its backing array.</summary>
+        ListSpan,
+        /// <summary>An interface exposing <c>Count</c> and an indexer, iterated by index.</summary>
+        Indexed,
+    }
+
+    /// <summary>
+    /// How to walk a collection property without allocating. <c>foreach</c> over an array uses the
+    /// indexer and over <c>List&lt;T&gt;</c> a struct enumerator, but over an interface it boxes the
+    /// enumerator on every validation — including when the model is valid — so interface-typed
+    /// collections are walked by index instead.
+    /// </summary>
+    private static CollectionIteration ClassifyCollectionIteration(ITypeSymbol propertyType)
+    {
+        if (propertyType is IArrayTypeSymbol)
+            return CollectionIteration.Foreach;
+
+        if (propertyType is not INamedTypeSymbol named || !named.IsGenericType)
+            return CollectionIteration.Foreach;
+
+        return named.OriginalDefinition.ToDisplayString() switch
+        {
+            "System.Collections.Generic.List<T>" => CollectionIteration.ListSpan,
+            "System.Collections.Generic.IList<T>" => CollectionIteration.Indexed,
+            "System.Collections.Generic.IReadOnlyList<T>" => CollectionIteration.Indexed,
+            _ => CollectionIteration.Foreach,
+        };
     }
 
     private static void EmitFlatPath(

@@ -111,11 +111,21 @@ Failures are staged in a scratch buffer that rents from `ArrayPool<ValidationFai
 
 Under `[Validate(StopOnFirstFailure = true)]` there is a further shortcut. A property that can only ever produce one failure (a single rule, or several rules behind `[StopOnFirstFailure]`) returns its result array directly without staging anything, so the buffer is not even created. Where every property in the model is like that, no buffer is emitted at all. See [Model-level short-circuit](./advanced.md#validatestoponfirstfailure--true--model-level-short-circuit).
 
-### One thing to watch: collection property types
+### Collection property types
 
-A collection property declared with a concrete type (`List<T>`, `T[]`) iterates through a struct enumerator and allocates nothing. A collection declared through an interface (`IList<T>`, `IReadOnlyList<T>`, `IEnumerable<T>`) boxes its enumerator, which costs 32–40 B on **every** validation, valid or not. Prefer the concrete type on hot paths.
+How a collection property is declared decides how it is walked, and `foreach` over an interface would box its enumerator on every validation — valid path included. The generator avoids that where the type allows it:
 
-Likewise, a `[CustomValidation]` method written with `yield return` allocates its iterator state machine on every call even when it yields nothing. Returning `Array.Empty<ValidationFailure>()` when there is nothing to report avoids that.
+| declared as | walked by | allocates |
+|---|---|---:|
+| `T[]` | `foreach` (already compiles to indexing) | 0 B |
+| `List<T>` | span over the backing array | 0 B |
+| `IList<T>` | indexer | 0 B |
+| `IReadOnlyList<T>` | indexer | 0 B |
+| `IEnumerable<T>` | `foreach` | 32 B |
+
+`IEnumerable<T>` exposes no count and no indexer, so its enumerator is unavoidable. Prefer any of the other four for a collection that is validated on a hot path.
+
+A `[CustomValidation]` method written with `yield return` also allocates its iterator state machine on every call, even when it yields nothing. Returning `Array.Empty<ValidationFailure>()` when there is nothing to report avoids that.
 
 ## Running the benchmarks yourself
 
