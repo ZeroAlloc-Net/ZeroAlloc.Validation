@@ -3,8 +3,13 @@ name: CI
 on:
   push:
     branches: [main, 'release-please--**']
+  # No branch filter: a PR targeting a branch other than main (a stacked PR, say) would
+  # otherwise get no checks at all and report as "no checks reported", which reads like
+  # they have not started yet rather than that they will never run.
+  # `edited` is needed on top of the defaults so that retargeting an existing PR — changing
+  # its base — also triggers a run.
   pull_request:
-    branches: [main]
+    types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 
 jobs:
