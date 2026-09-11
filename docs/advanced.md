@@ -89,6 +89,32 @@ public class CreateOrderRequest
 
 **When to use:** Useful when later rules depend on earlier fields being valid, or to return a single actionable error at a time (like a wizard UI that validates one step before moving to the next).
 
+**On the invalid path this is also the cheapest mode.** When a property can only ever produce one failure — it carries a single rule, or it carries `[StopOnFirstFailure]` so only the first matching rule fires — the generator returns that failure's array directly instead of filling a scratch buffer and copying out of it. Where every property in the model is like that, no buffer is emitted at all:
+
+```csharp
+[Validate(StopOnFirstFailure = true)]
+public sealed class Request
+{
+    [NotEmpty]
+    public string? PlayerId { get; init; }
+}
+```
+
+```csharp
+// generated
+if (string.IsNullOrEmpty(instance.PlayerId))
+{
+    return new ValidationResult(new ValidationFailure[]
+    {
+        new ValidationFailure { PropertyName = "PlayerId", ErrorMessage = "PlayerId must not be empty." }
+    });
+}
+
+return new ValidationResult(Array.Empty<ValidationFailure>());
+```
+
+A property with several rules and no `[StopOnFirstFailure]` can still report more than one failure, so it keeps using the buffer — the two shapes mix freely within one model. The valid path allocates nothing either way.
+
 ---
 
 ## Inheritance — Rules declared on base types
