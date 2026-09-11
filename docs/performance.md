@@ -95,19 +95,27 @@ ZeroAlloc.Validation is **49–143× faster** than FluentValidation on the valid
 
 ## Allocation on the invalid path
 
-The valid path never allocates. The invalid path must allocate the result array itself — a failure has to be handed back somehow — but nothing else needs to be allocated on the way there.
+The valid path never allocates. The invalid path must allocate the result array itself, since a failure has to be handed back somehow, but nothing else needs allocating on the way there.
 
-Under `[Validate(StopOnFirstFailure = true)]`, a property that can only ever produce one failure (a single rule, or several rules behind `[StopOnFirstFailure]`) returns its result array directly rather than staging the failure in a scratch buffer and copying out of it. That removes one array allocation and one `Array.Copy` per failing validation:
+Failures are staged in a scratch buffer that rents from `ArrayPool<ValidationFailure>.Shared` and only on the first failure, so a validation that reports nothing never touches the pool at all. A failing validation therefore costs the result array and nothing else:
 
-| | Before | After |
+| model shape | valid | invalid |
 |---|---:|---:|
-| First property fails | 208 B | **56 B** |
-| Later property fails | 208 B | **56 B** |
-| Valid | 0 B | **0 B** |
+| 1 rule, 1 failure | 0 B | 56 B |
+| 3 properties, 1 failure | 0 B | 56 B |
+| 3 properties, 3 failures | 0 B | 120 B |
+| 1 property with 3 rules, 2 failures | 0 B | 88 B |
+| inherited rules, 1 failure | 0 B | 56 B |
 
-The saving grows with the model: the old scratch buffer was sized to the model's *total* rule count, so a model with more rules wasted proportionally more per failure. What remains — 56 B — is the single-element result array and nothing else.
+56 B is a one-element `ValidationFailure[]`: a 24-byte array header plus one 32-byte failure. Everything above it scales with the number of failures actually reported, not with the number of rules declared.
 
-Properties with several rules and no `[StopOnFirstFailure]` can still report multiple failures, so they keep the buffer; both shapes coexist in one model. See [Model-level short-circuit](./advanced.md#validatestoponfirstfailure--true--model-level-short-circuit).
+Under `[Validate(StopOnFirstFailure = true)]` there is a further shortcut. A property that can only ever produce one failure (a single rule, or several rules behind `[StopOnFirstFailure]`) returns its result array directly without staging anything, so the buffer is not even created. Where every property in the model is like that, no buffer is emitted at all. See [Model-level short-circuit](./advanced.md#validatestoponfirstfailure--true--model-level-short-circuit).
+
+### One thing to watch: collection property types
+
+A collection property declared with a concrete type (`List<T>`, `T[]`) iterates through a struct enumerator and allocates nothing. A collection declared through an interface (`IList<T>`, `IReadOnlyList<T>`, `IEnumerable<T>`) boxes its enumerator, which costs 32–40 B on **every** validation, valid or not. Prefer the concrete type on hot paths.
+
+Likewise, a `[CustomValidation]` method written with `yield return` allocates its iterator state machine on every call even when it yields nothing. Returning `Array.Empty<ValidationFailure>()` when there is nothing to report avoids that.
 
 ## Running the benchmarks yourself
 

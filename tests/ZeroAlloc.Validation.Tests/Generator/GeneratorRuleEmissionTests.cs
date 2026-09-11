@@ -122,7 +122,7 @@ public class GeneratorRuleEmissionTests
     }
 
     [Fact]
-    public void Generator_EmitsStackalloc_SizedToRuleCount()
+    public void Generator_SizesFailureBufferToRuleCount()
     {
         var source = """
             using ZeroAlloc.Validation;
@@ -138,9 +138,10 @@ public class GeneratorRuleEmissionTests
             }
             """;
 
-        // 3 rules total
+        // 3 rules total: the scratch buffer is sized to the rule count, so a validation that
+        // fails everything never has to grow it.
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("ValidationFailure[3]", generated, StringComparison.Ordinal);
+        Assert.Contains("FailureBuffer(3)", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -170,8 +171,6 @@ public class GeneratorRuleEmissionTests
             .First(s => s.Contains("CustomerValidator", StringComparison.Ordinal));
 
         Assert.Contains("FailureBuffer", customerSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("FailureBuffer", RunGeneratorGetSources(source)
-            .First(s => s.Contains("AddressValidator", StringComparison.Ordinal)), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -274,8 +273,6 @@ public class GeneratorRuleEmissionTests
             .First(s => s.Contains("OrderValidator", StringComparison.Ordinal));
 
         Assert.Contains("FailureBuffer", orderSource, StringComparison.Ordinal);
-        Assert.DoesNotContain("FailureBuffer", RunGeneratorGetSources(source)
-            .First(s => s.Contains("LineItemValidator", StringComparison.Ordinal)), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1364,10 +1361,10 @@ public class GeneratorRuleEmissionTests
             """;
 
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("_b0 = _count", generated, StringComparison.Ordinal);
-        Assert.Contains("_count > _b0", generated, StringComparison.Ordinal);
-        Assert.Contains("_b1 = _count", generated, StringComparison.Ordinal);
-        Assert.Contains("_count > _b1", generated, StringComparison.Ordinal);
+        Assert.Contains("_b0 = _buf.Count", generated, StringComparison.Ordinal);
+        Assert.Contains("_buf.Count > _b0", generated, StringComparison.Ordinal);
+        Assert.Contains("_b1 = _buf.Count", generated, StringComparison.Ordinal);
+        Assert.Contains("_buf.Count > _b1", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1390,7 +1387,7 @@ public class GeneratorRuleEmissionTests
             """;
 
         var generated = RunGeneratorGetSource(source);
-        Assert.DoesNotContain("_b0 = _count", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("_b0 = _buf.Count", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("_buf", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("Array.Copy", generated, StringComparison.Ordinal);
     }
@@ -1463,17 +1460,27 @@ public class GeneratorRuleEmissionTests
     }
 
     [Fact]
-    public void Generator_FlatPath_DoesNotUseFailureBuffer()
+    public void Generator_FlatPath_UsesPooledFailureBuffer()
     {
+        // The flat path used to stage failures in a `new ValidationFailure[N]` and copy out of it,
+        // which cost an allocation the nested path had never paid. Both now share the pooled buffer.
         var source = """
             using ZeroAlloc.Validation;
             namespace TestModels;
             [Validate]
-            public class M { [NotEmpty] public string Name { get; set; } = ""; }
+            public class M
+            {
+                [NotEmpty]
+                [MinLength(3)]
+                public string Name { get; set; } = "";
+            }
             """;
 
         var generated = RunGeneratorGetSource(source);
-        Assert.DoesNotContain("FailureBuffer", generated, StringComparison.Ordinal);
+
+        Assert.Contains("FailureBuffer", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("new global::ZeroAlloc.Validation.ValidationFailure[2]", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("Array.Copy", generated, StringComparison.Ordinal);
     }
 
     [Fact]
