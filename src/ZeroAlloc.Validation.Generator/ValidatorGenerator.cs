@@ -42,7 +42,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor ZV0013 = new DiagnosticDescriptor(
         id: "ZV0013",
         title: "Invalid [CustomValidation] method signature",
-        messageFormat: "Method '{0}' decorated with [CustomValidation] must have no parameters and return IEnumerable<ValidationFailure>",
+        messageFormat: "Method '{0}' decorated with [CustomValidation] must have no parameters and return IEnumerable<ValidationFailure>, ValidationFailure[] or ReadOnlySpan<ValidationFailure>",
         category: "ZeroAlloc.Validation",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -472,7 +472,6 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     private static void ReportCustomValidationDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
     {
         const string customValidationFqn = "ZeroAlloc.Validation.CustomValidationAttribute";
-        const string expectedReturnType = "System.Collections.Generic.IEnumerable<ZeroAlloc.Validation.ValidationFailure>";
 
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
         {
@@ -492,7 +491,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             if (!hasAttr) continue;
 
             bool validSignature = method.Parameters.Length == 0
-                && string.Equals(method.ReturnType.ToDisplayString(), expectedReturnType, StringComparison.Ordinal);
+                && IsSupportedCustomValidationReturnType(method.ReturnType);
 
             if (!validSignature)
             {
@@ -502,6 +501,20 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                     method.Name));
             }
         }
+    }
+
+    /// <summary>
+    /// Return types the generated validator can walk. <c>IEnumerable&lt;ValidationFailure&gt;</c>
+    /// remains supported, but a method written with <c>yield</c> allocates its iterator state
+    /// machine on every call even when it yields nothing, so an array or a span is accepted as the
+    /// allocation-free alternative.
+    /// </summary>
+    private static bool IsSupportedCustomValidationReturnType(ITypeSymbol returnType)
+    {
+        var display = returnType.ToDisplayString();
+        return string.Equals(display, "System.Collections.Generic.IEnumerable<ZeroAlloc.Validation.ValidationFailure>", StringComparison.Ordinal)
+            || string.Equals(display, "ZeroAlloc.Validation.ValidationFailure[]", StringComparison.Ordinal)
+            || string.Equals(display, "System.ReadOnlySpan<ZeroAlloc.Validation.ValidationFailure>", StringComparison.Ordinal);
     }
 
     private static AttributeData? FindValidateWithAttribute(IPropertySymbol prop)

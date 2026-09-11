@@ -1617,4 +1617,87 @@ public class GeneratorRuleEmissionTests
         var diagnostics = RunGeneratorGetDiagnostics(source);
         Assert.Contains(diagnostics, d => string.Equals(d.Id, "ZV0013", StringComparison.Ordinal));
     }
+
+    [Theory]
+    [InlineData("System.Collections.Generic.IEnumerable<ValidationFailure>")]
+    [InlineData("ValidationFailure[]")]
+    [InlineData("System.ReadOnlySpan<ValidationFailure>")]
+    public void Analyzer_ZV0013_Accepts_SupportedReturnTypes(string returnType)
+    {
+        var source = $$"""
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+            [Validate]
+            public class M
+            {
+                [CustomValidation]
+                public {{returnType}} Check() => default!;
+            }
+            """;
+
+        var diagnostics = RunGeneratorGetDiagnostics(source);
+        Assert.DoesNotContain(diagnostics, d => string.Equals(d.Id, "ZV0013", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Analyzer_ZV0013_Fires_WhenCustomValidationReturnsWrongElementType()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+            [Validate]
+            public class M
+            {
+                [CustomValidation]
+                public string[] Check() => default!;
+            }
+            """;
+
+        var diagnostics = RunGeneratorGetDiagnostics(source);
+        Assert.Contains(diagnostics, d => string.Equals(d.Id, "ZV0013", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Generator_CustomValidationArray_IteratesWithoutEnumerator()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+            [Validate]
+            public class M
+            {
+                [NotEmpty]
+                public string Name { get; set; } = "";
+
+                [CustomValidation]
+                public ValidationFailure[] Check() => System.Array.Empty<ValidationFailure>();
+            }
+            """;
+
+        // An array's foreach compiles to indexing, so no enumerator is created and a method
+        // returning Array.Empty costs nothing on the valid path.
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("foreach (var _cf in instance.Check())", generated, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_CustomValidationSpan_IteratesByReference()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+            [Validate]
+            public class M
+            {
+                [NotEmpty]
+                public string Name { get; set; } = "";
+
+                [CustomValidation]
+                public System.ReadOnlySpan<ValidationFailure> Check() => default;
+            }
+            """;
+
+        var generated = RunGeneratorGetSource(source);
+        Assert.Contains("foreach (ref readonly var _cf in _cv0)", generated, StringComparison.Ordinal);
+    }
 }

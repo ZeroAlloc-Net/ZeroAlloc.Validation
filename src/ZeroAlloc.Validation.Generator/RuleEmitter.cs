@@ -108,7 +108,7 @@ internal static class RuleEmitter
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         List<IPropertySymbol> nestedProperties,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
-        List<string> customMethods,
+        List<(string Name, bool ByRef)> customMethods,
         string modelParamName,
         bool validatorStop,
         int totalDirectRules,
@@ -137,19 +137,59 @@ internal static class RuleEmitter
         sb.AppendLine("        return _buf.ToResult();");
     }
 
-    private static void EmitCustomValidationCalls(StringBuilder sb, List<string> customMethods, string modelParamName)
+    private static void EmitCustomValidationCalls(StringBuilder sb, List<(string Name, bool ByRef)> customMethods, string modelParamName)
     {
         for (int i = 0; i < customMethods.Count; i++)
         {
-            sb.AppendLine($"        foreach (var _cf in {modelParamName}.{customMethods[i]}())");
+            if (customMethods[i].ByRef)
+            {
+                // A span is walked by reference to avoid copying each failure. The call is hoisted
+                // into a local because `ref readonly` iteration needs an addressable variable
+                // rather than a call expression. Arrays cannot be iterated this way — their foreach
+                // lowers to indexing — but they allocate nothing either way.
+                sb.AppendLine($"        var _cv{i} = {modelParamName}.{customMethods[i].Name}();");
+                sb.AppendLine($"        foreach (ref readonly var _cf in _cv{i})");
+            }
+            else
+            {
+                sb.AppendLine($"        foreach (var _cf in {modelParamName}.{customMethods[i].Name}())");
+            }
             sb.AppendLine("            _buf.Add(_cf);");
             sb.AppendLine();
         }
     }
 
-    private static List<string> CollectCustomValidationMethods(INamedTypeSymbol classSymbol)
+    /// <summary>
+    /// Return types a <c>[CustomValidation]</c> method may declare. <c>IEnumerable&lt;T&gt;</c> is
+    /// the original and still supported, but a method written with <c>yield</c> allocates its
+    /// iterator state machine on every call — including when it yields nothing — so an array or a
+    /// span is offered as the allocation-free alternative.
+    /// </summary>
+    private static bool IsCustomValidationReturnType(ITypeSymbol returnType, out bool byRef)
     {
-        var result = new List<string>();
+        byRef = false;
+        var display = returnType.ToDisplayString();
+
+        if (string.Equals(display, "System.Collections.Generic.IEnumerable<ZeroAlloc.Validation.ValidationFailure>", StringComparison.Ordinal))
+            return true;
+
+        // An array's foreach already compiles to indexing and allocates nothing, and it cannot be
+        // iterated `ref readonly`, so it takes the plain form.
+        if (string.Equals(display, "ZeroAlloc.Validation.ValidationFailure[]", StringComparison.Ordinal))
+            return true;
+
+        if (string.Equals(display, "System.ReadOnlySpan<ZeroAlloc.Validation.ValidationFailure>", StringComparison.Ordinal))
+        {
+            byRef = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static List<(string Name, bool ByRef)> CollectCustomValidationMethods(INamedTypeSymbol classSymbol)
+    {
+        var result = new List<(string, bool)>();
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
         {
             if (member is not IMethodSymbol method) continue;
@@ -163,14 +203,11 @@ internal static class RuleEmitter
                 }
             }
             if (!hasAttr) continue;
-            // Only emit if signature is correct: no parameters, returns IEnumerable<ValidationFailure>
+            // Only emit if the signature is one ZV0013 accepts: no parameters, and a return type
+            // the generated validator knows how to walk.
             if (method.Parameters.Length != 0) continue;
-            if (!string.Equals(
-                method.ReturnType.ToDisplayString(),
-                "System.Collections.Generic.IEnumerable<ZeroAlloc.Validation.ValidationFailure>",
-                StringComparison.Ordinal))
-                continue;
-            result.Add(method.Name);
+            if (!IsCustomValidationReturnType(method.ReturnType, out var byRef)) continue;
+            result.Add((method.Name, byRef));
         }
         return result;
     }
