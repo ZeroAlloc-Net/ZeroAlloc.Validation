@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.8](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.7...v1.5.8) (2026-09-11)
+
+
+### Performance Improvements
+
+* **generator:** return single failures directly under model-level fail-fast ([#133](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/133)) ([78e3f03](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/78e3f03b7f2b88fd3fd50905e799a1d3bd5c1fda)), closes [#129](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/129)
+
 ## [1.5.7](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.6...v1.5.7) (2026-09-11)
 
 
