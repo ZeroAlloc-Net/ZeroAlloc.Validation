@@ -67,6 +67,7 @@ See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/mai
 - Zero heap allocation on the valid path
 - 25+ built-in validation attributes
 - Nested object and collection validation
+- Inherited rules from base types (opt out with `[Validate(IncludeBaseProperties = false)]`)
 - ASP.NET Core auto-validation (HTTP 422 on failure)
 - Zero-friction DI registration (`AddZeroAllocValidators()`)
 - Source-generated `Microsoft.Extensions.Options` integration (`ValidateWithZeroAlloc()`)

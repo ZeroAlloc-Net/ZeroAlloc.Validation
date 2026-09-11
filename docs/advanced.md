@@ -2,7 +2,7 @@
 id: advanced
 title: Advanced Features
 slug: /docs/advanced
-description: Conditional validation with [SkipWhen], per-property short-circuiting with [StopOnFirstFailure], per-rule When/Unless guards, and Severity.
+description: Conditional validation with [SkipWhen], per-property short-circuiting with [StopOnFirstFailure], inherited rules from base types, per-rule When/Unless guards, and Severity.
 sidebar_position: 10
 ---
 
@@ -88,6 +88,73 @@ public class CreateOrderRequest
 ```
 
 **When to use:** Useful when later rules depend on earlier fields being valid, or to return a single actionable error at a time (like a wizard UI that validates one step before moving to the next).
+
+---
+
+## Inheritance — Rules declared on base types
+
+A generated validator enforces the rules declared on the model **and on every type it inherits from**. Inherited rules are checked first, base-most type before derived, so failures come back in the order the properties are declared down the hierarchy.
+
+```csharp
+[Validate]
+public class BaseModel
+{
+    [NotEmpty]
+    public string? Name { get; init; }
+}
+
+[Validate]
+public class DerivedModel : BaseModel
+{
+    [GreaterThan(0)]
+    public int Quantity { get; init; }
+}
+```
+
+```csharp
+var result = new DerivedModelValidator().Validate(
+    new DerivedModel { Name = null, Quantity = 0 });
+
+// Two failures, in hierarchy order: Name (from BaseModel), then Quantity.
+```
+
+This covers rule attributes, `[CustomValidation]` methods, nested `[Validate]` properties, and collection properties alike — wherever in the chain they are declared.
+
+**The base type does not need `[Validate]`.** Rule attributes live on the properties; `[Validate]` only controls whether a validator is generated *for that type*. An abstract or shared base can carry rules without a validator of its own:
+
+```csharp
+public abstract class AuditedBase          // no [Validate] — no AuditedBaseValidator generated
+{
+    [NotEmpty]
+    public string? ModifiedBy { get; init; }
+}
+
+[Validate]
+public class Order : AuditedBase
+{
+    [GreaterThan(0)]
+    public decimal Total { get; init; }
+}
+
+// OrderValidator enforces both ModifiedBy and Total.
+```
+
+**Hidden and overridden properties.** When a derived type redeclares a property with `new` or `override`, the most-derived declaration wins and its attributes are the ones applied — the base declaration's rules are not also run.
+
+**Accessibility.** The generated validator is a separate class, so it can only reach `public` base members (and `internal` ones declared in the same assembly). Rules on a `protected` or `private` base member — or guarded by a `When` / `Unless` method that is `protected` or `private` on a base type — cannot be enforced, and are reported at compile time as [ZV0017](./diagnostics.md#zv0017) rather than silently dropped.
+
+**Opting out.** Set `IncludeBaseProperties = false` to validate only the members declared directly on the type:
+
+```csharp
+[Validate(IncludeBaseProperties = false)]
+public class DerivedModel : BaseModel
+{
+    [GreaterThan(0)]
+    public int Quantity { get; init; }   // Name is not validated
+}
+```
+
+`[SkipWhen]` and `[Validate(StopOnFirstFailure = true)]` are read from the type being validated only — they are not inherited from a base type's own `[Validate]`.
 
 ---
 

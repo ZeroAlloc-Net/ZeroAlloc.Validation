@@ -120,7 +120,7 @@ public class Order
 
 | Attribute | Description |
 |---|---|
-| `[Validate]` | Marks the class for source generation. Set `StopOnFirstFailure = true` to stop after the first failing property across the entire model. |
+| `[Validate]` | Marks the class for source generation. Set `StopOnFirstFailure = true` to stop after the first failing property across the entire model. Rules declared on base types are included by default; set `IncludeBaseProperties = false` to validate only the members declared on this type. See [Inheritance](./advanced.md#inheritance--rules-declared-on-base-types). |
 | `[SkipWhen(nameof(Method))]` | Skip all validation when the named instance method (no parameters, returning `bool`) returns `true` |
 
 ## Custom rule attributes

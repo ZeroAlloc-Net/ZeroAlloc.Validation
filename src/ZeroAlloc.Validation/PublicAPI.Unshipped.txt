@@ -87,6 +87,8 @@ ZeroAlloc.Validation.SkipWhenAttribute.SkipWhenAttribute(string! methodName) -> 
 ZeroAlloc.Validation.StopOnFirstFailureAttribute
 ZeroAlloc.Validation.StopOnFirstFailureAttribute.StopOnFirstFailureAttribute() -> void
 ZeroAlloc.Validation.ValidateAttribute
+ZeroAlloc.Validation.ValidateAttribute.IncludeBaseProperties.get -> bool
+ZeroAlloc.Validation.ValidateAttribute.IncludeBaseProperties.set -> void
 ZeroAlloc.Validation.ValidateAttribute.StopOnFirstFailure.get -> bool
 ZeroAlloc.Validation.ValidateAttribute.StopOnFirstFailure.set -> void
 ZeroAlloc.Validation.ValidateAttribute.ValidateAttribute() -> void

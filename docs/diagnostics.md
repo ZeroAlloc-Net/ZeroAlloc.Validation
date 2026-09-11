@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0016 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0017 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -18,6 +18,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0014](#zv0014) | Warning | [Validate] on non-readonly struct |
 | [ZV0015](#zv0015) | Error | Duplicate pipeline behavior Order |
 | [ZV0016](#zv0016) | Warning | Multi-property value-object can't be auto-unwrapped |
+| [ZV0017](#zv0017) | Warning | Validation rules depending on an inaccessible base member are ignored |
 
 ---
 
@@ -143,3 +144,48 @@ public partial class PriceCommand
 ```
 
 **Suppressing:** If your intent is to constrain a different property (e.g. only the `.Amount` component), refactor the model so the constrained surface is a single-property value-object. To silence the warning without restructuring, add `#pragma warning disable ZV0016` around the property declaration or `<NoWarn>$(NoWarn);ZV0016</NoWarn>` in the consuming project — but note that the underlying validator emission will still be incorrect for the multi-property case; a custom predicate is the recommended fix.
+
+---
+
+## ZV0017
+
+**Severity:** Warning
+
+**Title:** Validation rules depending on an inaccessible base member are ignored
+
+**When fired:** A `[Validate]` type inherits from a base type that declares validation rules, but the member those rules depend on cannot be referenced from the generated validator. The generated validator is a separate class, so it can reach `public` members — and `internal` ones when the base type lives in the same assembly — but never `private` or `protected` ones. Two cases fire this:
+
+- a base property carrying rule attributes is `protected` or `private` (or exposes no accessible getter);
+- a rule on an otherwise-reachable property names a `When` / `Unless` method that is `protected` or `private` on a base type.
+
+In both cases the rule is dropped rather than emitted as code that would not compile.
+
+**Fix:** Widen the member to `public` (or `internal` within the same assembly), or move it onto the derived type:
+
+```csharp
+public abstract class AuditedBase
+{
+    [NotEmpty]
+    protected string? ModifiedBy { get; init; }   // ZV0017 — rule silently dropped
+
+    [NotEmpty(When = nameof(ShouldCheck))]
+    public string? Reference { get; init; }       // ZV0017 — guard is unreachable
+
+    protected bool ShouldCheck() => true;
+}
+```
+
+```csharp
+public abstract class AuditedBase
+{
+    [NotEmpty]
+    public string? ModifiedBy { get; init; }      // reachable
+
+    [NotEmpty(When = nameof(ShouldCheck))]
+    public string? Reference { get; init; }
+
+    public bool ShouldCheck() => true;            // reachable
+}
+```
+
+**Suppressing:** If the member is deliberately hidden and you do not want it validated, set `[Validate(IncludeBaseProperties = false)]` on the derived type to opt out of base-type rules entirely, or add `<NoWarn>$(NoWarn);ZV0017</NoWarn>`. Note that suppressing leaves the rule unenforced.
