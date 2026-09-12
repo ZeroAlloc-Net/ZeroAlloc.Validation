@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.6.0...v1.7.0) (2026-09-12)
+
+
+### Features
+
+* **generator:** class-level [StopOnFirstFailure] and duplicate-attribute warning ([#145](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/145)) ([18cf9c8](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/18cf9c853e663c133abaa062bb0387c1d7200d4e))
+
+
+### Bug Fixes
+
+* **generator:** guard length rules against null instead of dereferencing ([#148](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/148)) ([aed590c](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/aed590cc74042236442257d06af6acf5c00e3a8b)), closes [#146](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/146)
+
 ## [1.6.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.5.9...v1.6.0) (2026-09-11)
 
 
