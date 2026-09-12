@@ -8,6 +8,8 @@
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageReference Include="FluentValidation" Version="12.1.1" />
+    <PackageReference Include="ZeroAlloc.Pipeline" Version="0.1.1" GeneratePathProperty="true" />
+    <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="0.1.1" GeneratePathProperty="true" />
   </ItemGroup>
 
   <ItemGroup>
@@ -15,6 +17,14 @@
     <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Generator\ZeroAlloc.Validation.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- The validator generator depends on these at analyzer-load time. A normal build finds them
+       beside the generator's own output, but BenchmarkDotNet compiles its harness through a
+       regenerated project where that sibling lookup does not apply, so list them explicitly. -->
+  <ItemGroup>
+    <Analyzer Include="$(PkgZeroAlloc_Pipeline_Generators)\lib\netstandard2.0\ZeroAlloc.Pipeline.Generators.dll" />
+    <Analyzer Include="$(PkgZeroAlloc_Pipeline)\lib\netstandard2.0\ZeroAlloc.Pipeline.dll" />
   </ItemGroup>
 
 </Project>
