@@ -12,3 +12,4 @@ ZV0014 | ZeroAlloc.Validation | Warning | [Validate] on non-readonly struct
 ZV0015 | ZeroAlloc.Validation | Error | Duplicate pipeline behavior Order
 ZV0016 | ZeroAlloc.Validation | Warning | Multi-property value-object can't be auto-unwrapped
 ZV0017 | ZeroAlloc.Validation | Warning | Validation rules depending on an inaccessible base member are ignored
+ZV0018 | ZeroAlloc.Validation | Warning | Duplicate validation attribute
