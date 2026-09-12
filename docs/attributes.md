@@ -14,11 +14,21 @@ All validation attributes live in the `ZeroAlloc.Validation` namespace and inher
 |---|---|---|
 | `[NotEmpty]` | Must not be null or empty | `PropertyName must not be empty.` |
 | `[Empty]` | Must be null or empty | `PropertyName must be empty.` |
-| `[MaxLength(n)]` | Length ≤ n | `PropertyName must not exceed n characters.` |
-| `[MinLength(n)]` | Length ≥ n | `PropertyName must be at least n characters.` |
-| `[Length(min,max)]` | min ≤ length ≤ max | `PropertyName must be between min and max characters.` |
+| `[MaxLength(n)]` | Length ≤ n, null ignored | `PropertyName must not exceed n characters.` |
+| `[MinLength(n)]` | Length ≥ n, null ignored | `PropertyName must be at least n characters.` |
+| `[Length(min,max)]` | min ≤ length ≤ max, null ignored | `PropertyName must be between min and max characters.` |
 | `[Matches(pattern)]` | Must match regex pattern | `PropertyName does not match the required pattern.` |
 | `[EmailAddress]` | Must be a valid email address | `PropertyName must be a valid email address.` |
+
+> **Length rules and null.** `[MinLength]`, `[MaxLength]` and `[Length]` constrain the length of a value that is present; they report nothing for `null`. Whether a missing value is acceptable is `[NotEmpty]`'s or `[NotNull]`'s decision, so the two compose without reporting the same problem twice:
+>
+> ```csharp
+> [NotEmpty]              // null or empty -> one failure
+> [MinLength(3)]          // only applies once a value is present
+> public string? Tenant { get; init; }
+> ```
+>
+> A length rule on its own therefore treats `null` as valid. Add `[NotEmpty]` or `[NotNull]` when a missing value should be rejected.
 
 ```csharp
 [Validate]

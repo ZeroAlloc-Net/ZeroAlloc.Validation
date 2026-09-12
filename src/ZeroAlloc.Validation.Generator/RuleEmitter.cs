@@ -837,15 +837,15 @@ internal static class RuleEmitter
         {
             NotNullFqn               => $"{access} is null",
             NotEmptyFqn              => BuildNotEmptyCondition(access, propType),
-            MinLengthFqn             => $"{access}.Length < {GetIntArg(attr, 0)}",
-            MaxLengthFqn             => $"{access}.Length > {GetIntArg(attr, 0)}",
+            MinLengthFqn             => GuardAgainstNull(access, propType, $"{access}.Length < {GetIntArg(attr, 0)}"),
+            MaxLengthFqn             => GuardAgainstNull(access, propType, $"{access}.Length > {GetIntArg(attr, 0)}"),
             GreaterThanFqn           => $"System.Convert.ToDouble({access}) <= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
             LessThanFqn              => $"System.Convert.ToDouble({access}) >= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
             InclusiveBetweenFqn      => $"System.Convert.ToDouble({access}) < {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)} || System.Convert.ToDouble({access}) > {GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture)}",
             GreaterThanOrEqualToFqn  => $"System.Convert.ToDouble({access}) < {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
             LessThanOrEqualToFqn     => $"System.Convert.ToDouble({access}) > {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
             ExclusiveBetweenFqn      => $"System.Convert.ToDouble({access}) <= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)} || System.Convert.ToDouble({access}) >= {GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture)}",
-            LengthFqn                => $"{access}.Length < {GetIntArg(attr, 0)} || {access}.Length > {GetIntArg(attr, 1)}",
+            LengthFqn                => GuardAgainstNull(access, propType, $"{access}.Length < {GetIntArg(attr, 0)} || {access}.Length > {GetIntArg(attr, 1)}"),
             EmailAddressFqn          => $"!global::ZeroAlloc.Validation.Internal.EmailValidator.IsValid({access})",
             MatchesFqn               => BuildMatchesCondition(access, propName, attr, regexMethods),
             NullFqn                  => $"{access} is not null",
@@ -933,6 +933,26 @@ internal static class RuleEmitter
     /// for non-counting sequences. Without a type symbol (e.g. legacy call site) falls back
     /// to the string-only check so existing behavior is preserved.
     /// </summary>
+    /// <summary>
+    /// Guards a comparison that dereferences the value, so a null never reaches it. A length rule
+    /// says nothing about a missing value — that is <c>[NotEmpty]</c>'s or <c>[NotNull]</c>'s job —
+    /// which keeps the two composable and matches FluentValidation, where length validators pass on
+    /// null. Without the guard the generated validator threw NullReferenceException on exactly the
+    /// input it exists to reject, and tripped CS8602 in any consumer with nullable warnings as
+    /// errors.
+    /// </summary>
+    private static string GuardAgainstNull(string access, ITypeSymbol? propType, string comparison) =>
+        CanBeNull(propType) ? $"{access} is not null && ({comparison})" : comparison;
+
+    /// <summary>
+    /// Whether the value could be null at runtime, and so needs guarding before a dereference.
+    /// Non-nullable value types cannot, and guarding one would not compile.
+    /// </summary>
+    private static bool CanBeNull(ITypeSymbol? propType) =>
+        propType is not null
+        && (propType.IsReferenceType
+            || propType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T);
+
     private static string BuildNotEmptyCondition(string access, ITypeSymbol? propType)
     {
         if (propType is null)
