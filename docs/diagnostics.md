@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0017 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0018 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -19,6 +19,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0015](#zv0015) | Error | Duplicate pipeline behavior Order |
 | [ZV0016](#zv0016) | Warning | Multi-property value-object can't be auto-unwrapped |
 | [ZV0017](#zv0017) | Warning | Validation rules depending on an inaccessible base member are ignored |
+| [ZV0018](#zv0018) | Warning | Duplicate validation attribute |
 
 ---
 
@@ -189,3 +190,39 @@ public abstract class AuditedBase
 ```
 
 **Suppressing:** If the member is deliberately hidden and you do not want it validated, set `[Validate(IncludeBaseProperties = false)]` on the derived type to opt out of base-type rules entirely, or add `<NoWarn>$(NoWarn);ZV0017</NoWarn>`. Note that suppressing leaves the rule unenforced.
+
+---
+
+## ZV0018
+
+**Severity:** Warning
+
+**Title:** Duplicate validation attribute
+
+**When fired:** A property declares the same rule attribute more than once with identical arguments. The rule is evaluated twice and reports the same failure twice.
+
+Rule attributes are `AllowMultiple` because repeating a check with *different* arguments is meaningful — two `[Must]` predicates, or a `[Matches]` for each of several patterns. Only an exact repeat is flagged:
+
+```csharp
+[Validate]
+public class Request
+{
+    [NotEmpty]
+    [NotEmpty]                       // ZV0018 — reports "must not be empty" twice
+    public string? Tenant { get; init; }
+
+    [MinLength(3)]
+    [MinLength(5)]                   // fine — different bounds
+    public string Region { get; init; } = "";
+
+    [Must(nameof(IsShort))]
+    [Must(nameof(IsLower))]          // fine — different predicates
+    public string Code { get; init; } = "";
+}
+```
+
+Named arguments are compared order-independently, so `[NotEmpty(ErrorCode = "A", Message = "x")]` and `[NotEmpty(Message = "x", ErrorCode = "A")]` count as duplicates.
+
+**Fix:** Remove the repeated attribute. If both were meant to check different things, give them different arguments.
+
+**Suppressing:** `#pragma warning disable ZV0018` around the property, or `<NoWarn>$(NoWarn);ZV0018</NoWarn>`. Note that the duplicate failure is still reported at runtime.

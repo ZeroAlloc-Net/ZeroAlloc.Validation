@@ -75,6 +75,14 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor ZV0018 = new DiagnosticDescriptor(
+        id: "ZV0018",
+        title: "Duplicate validation attribute",
+        messageFormat: "Property '{0}' declares [{1}] more than once with the same arguments. The rule is evaluated twice and reports the same failure twice; remove the duplicate.",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var validateClasses = context.SyntaxProvider
@@ -438,6 +446,77 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         }
         ReportCustomValidationDiagnostics(ctx, classSymbol);
         ReportInaccessibleBaseMemberDiagnostics(ctx, classSymbol);
+        ReportDuplicateRuleAttributeDiagnostics(ctx, classSymbol);
+    }
+
+    /// <summary>
+    /// Rule attributes are <c>AllowMultiple</c>, which they have to be — <c>[Must(nameof(A))]</c>
+    /// alongside <c>[Must(nameof(B))]</c> is meaningful, and so is the same check with different
+    /// arguments. Repeating one with *identical* arguments is not: the rule runs twice and the
+    /// same failure is reported twice. Only that exact-duplicate case is reported.
+    /// </summary>
+    private static void ReportDuplicateRuleAttributeDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
+    {
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
+        {
+            if (member is not IPropertySymbol prop) continue;
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var attr in prop.GetAttributes())
+            {
+                var ns = attr.AttributeClass?.ContainingNamespace?.ToDisplayString();
+                if (!string.Equals(ns, "ZeroAlloc.Validation", StringComparison.Ordinal)) continue;
+
+                if (seen.Add(DescribeAttribute(attr))) continue;
+
+                ctx.ReportDiagnostic(Diagnostic.Create(
+                    ZV0018,
+                    attr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
+                        ?? prop.Locations.FirstOrDefault(),
+                    prop.Name,
+                    attr.AttributeClass?.Name));
+            }
+        }
+    }
+
+    /// <summary>
+    /// An attribute's identity for duplicate detection: its type plus every constructor and named
+    /// argument, so the same check with different arguments is not mistaken for a repeat.
+    /// </summary>
+    private static string DescribeAttribute(AttributeData attr)
+    {
+        var sb = new System.Text.StringBuilder(attr.AttributeClass?.ToDisplayString());
+
+        sb.Append('(');
+        foreach (var arg in attr.ConstructorArguments)
+            sb.Append(Describe(arg)).Append(',');
+        sb.Append(')');
+
+        // Named arguments are order-independent in source, so sort before comparing.
+        var named = new List<string>();
+        foreach (var arg in attr.NamedArguments)
+            named.Add(arg.Key + "=" + Describe(arg.Value));
+        named.Sort(StringComparer.Ordinal);
+
+        for (int i = 0; i < named.Count; i++)
+            sb.Append(named[i]).Append(';');
+
+        return sb.ToString();
+    }
+
+    private static string Describe(TypedConstant value)
+    {
+        if (value.Kind == TypedConstantKind.Array)
+        {
+            var sb = new System.Text.StringBuilder("[");
+            foreach (var element in value.Values)
+                sb.Append(Describe(element)).Append(',');
+            return sb.Append(']').ToString();
+        }
+
+        return value.IsNull
+            ? "null"
+            : System.Convert.ToString(value.Value, System.Globalization.CultureInfo.InvariantCulture) ?? "null";
     }
 
     private static void ReportInaccessibleBaseMemberDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)

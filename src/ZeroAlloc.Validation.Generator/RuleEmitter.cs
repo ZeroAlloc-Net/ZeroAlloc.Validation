@@ -53,8 +53,18 @@ internal static class RuleEmitter
             or MustFqn;
     }
 
-    private static bool HasStopOnFirstFailure(IPropertySymbol prop) =>
-        prop.GetAttributes().Any(a =>
+    /// <summary>
+    /// Whether <paramref name="prop"/> stops at its first failing rule. Declared either on the
+    /// property itself or, to apply it to every property at once, on the model being validated.
+    /// The class-level form is read from the validated type only, so it is not inherited from a
+    /// base type — the same rule <c>[Validate(StopOnFirstFailure = true)]</c> already follows.
+    /// </summary>
+    private static bool HasStopOnFirstFailure(IPropertySymbol prop, INamedTypeSymbol? classSymbol = null) =>
+        DeclaresStopOnFirstFailure(prop)
+        || (classSymbol is not null && DeclaresStopOnFirstFailure(classSymbol));
+
+    private static bool DeclaresStopOnFirstFailure(ISymbol symbol) =>
+        symbol.GetAttributes().Any(a =>
             string.Equals(a.AttributeClass?.ToDisplayString(), StopOnFirstFailureFqn, StringComparison.Ordinal));
 
     public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance", SourceProductionContext? ctx = null, System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
@@ -81,7 +91,7 @@ internal static class RuleEmitter
         if (hasNested)
             EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, customMethods, modelParamName, validatorStop, totalDirectRules, ctx, regexMethods);
         else
-            EmitFlatPath(sb, byProperty, totalDirectRules, modelParamName, validatorStop, ctx, regexMethods);
+            EmitFlatPath(sb, classSymbol, byProperty, totalDirectRules, modelParamName, validatorStop, ctx, regexMethods);
     }
 
     private static List<(IPropertySymbol Property, List<AttributeData> Rules)> CollectPropertyRules(INamedTypeSymbol classSymbol)
@@ -120,7 +130,7 @@ internal static class RuleEmitter
 
         if (!validatorStop)
         {
-            EmitPropertyRulesWithAdd(sb, byProperty, modelParamName, ctx, regexMethods);
+            EmitPropertyRulesWithAdd(sb, byProperty, classSymbol, modelParamName, ctx, regexMethods);
             EmitNestedValidators(sb, nestedProperties, modelParamName);
             EmitCollectionValidators(sb, collectionProperties, modelParamName);
         }
@@ -241,7 +251,7 @@ internal static class RuleEmitter
             sb.AppendLine($"        int _b{groupIdx} = _buf.Count;");
 
             if (directProp is not null && directRules is not null)
-                EmitPropertyRulesForProp(sb, directProp, directRules, modelParamName, ctx, regexMethods);
+                EmitPropertyRulesForProp(sb, directProp, directRules, classSymbol, modelParamName, ctx, regexMethods);
 
             if (nestedProp is not null)
                 EmitNestedValidatorForProp(sb, nestedProp, modelParamName);
@@ -304,6 +314,7 @@ internal static class RuleEmitter
     private static void EmitPropertyRulesWithAdd(
         StringBuilder sb,
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
+        INamedTypeSymbol? classSymbol,
         string modelParamName,
         SourceProductionContext? ctx,
         System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
@@ -311,7 +322,7 @@ internal static class RuleEmitter
         for (int pi = 0; pi < byProperty.Count; pi++)
         {
             var (prop, rules) = byProperty[pi];
-            EmitPropertyRulesForProp(sb, prop, rules, modelParamName, ctx, regexMethods);
+            EmitPropertyRulesForProp(sb, prop, rules, classSymbol, modelParamName, ctx, regexMethods);
         }
     }
 
@@ -319,6 +330,7 @@ internal static class RuleEmitter
         StringBuilder sb,
         IPropertySymbol prop,
         List<AttributeData> rules,
+        INamedTypeSymbol? classSymbol,
         string modelParamName,
         SourceProductionContext? ctx,
         System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
@@ -327,7 +339,7 @@ internal static class RuleEmitter
         var displayName = GetDisplayName(prop) ?? propName;
         var propAccess = BuildPropertyAccess(modelParamName, prop);
         var rawPropAccess = $"{modelParamName}.{prop.Name}";
-        var stopMode = HasStopOnFirstFailure(prop);
+        var stopMode = HasStopOnFirstFailure(prop, classSymbol);
 
         ReportZV0016IfApplicable(ctx, prop, rules);
 
@@ -481,6 +493,7 @@ internal static class RuleEmitter
 
     private static void EmitFlatPath(
         StringBuilder sb,
+        INamedTypeSymbol classSymbol,
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         int totalDirectRules,
         string modelParamName,
@@ -495,7 +508,7 @@ internal static class RuleEmitter
         bool needsBuffer = false;
         for (int pi = 0; pi < byProperty.Count; pi++)
         {
-            direct[pi] = validatorStop && YieldsAtMostOneFailure(byProperty[pi].Property, byProperty[pi].Rules);
+            direct[pi] = validatorStop && YieldsAtMostOneFailure(byProperty[pi].Property, byProperty[pi].Rules, classSymbol);
             if (!direct[pi]) needsBuffer = true;
         }
 
@@ -513,7 +526,7 @@ internal static class RuleEmitter
             if (validatorStop && !direct[pi])
                 sb.AppendLine($"        int _b{pi} = _buf.Count;");
 
-            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx, regexMethods, direct[pi]);
+            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx, regexMethods, direct[pi], classSymbol);
 
             if (validatorStop && !direct[pi])
                 EmitFlatPathStopOnFirstFailureReturn(sb, pi);
@@ -536,8 +549,8 @@ internal static class RuleEmitter
     /// matching one fires. Under model-level fail-fast such a group is the last thing the
     /// validator does, so its failure can be returned directly.
     /// </summary>
-    private static bool YieldsAtMostOneFailure(IPropertySymbol prop, List<AttributeData> rules) =>
-        rules.Count == 1 || HasStopOnFirstFailure(prop);
+    private static bool YieldsAtMostOneFailure(IPropertySymbol prop, List<AttributeData> rules, INamedTypeSymbol? classSymbol) =>
+        rules.Count == 1 || HasStopOnFirstFailure(prop, classSymbol);
 
     private static void EmitFlatPathPropertyRules(
         StringBuilder sb,
@@ -547,13 +560,14 @@ internal static class RuleEmitter
         string modelParamName,
         SourceProductionContext? ctx,
         System.Collections.Generic.Dictionary<string, string>? regexMethods = null,
-        bool directReturn = false)
+        bool directReturn = false,
+        INamedTypeSymbol? classSymbol = null)
     {
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
         var propAccess = BuildPropertyAccess(modelParamName, prop);
         var rawPropAccess = $"{modelParamName}.{prop.Name}";
-        var stopMode = HasStopOnFirstFailure(prop);
+        var stopMode = HasStopOnFirstFailure(prop, classSymbol);
 
         ReportZV0016IfApplicable(ctx, prop, rules);
 

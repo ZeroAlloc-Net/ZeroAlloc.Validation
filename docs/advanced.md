@@ -42,6 +42,8 @@ When `IsDraft` is `true`, `validator.Validate(order)` returns `IsValid = true` w
 
 ## [StopOnFirstFailure] — Per-property rule short-circuiting
 
+Place it on a property to stop at that property's first failing rule, or on the class to apply the same to every property it validates.
+
 `[StopOnFirstFailure]` goes on a **property**. When applied, the validator stops checking subsequent rules on that property after the first failing rule. Rules for other properties are still evaluated.
 
 - `[AttributeUsage(AttributeTargets.Property)]`
@@ -88,6 +90,26 @@ public class CreateOrderRequest
 ```
 
 **When to use:** Useful when later rules depend on earlier fields being valid, or to return a single actionable error at a time (like a wizard UI that validates one step before moving to the next).
+
+**It stops at the first failing property, not the first failing rule.** A property carrying several rules still reports every rule it violates before validation stops. To get literally one failure back, combine it with `[StopOnFirstFailure]` on the class, which applies the per-property cascade to every property at once:
+
+```csharp
+[Validate(StopOnFirstFailure = true)]
+[StopOnFirstFailure]
+public class TestRequest
+{
+    [NotEmpty][MinLength(3)] public string? Tenant { get; init; }
+    [NotEmpty][MinLength(3)] public string? User { get; init; }
+}
+```
+
+```csharp
+// Tenant = "", User = ""
+// Without the class-level attribute: 2 failures, both on Tenant.
+// With it: 1 failure, Tenant must not be empty.
+```
+
+The class-level form is read from the type being validated, so it is not inherited from a base type — the same rule `[Validate(StopOnFirstFailure = true)]` already follows. It does govern rules inherited *into* that type.
 
 **On the invalid path this is also the cheapest mode.** When a property can only ever produce one failure — it carries a single rule, or it carries `[StopOnFirstFailure]` so only the first matching rule fires — the generator returns that failure's array directly instead of filling a scratch buffer and copying out of it. Where every property in the model is like that, no buffer is emitted at all:
 
