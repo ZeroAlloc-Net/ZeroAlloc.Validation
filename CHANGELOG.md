@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.0...v1.7.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* **ci:** stamp the assembly version when publishing from a manifest ([#160](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/160)) ([8839e09](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/8839e090d6a2da92a9f689ecbcc4a6823de71e16))
+
 ## [1.7.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.6.0...v1.7.0) (2026-09-12)
 
 
