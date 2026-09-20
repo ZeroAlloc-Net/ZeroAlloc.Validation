@@ -43,13 +43,23 @@ jobs:
 
       - name: Pack
         run: |
-          dotnet pack src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
-          dotnet pack src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
-          dotnet pack src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
-          dotnet pack src/ZeroAlloc.Validation.AspNetCore.Generator/ZeroAlloc.Validation.AspNetCore.Generator.csproj -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
-          dotnet pack src/ZeroAlloc.Validation.Testing/ZeroAlloc.Validation.Testing.csproj -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
-          dotnet pack src/ZeroAlloc.Validation.Inject/ZeroAlloc.Validation.Inject.csproj -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
-          dotnet pack src/ZeroAlloc.Validation.Options/ZeroAlloc.Validation.Options.csproj -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
+          # Discovered, not listed. A hardcoded list silently omits any newly
+          # added package: the release still goes green and the package simply
+          # never appears on NuGet. Defaulting to pack means a new src project
+          # ships unless it opts out, so the failure mode is a surplus package
+          # someone notices rather than a missing one nobody does.
+          for csproj in src/*/*.csproj; do
+            if grep -q "<IsPackable>false</IsPackable>" "$csproj"; then
+              echo "Skipping $csproj (IsPackable=false)"
+              continue
+            fi
+            echo "Packing $csproj"
+            dotnet pack "$csproj" -c Release --no-build -p:PackageVersion=${{ needs.release-please.outputs.version }} -o ./nupkg
+          done
+          if ! ls ./nupkg/*.nupkg >/dev/null 2>&1; then
+            echo "::error::no packages were produced"
+            exit 1
+          fi
 
       - name: Push to NuGet
         run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
