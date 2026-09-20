@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.4](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.3...v1.7.4) (2026-09-20)
+
+
+### Bug Fixes
+
+* pack every src package instead of a hardcoded list ([#170](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/170)) ([21083e6](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/21083e626c25cf145315d77e31209aa80b8ad208))
+
 ## [1.7.3](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.2...v1.7.3) (2026-09-20)
 
 
