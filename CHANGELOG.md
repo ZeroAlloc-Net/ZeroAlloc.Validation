@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.3](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.2...v1.7.3) (2026-09-20)
+
+
+### Bug Fixes
+
+* **ci:** pin the SDK floor at the .NET 10 GA band, not the newest patch ([#167](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/167)) ([672ea7a](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/672ea7a292e4cca16ff1eb2f0edd1ab0539947d3))
+
 ## [1.7.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.1...v1.7.2) (2026-09-20)
 
 
