@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.1...v1.7.2) (2026-09-20)
+
+
+### Bug Fixes
+
+* declare current sibling package versions ([#165](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/165)) ([5df780a](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/5df780ace588ccf9826824e03ba1ca37fa111bdd))
+
 ## [1.7.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.0...v1.7.1) (2026-09-19)
 
 
