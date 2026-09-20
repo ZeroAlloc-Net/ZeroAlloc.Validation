@@ -15,7 +15,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <!-- Required so Roslyn can locate ZeroAlloc.Pipeline.Generators when loading ValidatorGenerator -->
     <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="0.1.1" GeneratePathProperty="true" />
-    <PackageReference Include="ZeroAlloc.Pipeline" Version="0.1.1" GeneratePathProperty="true" />
+    <PackageReference Include="ZeroAlloc.Pipeline" Version="1.2.2" GeneratePathProperty="true" />
   </ItemGroup>
 
   <ItemGroup>
