@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.5](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.4...v1.7.5) (2026-09-21)
+
+
+### Bug Fixes
+
+* emit AddZeroAllocValidators for records and ship the generator as an analyzer ([#175](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/175)) ([f3b3328](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/f3b33282509156b322873d530faa5387dbfc4686))
+
 ## [1.7.4](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.3...v1.7.4) (2026-09-20)
 
 
