@@ -6,11 +6,33 @@
     <IsRoslynComponent>true</IsRoslynComponent>
     <PackageId>ZeroAlloc.Validation.Inject</PackageId>
     <Description>Source generator that emits AddZeroAllocValidators() — zero-reflection DI registration for all ZeroAlloc.Validation validators.</Description>
+
+    <!--
+      Source-generator packaging, matching ZeroAlloc.Validation.Generator. Without
+      IncludeBuildOutput=false the assembly packs to lib/<tfm>/ and Roslyn never loads
+      it as an analyzer, so the package ships and does nothing at all.
+    -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <DevelopmentDependency>true</DevelopmentDependency>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.9.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Pack the generator under analyzers/dotnet/cs so Roslyn registers it. -->
+  <ItemGroup>
+    <None Include="$(OutputPath)\$(AssemblyName).dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
+    <None Include="$(OutputPath)\$(AssemblyName).pdb"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false"
+          Condition="Exists('$(OutputPath)\$(AssemblyName).pdb')" />
   </ItemGroup>
 
 </Project>
