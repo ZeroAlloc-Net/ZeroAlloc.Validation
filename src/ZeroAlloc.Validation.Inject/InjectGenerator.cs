@@ -15,7 +15,14 @@ public sealed class InjectGenerator : IIncrementalGenerator
         var validateClasses = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 ValidateAttributeFqn,
-                predicate: static (node, _) => node is ClassDeclarationSyntax,
+                // RecordDeclarationSyntax is a sibling of ClassDeclarationSyntax under
+                // TypeDeclarationSyntax, not a subtype, so matching only the latter
+                // skipped every [Validate] record. The per-type validators still
+                // generated, because ValidatorGenerator matches both, so the package
+                // looked like it was working while AddZeroAllocValidators was never
+                // emitted at all.
+                predicate: static (node, _) => node is ClassDeclarationSyntax
+                                                    or RecordDeclarationSyntax,
                 transform: static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol);
 
 #pragma warning disable EPS06

@@ -56,6 +56,58 @@ public class InjectGeneratorTests
         Assert.Empty(trees);
     }
 
+    [Fact]
+    public void Generator_EmitsForRecords()
+    {
+        // Regression for #174. RecordDeclarationSyntax is a sibling of
+        // ClassDeclarationSyntax under TypeDeclarationSyntax, not a subtype, so a
+        // predicate matching only classes skipped every [Validate] record and
+        // AddZeroAllocValidators was never emitted. record is the idiomatic shape
+        // for a validated DTO, and every test here previously used class, which is
+        // why it shipped.
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace MyApp;
+            [Validate] public record Customer([property: NotEmpty] string Name);
+            """;
+
+        var generated = RunInjectGenerator(source);
+
+        Assert.Contains("AddZeroAllocValidators", generated, System.StringComparison.Ordinal);
+        Assert.Contains("Customer", generated, System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsForRecordStructs()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace MyApp;
+            [Validate] public readonly record struct Tag([property: NotEmpty] string Value);
+            """;
+
+        var generated = RunInjectGenerator(source);
+
+        Assert.Contains("AddZeroAllocValidators", generated, System.StringComparison.Ordinal);
+        Assert.Contains("Tag", generated, System.StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Generator_EmitsForMixedClassesAndRecords()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace MyApp;
+            [Validate] public class Order { [NotEmpty] public string Ref { get; set; } = ""; }
+            [Validate] public record Customer([property: NotEmpty] string Name);
+            """;
+
+        var generated = RunInjectGenerator(source);
+
+        Assert.Contains("Order", generated, System.StringComparison.Ordinal);
+        Assert.Contains("Customer", generated, System.StringComparison.Ordinal);
+    }
+
     private static string RunInjectGenerator(string source)
         => RunInjectGeneratorAllTrees(source).First();
 
