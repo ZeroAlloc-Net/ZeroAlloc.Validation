@@ -60,9 +60,6 @@ jobs:
 
   api-compat:
     uses: ZeroAlloc-Net/.github/.github/workflows/api-compat.yml@main
-    with:
-      package-id: ZeroAlloc.Validation
-      csproj-path: src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj
 
   aot-smoke:
     runs-on: ubuntu-latest
