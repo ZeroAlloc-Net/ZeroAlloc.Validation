@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.7](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.6...v1.7.7) (2026-09-24)
+
+
+### Bug Fixes
+
+* ship the AspNetCore generator in ZeroAlloc.Validation.AspNetCore and emit it for records ([#189](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/189)) ([b7d85a8](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/b7d85a8a707a2c314c9a8cfe4519981bb3f7fdea)), closes [#188](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/188)
+
 ## [1.7.6](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.5...v1.7.6) (2026-09-24)
 
 
