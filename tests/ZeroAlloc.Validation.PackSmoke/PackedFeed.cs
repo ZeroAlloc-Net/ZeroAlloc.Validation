@@ -173,9 +173,17 @@ public sealed class PackedFeed : IDisposable
 #pragma warning restore CA1031, ERP022, RCS1075
     }
 
+    private static readonly TimeSpan s_commandTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Runs a <c>dotnet</c> build or pack command. Build servers are disabled so no MSBuild
+    /// node or compiler server outlives the command holding its redirected output, and a
+    /// command that does not finish in time is killed and reported with its output rather
+    /// than stalling the test run.
+    /// </summary>
     public static (int ExitCode, string Output) RunDotnet(string arguments, string workingDirectory)
     {
-        var psi = new ProcessStartInfo("dotnet", arguments)
+        var psi = new ProcessStartInfo("dotnet", arguments + " --disable-build-servers")
         {
             WorkingDirectory       = workingDirectory,
             RedirectStandardOutput = true,
@@ -190,9 +198,18 @@ public sealed class PackedFeed : IDisposable
         process.Start();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
+        if (!process.WaitForExit(s_commandTimeout))
+        {
+            process.Kill(entireProcessTree: true);
+            lock (output)
+                return (-1, $"dotnet {arguments} timed out after {s_commandTimeout}.{Environment.NewLine}{output}");
+        }
+
+        // The parameterless overload also waits for the redirected output to be drained.
         process.WaitForExit();
 
-        return (process.ExitCode, output.ToString());
+        lock (output)
+            return (process.ExitCode, output.ToString());
     }
 
     private static string LocateRepoRoot()
