@@ -342,8 +342,25 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // Documenting rather than suppressing also puts these members in the consumer's own
         // XML documentation file, which a #pragma would not.
         sb.AppendLine($"/// <summary>Validates <c>{modelName}</c> instances against the rules declared on the type.</summary>");
-        sb.AppendLine($"public sealed partial class {validatorName} : ValidatorFor<{modelName}>");
+        // The validator follows the model's effective accessibility. A public validator
+        // over an internal model fails with CS9338 and CS0051, issue #184.
+        var accessibility = IsEffectivelyPublic(classSymbol) ? "public" : "internal";
+        sb.AppendLine($"{accessibility} sealed partial class {validatorName} : ValidatorFor<{modelName}>");
         sb.AppendLine("{");
+    }
+
+    /// <summary>
+    /// True when <paramref name="type"/> and every type containing it are public, so the
+    /// type is visible outside its assembly.
+    /// </summary>
+    private static bool IsEffectivelyPublic(INamedTypeSymbol type)
+    {
+        for (INamedTypeSymbol? t = type; t is not null; t = t.ContainingType)
+        {
+            if (t.DeclaredAccessibility != Accessibility.Public)
+                return false;
+        }
+        return true;
     }
 
     private static void EmitFieldsAndConstructor(
