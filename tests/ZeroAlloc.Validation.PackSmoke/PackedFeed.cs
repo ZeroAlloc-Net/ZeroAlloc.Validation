@@ -15,6 +15,7 @@ public sealed class PackedFeed : IDisposable
         "src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj",
         "src/ZeroAlloc.Validation.Inject/ZeroAlloc.Validation.Inject.csproj",
         "src/ZeroAlloc.Validation.Options/ZeroAlloc.Validation.Options.csproj",
+        "src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj",
     ];
 
     private readonly string _workDir;
@@ -52,17 +53,17 @@ public sealed class PackedFeed : IDisposable
         => Path.Combine(_feed, $"{packageId}.{Version}.nupkg");
 
     /// <summary>
-    /// Writes a consumer library that restores from the local feed and calls the generated
-    /// <c>ValidateWithZeroAlloc()</c> for a class and a record, and returns its project path.
+    /// Writes a consumer library that restores the given packages from the local feed and
+    /// calls the method each of them generates, and returns its project path.
     /// </summary>
-    public string ScaffoldConsumer(string name, bool includeInject)
+    public string ScaffoldConsumer(string name, ConsumerPackages packages)
     {
         var dir = Path.Combine(_workDir, name);
         Directory.CreateDirectory(dir);
 
         WriteNuGetConfig(dir);
-        WriteProject(dir, name, includeInject);
-        WriteSource(dir, includeInject);
+        WriteProject(dir, name, packages);
+        WriteSource(dir, packages);
 
         return Path.Combine(dir, $"{name}.csproj");
     }
@@ -86,11 +87,12 @@ public sealed class PackedFeed : IDisposable
             """);
     }
 
-    private void WriteProject(string dir, string name, bool includeInject)
+    private void WriteProject(string dir, string name, ConsumerPackages packages)
     {
-        var injectReference = includeInject
-            ? $"""<PackageReference Include="ZeroAlloc.Validation.Inject" Version="{Version}" />"""
-            : "";
+        var references = new StringBuilder();
+        AppendReference(references, packages, ConsumerPackages.Options,    "ZeroAlloc.Validation.Options");
+        AppendReference(references, packages, ConsumerPackages.Inject,     "ZeroAlloc.Validation.Inject");
+        AppendReference(references, packages, ConsumerPackages.AspNetCore, "ZeroAlloc.Validation.AspNetCore");
 
         File.WriteAllText(Path.Combine(dir, $"{name}.csproj"), $"""
             <Project Sdk="Microsoft.NET.Sdk">
@@ -102,19 +104,32 @@ public sealed class PackedFeed : IDisposable
               <ItemGroup>
                 <PackageReference Include="ZeroAlloc.Validation" Version="{Version}" />
                 <PackageReference Include="ZeroAlloc.Validation.Generator" Version="{Version}" />
-                <PackageReference Include="ZeroAlloc.Validation.Options" Version="{Version}" />
-                {injectReference}
-              </ItemGroup>
+            {references}  </ItemGroup>
             </Project>
             """);
     }
 
-    private static void WriteSource(string dir, bool includeInject)
+    private void AppendReference(StringBuilder references, ConsumerPackages packages, ConsumerPackages package, string packageId)
     {
-        var injectCall = includeInject ? "services.AddZeroAllocValidators();" : "";
+        if (packages.HasFlag(package))
+            references.Append($"""    <PackageReference Include="{packageId}" Version="{Version}" />""").AppendLine();
+    }
 
-        // Calling the generated method is the assertion: if the generator did not run, the
-        // call does not compile. A record is included because the generator used to skip
+    private static void WriteSource(string dir, ConsumerPackages packages)
+    {
+        var calls = new StringBuilder();
+        if (packages.HasFlag(ConsumerPackages.Options))
+        {
+            calls.AppendLine("services.AddOptions<DatabaseOptions>().ValidateWithZeroAlloc().ValidateOnStart();");
+            calls.AppendLine("services.AddOptions<SmtpOptions>().ValidateWithZeroAlloc().ValidateOnStart();");
+        }
+        if (packages.HasFlag(ConsumerPackages.Inject))
+            calls.AppendLine("services.AddZeroAllocValidators();");
+        if (packages.HasFlag(ConsumerPackages.AspNetCore))
+            calls.AppendLine("services.AddZeroAllocAspNetCoreValidation();");
+
+        // Calling the generated methods is the assertion: if a generator did not run, the
+        // call does not compile. A record is included because the generators used to skip
         // them.
         File.WriteAllText(Path.Combine(dir, "Wiring.cs"), $$"""
             using Microsoft.Extensions.DependencyInjection;
@@ -138,9 +153,7 @@ public sealed class PackedFeed : IDisposable
             {
                 public static void Wire(IServiceCollection services)
                 {
-                    services.AddOptions<DatabaseOptions>().ValidateWithZeroAlloc().ValidateOnStart();
-                    services.AddOptions<SmtpOptions>().ValidateWithZeroAlloc().ValidateOnStart();
-                    {{injectCall}}
+            {{calls}}
                 }
             }
             """);
@@ -192,3 +205,4 @@ public sealed class PackedFeed : IDisposable
             ?? throw new InvalidOperationException("Could not locate the repository root from " + AppContext.BaseDirectory);
     }
 }
+

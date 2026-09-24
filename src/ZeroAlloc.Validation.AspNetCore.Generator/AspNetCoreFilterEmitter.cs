@@ -16,7 +16,12 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         var validateClasses = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 ValidateAttributeFqn,
-                predicate: static (node, _) => node is ClassDeclarationSyntax,
+                // RecordDeclarationSyntax covers record and record struct. Matching
+                // classes only let every [Validate] record through the filter
+                // unvalidated, the defect #174 fixed in Inject. The set matches
+                // InjectGenerator, so both register the same validators.
+                predicate: static (node, _) => node is ClassDeclarationSyntax
+                                                    or RecordDeclarationSyntax,
                 transform: static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol);
 
 #pragma warning disable EPS06 // Collect() on IncrementalValuesProvider<T> is intentional

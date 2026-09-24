@@ -58,6 +58,23 @@ public class AutoValidationIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ValidRecordModel_Returns200()
+    {
+        var response = await _client!.PostAsJsonAsync("/sample/record", new { Name = "Widget" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task InvalidRecordModel_EmptyName_Returns422()
+    {
+        var response = await _client!.PostAsJsonAsync("/sample/record", new { Name = "" });
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Name", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task UnknownModelType_FilterSkips_Returns200()
     {
         using var content = new StringContent("\"hello\"", System.Text.Encoding.UTF8, "application/json");

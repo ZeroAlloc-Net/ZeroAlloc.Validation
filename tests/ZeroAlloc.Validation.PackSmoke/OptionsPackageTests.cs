@@ -32,7 +32,7 @@ public sealed class OptionsPackageTests : IClassFixture<PackedFeed>
     [Fact]
     public void Consumer_OfOptionsPackage_CanCallValidateWithZeroAlloc()
     {
-        var project = _feed.ScaffoldConsumer("OptionsOnly", includeInject: false);
+        var project = _feed.ScaffoldConsumer("OptionsOnly", ConsumerPackages.Options);
 
         var build = PackedFeed.RunDotnet($"build \"{project}\" -c Release", Path.GetDirectoryName(project)!);
 
@@ -46,7 +46,7 @@ public sealed class OptionsPackageTests : IClassFixture<PackedFeed>
         // own copy of the Inject assembly, the SDK would load both copies as analyzers,
         // AddZeroAllocValidators would be emitted twice, and the build would fail with
         // CS0101. That was verified while fixing #183.
-        var project = _feed.ScaffoldConsumer("OptionsAndInject", includeInject: true);
+        var project = _feed.ScaffoldConsumer("OptionsAndInject", ConsumerPackages.Options | ConsumerPackages.Inject);
 
         var build = PackedFeed.RunDotnet($"build \"{project}\" -c Release", Path.GetDirectoryName(project)!);
 

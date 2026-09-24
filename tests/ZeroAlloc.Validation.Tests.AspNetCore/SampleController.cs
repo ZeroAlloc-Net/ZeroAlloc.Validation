@@ -10,6 +10,10 @@ public class SampleController : ControllerBase
     public IActionResult Post([FromBody] SampleModel model) =>
         Ok(new { model.Name, model.Quantity });
 
+    [HttpPost("record")]
+    public IActionResult PostRecord([FromBody] SampleRecordModel model) =>
+        Ok(new { model.Name });
+
     [HttpPost("unknown")]
     public IActionResult PostUnknown([FromBody] string raw) => Ok(raw);
 }
