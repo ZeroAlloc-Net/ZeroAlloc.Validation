@@ -7,7 +7,8 @@ namespace ZeroAlloc.Validation.PackSmoke;
 /// Guards issue #183: the ZeroAlloc.Validation.Options package must carry its source
 /// generator, so that a consumer restoring it from a feed gets <c>ValidateWithZeroAlloc()</c>.
 /// </summary>
-public sealed class OptionsPackageTests : IClassFixture<PackedFeed>
+[Collection(PackedFeedCollection.Name)]
+public sealed class OptionsPackageTests
 {
     private readonly PackedFeed _feed;
 

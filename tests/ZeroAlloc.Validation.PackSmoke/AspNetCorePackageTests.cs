@@ -8,7 +8,8 @@ namespace ZeroAlloc.Validation.PackSmoke;
 /// generator, so that a consumer restoring it from a feed gets
 /// <c>AddZeroAllocAspNetCoreValidation()</c> and the action filter.
 /// </summary>
-public sealed class AspNetCorePackageTests : IClassFixture<PackedFeed>
+[Collection(PackedFeedCollection.Name)]
+public sealed class AspNetCorePackageTests
 {
     private readonly PackedFeed _feed;
 
