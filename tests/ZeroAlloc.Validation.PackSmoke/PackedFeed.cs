@@ -1,0 +1,194 @@
+using System.Diagnostics;
+using System.Text;
+
+namespace ZeroAlloc.Validation.PackSmoke;
+
+/// <summary>
+/// Packs the shipped src projects once into a private local feed that consumer projects
+/// restore from.
+/// </summary>
+public sealed class PackedFeed : IDisposable
+{
+    private static readonly string[] s_packedProjects =
+    [
+        "src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj",
+        "src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj",
+        "src/ZeroAlloc.Validation.Inject/ZeroAlloc.Validation.Inject.csproj",
+        "src/ZeroAlloc.Validation.Options/ZeroAlloc.Validation.Options.csproj",
+    ];
+
+    private readonly string _workDir;
+    private readonly string _feed;
+
+    public PackedFeed()
+    {
+        // A unique version per run, so no NuGet cache can serve an extract of an older pack.
+        Version  = $"9.9.9-packsmoke-{Guid.NewGuid():N}";
+        _workDir = Path.Combine(Path.GetTempPath(), $"za-validation-packsmoke-{Guid.NewGuid():N}");
+        _feed    = Path.Combine(_workDir, "feed");
+        Directory.CreateDirectory(_feed);
+
+        var repoRoot = LocateRepoRoot();
+
+        // A private artifacts path keeps this rebuild out of the repository's own bin and
+        // obj. The release workflow packs with --no-build after the tests have run, so
+        // anything written there by a test would be what ships.
+        var artifacts = Path.Combine(_workDir, "artifacts");
+
+        foreach (var project in s_packedProjects)
+        {
+            var csproj = Path.Combine(repoRoot, project);
+            var pack = RunDotnet(
+                $"pack \"{csproj}\" -c Release -p:PackageVersion={Version} --artifacts-path \"{artifacts}\" -o \"{_feed}\"",
+                repoRoot);
+            if (pack.ExitCode != 0)
+                throw new InvalidOperationException($"Packing {project} failed.\n{pack.Output}");
+        }
+    }
+
+    public string Version { get; }
+
+    public string PackagePath(string packageId)
+        => Path.Combine(_feed, $"{packageId}.{Version}.nupkg");
+
+    /// <summary>
+    /// Writes a consumer library that restores from the local feed and calls the generated
+    /// <c>ValidateWithZeroAlloc()</c> for a class and a record, and returns its project path.
+    /// </summary>
+    public string ScaffoldConsumer(string name, bool includeInject)
+    {
+        var dir = Path.Combine(_workDir, name);
+        Directory.CreateDirectory(dir);
+
+        WriteNuGetConfig(dir);
+        WriteProject(dir, name, includeInject);
+        WriteSource(dir, includeInject);
+
+        return Path.Combine(dir, $"{name}.csproj");
+    }
+
+    private void WriteNuGetConfig(string dir)
+    {
+        // A private global packages folder, so this run neither reads nor pollutes the
+        // machine-wide cache.
+        File.WriteAllText(Path.Combine(dir, "NuGet.config"), $"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <configuration>
+              <config>
+                <add key="globalPackagesFolder" value="{Path.Combine(_workDir, "packages")}" />
+              </config>
+              <packageSources>
+                <clear />
+                <add key="local" value="{_feed}" />
+                <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+              </packageSources>
+            </configuration>
+            """);
+    }
+
+    private void WriteProject(string dir, string name, bool includeInject)
+    {
+        var injectReference = includeInject
+            ? $"""<PackageReference Include="ZeroAlloc.Validation.Inject" Version="{Version}" />"""
+            : "";
+
+        File.WriteAllText(Path.Combine(dir, $"{name}.csproj"), $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0</TargetFramework>
+                <Nullable>enable</Nullable>
+                <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+              </PropertyGroup>
+              <ItemGroup>
+                <PackageReference Include="ZeroAlloc.Validation" Version="{Version}" />
+                <PackageReference Include="ZeroAlloc.Validation.Generator" Version="{Version}" />
+                <PackageReference Include="ZeroAlloc.Validation.Options" Version="{Version}" />
+                {injectReference}
+              </ItemGroup>
+            </Project>
+            """);
+    }
+
+    private static void WriteSource(string dir, bool includeInject)
+    {
+        var injectCall = includeInject ? "services.AddZeroAllocValidators();" : "";
+
+        // Calling the generated method is the assertion: if the generator did not run, the
+        // call does not compile. A record is included because the generator used to skip
+        // them.
+        File.WriteAllText(Path.Combine(dir, "Wiring.cs"), $$"""
+            using Microsoft.Extensions.DependencyInjection;
+            using ZeroAlloc.Validation;
+
+            namespace Consumer;
+
+            [Validate]
+            public class DatabaseOptions
+            {
+                [NotEmpty] public string ConnectionString { get; set; } = "";
+            }
+
+            [Validate]
+            public record SmtpOptions
+            {
+                [NotEmpty] public string Host { get; init; } = "";
+            }
+
+            public static class Wiring
+            {
+                public static void Wire(IServiceCollection services)
+                {
+                    services.AddOptions<DatabaseOptions>().ValidateWithZeroAlloc().ValidateOnStart();
+                    services.AddOptions<SmtpOptions>().ValidateWithZeroAlloc().ValidateOnStart();
+                    {{injectCall}}
+                }
+            }
+            """);
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_workDir, recursive: true);
+        }
+#pragma warning disable CA1031, ERP022, RCS1075 // best-effort cleanup of a temp directory
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"PackSmoke cleanup failed: {ex}");
+        }
+#pragma warning restore CA1031, ERP022, RCS1075
+    }
+
+    public static (int ExitCode, string Output) RunDotnet(string arguments, string workingDirectory)
+    {
+        var psi = new ProcessStartInfo("dotnet", arguments)
+        {
+            WorkingDirectory       = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true,
+            UseShellExecute        = false,
+        };
+
+        var output = new StringBuilder();
+        using var process = new Process { StartInfo = psi };
+        process.OutputDataReceived += (_, e) => { if (e.Data is not null) lock (output) output.AppendLine(e.Data); };
+        process.ErrorDataReceived  += (_, e) => { if (e.Data is not null) lock (output) output.AppendLine(e.Data); };
+        process.Start();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        process.WaitForExit();
+
+        return (process.ExitCode, output.ToString());
+    }
+
+    private static string LocateRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "ZeroAlloc.Validation.slnx")))
+            dir = dir.Parent;
+
+        return dir?.FullName
+            ?? throw new InvalidOperationException("Could not locate the repository root from " + AppContext.BaseDirectory);
+    }
+}
