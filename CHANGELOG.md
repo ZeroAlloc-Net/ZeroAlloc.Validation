@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.6](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.5...v1.7.6) (2026-09-24)
+
+
+### Bug Fixes
+
+* ship the options generator in ZeroAlloc.Validation.Options and emit it for records ([#185](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/185)) ([77d511a](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/77d511a3e3608e1d5171200eeb47a3b5f1cd555b))
+
 ## [1.7.5](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.4...v1.7.5) (2026-09-21)
 
 
