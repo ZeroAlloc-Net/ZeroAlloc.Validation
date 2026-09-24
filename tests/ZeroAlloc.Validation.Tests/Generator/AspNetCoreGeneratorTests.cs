@@ -110,6 +110,27 @@ public class AspNetCoreGeneratorTests
         Assert.Contains("ValidatorFor<global::MyApp.Customer>", filter, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Generator_IncludesRecords_InDispatchAndRegistration()
+    {
+        // The predicate used to match ClassDeclarationSyntax only, so a [Validate] record
+        // was never validated by the filter nor registered, the defect #174 fixed in Inject.
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace MyApp;
+            [Validate] public record CreateOrder { [NotEmpty] public string Ref { get; init; } = ""; }
+            [Validate] public record struct Money { [GreaterThan(0)] public int Cents { get; init; } }
+            """;
+
+        var filter = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationActionFilter.g.cs");
+        Assert.Contains("case global::MyApp.CreateOrder ", filter, StringComparison.Ordinal);
+        Assert.Contains("case global::MyApp.Money ",       filter, StringComparison.Ordinal);
+
+        var ext = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationServiceCollectionExtensions.g.cs");
+        Assert.Contains("TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.CreateOrder>, global::MyApp.CreateOrderValidator>", ext, StringComparison.Ordinal);
+        Assert.Contains("TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.Money>, global::MyApp.MoneyValidator>",             ext, StringComparison.Ordinal);
+    }
+
     private static string RunAspNetGeneratorGetSource(string source, string fileName)
     {
         var sources = RunAspNetGeneratorGetSources(source);
