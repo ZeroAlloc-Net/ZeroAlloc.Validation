@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.8](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.7...v1.7.8) (2026-09-24)
+
+
+### Tests
+
+* share one packed feed across PackSmoke classes and bound each command ([#191](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/191)) ([daf19b7](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/daf19b726e28242187553fd7deb7143157230586))
+
 ## [1.7.7](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.6...v1.7.7) (2026-09-24)
 
 
