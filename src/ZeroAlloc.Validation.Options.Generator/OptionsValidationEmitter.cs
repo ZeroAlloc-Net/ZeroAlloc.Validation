@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using ZeroAlloc.Validation.Inject;
 
@@ -16,7 +17,14 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
         var validateClasses = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 ValidateAttributeFqn,
-                predicate: static (node, _) => node is ClassDeclarationSyntax,
+                // RecordDeclarationSyntax is a sibling of ClassDeclarationSyntax under
+                // TypeDeclarationSyntax, not a subtype, so matching only the latter skipped
+                // every [Validate] record. The Inject generator had the same defect, #174.
+                // A record struct is also a RecordDeclarationSyntax, so it is excluded by
+                // kind: OptionsBuilder<T> requires a reference type and an overload for a
+                // value type would not compile.
+                predicate: static (node, _) => node is ClassDeclarationSyntax
+                                               || node.IsKind(SyntaxKind.RecordDeclaration),
                 transform: static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol);
 
 #pragma warning disable EPS06

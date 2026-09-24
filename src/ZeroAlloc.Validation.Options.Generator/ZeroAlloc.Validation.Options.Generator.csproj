@@ -12,11 +12,17 @@
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.9.0" PrivateAssets="all" />
   </ItemGroup>
 
+  <!--
+    ValidatorRegistrationEmitter is compiled in from source rather than referenced from
+    the Inject assembly. This generator ships bundled inside the ZeroAlloc.Validation.Options
+    package, and a reference would mean bundling ZeroAlloc.Validation.Inject.dll next to it.
+    Roslyn would then also run InjectGenerator from that copy, and a consumer referencing
+    both Options and Inject, a documented combination, would get AddZeroAllocValidators
+    emitted twice and fail with CS0101.
+  -->
   <ItemGroup>
-    <!-- Access ValidatorRegistrationEmitter — compile-time reference only -->
-    <ProjectReference Include="..\ZeroAlloc.Validation.Inject\ZeroAlloc.Validation.Inject.csproj"
-                      ReferenceOutputAssembly="true"
-                      PrivateAssets="all" />
+    <Compile Include="..\ZeroAlloc.Validation.Inject\ValidatorRegistrationEmitter.cs"
+             Link="Shared\ValidatorRegistrationEmitter.cs" />
   </ItemGroup>
 
 </Project>

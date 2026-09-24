@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Packs the real src projects into a throwaway local feed and builds a consumer
+    against the resulting .nupkg files. In-repo tests cannot catch packaging defects,
+    because they load the generators through ProjectReference OutputItemType=Analyzer,
+    which never goes through a package. That is how 1.7.5 shipped
+    ZeroAlloc.Validation.Options with no analyzer in it, issue #183.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+  </ItemGroup>
+
+</Project>
