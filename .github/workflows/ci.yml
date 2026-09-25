@@ -47,6 +47,12 @@ jobs:
       - name: Build
         run: dotnet build --no-restore -c Release -p:Version=${{ steps.gitversion.outputs.version }}
 
+      - name: Pack ZA.Validation packages into local feed (for duplicate-generator test)
+        run: |
+          dotnet pack src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj -c Release -o artifacts/local
+          dotnet pack src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj -c Release -o artifacts/local
+          dotnet pack src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj -c Release -o artifacts/local
+
       - name: Test
         run: dotnet test --no-build -c Release --verbosity normal
 

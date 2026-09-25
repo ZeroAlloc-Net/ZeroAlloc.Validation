@@ -1,0 +1,21 @@
+<Project>
+  <!--
+    Auto-imported by NuGet from build/<PackageId>.targets when a project
+    references the ZeroAlloc.Validation package.
+
+    Emits ZV9001 when the consumer also references ZeroAlloc.Validation.Generator
+    directly. ZeroAlloc.Validation bundles the generator already; the dual reference
+    causes the generator to load twice and produces duplicate {Model}Validator types.
+  -->
+  <Target Name="ZeroAllocValidationGeneratorDuplicateCheck" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <!-- MSBuild's == in conditions is already case-insensitive, so this also catches
+           mixed-case spellings like "ZeroAlloc.validation.Generator". -->
+      <_RedundantZeroAllocValidationGeneratorRef Include="@(PackageReference)"
+                                                  Condition="'%(Identity)' == 'ZeroAlloc.Validation.Generator'" />
+    </ItemGroup>
+    <Error Condition="'@(_RedundantZeroAllocValidationGeneratorRef)' != ''"
+           Code="ZV9001"
+           Text="ZeroAlloc.Validation bundles the source generator. Remove the redundant 'ZeroAlloc.Validation.Generator' PackageReference — reference only 'ZeroAlloc.Validation'. See https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation#install" />
+  </Target>
+</Project>

@@ -15,6 +15,10 @@ dotnet add package ZeroAlloc.Validation
 dotnet add package ZeroAlloc.Validation.AspNetCore
 ```
 
+`ZeroAlloc.Validation` bundles its own source generator, so these two packages are all that's
+required. **Upgrading?** Remove any direct `ZeroAlloc.Validation.Generator` reference — keeping
+it alongside `ZeroAlloc.Validation` loads the generator twice and fails the build with `ZV9001`.
+
 ## Setup in Program.cs
 
 ```csharp

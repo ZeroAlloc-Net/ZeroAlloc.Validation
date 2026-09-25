@@ -14,6 +14,13 @@ Source-generated, attribute-based validation for .NET that allocates nothing on 
 dotnet add package ZeroAlloc.Validation
 ```
 
+`ZeroAlloc.Validation` bundles its own source generator — no other package is required.
+
+> **Upgrading from an older version?** If your project also references
+> `ZeroAlloc.Validation.Generator` directly, remove that `PackageReference` — the generator
+> now ships inside `ZeroAlloc.Validation` itself, and keeping both loads it twice, which fails
+> the build with `ZV9001`.
+
 ## 30-Second Example
 
 ```csharp
@@ -61,6 +68,7 @@ See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/mai
 | `ZeroAlloc.Validation.Inject` | Emits `AddZeroAllocValidators()` — bulk DI registration in one call |
 | `ZeroAlloc.Validation.Options` | Emits `ValidateWithZeroAlloc()` — plugs validators into `Microsoft.Extensions.Options` |
 | `ZeroAlloc.Validation.Testing` | Fluent assertions for unit-testing validators |
+| ~~`ZeroAlloc.Validation.Generator`~~ | Deprecated. Bundled into `ZeroAlloc.Validation` itself; do not reference directly |
 
 ## Features
 

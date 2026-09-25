@@ -94,6 +94,10 @@ public sealed class PackedFeed : IDisposable
         AppendReference(references, packages, ConsumerPackages.Inject,     "ZeroAlloc.Validation.Inject");
         AppendReference(references, packages, ConsumerPackages.AspNetCore, "ZeroAlloc.Validation.AspNetCore");
 
+        // ZeroAlloc.Validation bundles ZeroAlloc.Validation.Generator itself, issue #194.
+        // Referencing the standalone Generator package here too would trip the ZV9001
+        // duplicate-generator guard (build/ZeroAlloc.Validation.targets) and fail every
+        // consumer scaffolded below, on purpose — see DuplicateGeneratorTests for that case.
         File.WriteAllText(Path.Combine(dir, $"{name}.csproj"), $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
@@ -103,7 +107,6 @@ public sealed class PackedFeed : IDisposable
               </PropertyGroup>
               <ItemGroup>
                 <PackageReference Include="ZeroAlloc.Validation" Version="{Version}" />
-                <PackageReference Include="ZeroAlloc.Validation.Generator" Version="{Version}" />
             {references}  </ItemGroup>
             </Project>
             """);
