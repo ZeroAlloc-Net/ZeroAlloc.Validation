@@ -168,7 +168,7 @@ public partial class PriceCommand
 
 **Title:** Validation rules depending on an inaccessible base member are ignored
 
-**When fired:** A `[Validate]` type inherits from a base type that declares validation rules, but the member those rules depend on cannot be referenced from the generated validator. The generated validator is a separate class, so it can reach `public` members — and `internal` ones when the base type lives in the same assembly — but never `private` or `protected` ones. Three cases fire this:
+**When fired:** A `[Validate]` type inherits from a base type that declares validation rules, but the member those rules depend on cannot be referenced from the generated validator. The generated validator is a separate class, so it can reach `public` members — and `internal` ones when the base type lives in the same assembly, or in one that grants yours `[InternalsVisibleTo]` — but never `private` or `protected` ones. Three cases fire this:
 
 - a base property carrying rule attributes is `protected` or `private`, or its getter is;
 - a `[CustomValidation]` method on a base type is `protected` or `private`;
@@ -176,7 +176,7 @@ public partial class PriceCommand
 
 In each case the rule is dropped rather than emitted as code that would not compile. A base property that is static, an indexer or has no getter is reported as [ZV0027](#zv0027) instead, because widening it would not make it readable. A static method is reported as [ZV0028](#zv0028) instead, wherever it is declared, because widening it would not make it callable. So is an inaccessible method declared on the `[Validate]` type itself, since that type is yours to change. A rule declared on a base type that is itself `[Validate]` is reported once, by that type.
 
-**Fix:** Widen the member to `public` (or `internal` within the same assembly), or move it onto the derived type:
+**Fix:** Widen the member to `public`, or to `internal` within the same assembly or one that grants yours `[InternalsVisibleTo]`, or move it onto the derived type:
 
 ```csharp
 public abstract class AuditedBase
@@ -203,6 +203,8 @@ public abstract class AuditedBase
     public bool ShouldCheck() => true;            // reachable
 }
 ```
+
+**Not reported:** A rule on an `internal` member of a base type in another assembly that does not grant yours `[InternalsVisibleTo]` is neither validated nor reported. The compiler does not load such members from a referenced assembly, so the generator cannot see them. Grant `[InternalsVisibleTo]` to your assembly, or move the rule to a member the validator can reach.
 
 **Suppressing:** If the member is deliberately hidden and you do not want it validated, set `[Validate(IncludeBaseProperties = false)]` on the derived type to opt out of base-type rules entirely, or add `<NoWarn>$(NoWarn);ZV0017</NoWarn>`. Note that suppressing leaves the rule unenforced.
 

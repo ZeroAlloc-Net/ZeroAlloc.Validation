@@ -99,7 +99,7 @@ internal static class RuleEmitter
         bool validatorStop = GetBoolNamedArg(validateAttr, "StopOnFirstFailure");
 
         if (hasNested)
-            EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, customMethods, modelParamName, validatorStop, totalDirectRules, ctx, fields);
+            EmitNestedPath(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, customMethods, modelParamName, validatorStop, totalDirectRules, ctx, fields);
         else
             EmitFlatPath(sb, classSymbol, byProperty, totalDirectRules, modelParamName, validatorStop, ctx, fields);
     }
@@ -120,7 +120,7 @@ internal static class RuleEmitter
         SourceProductionContext? ctx)
     {
         var byProperty = new List<(IPropertySymbol Property, List<AttributeData> Rules)>();
-        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IPropertySymbol prop) continue;
             var propRules = new List<AttributeData>();
@@ -147,6 +147,7 @@ internal static class RuleEmitter
     private static void EmitNestedPath(
         StringBuilder sb,
         INamedTypeSymbol classSymbol,
+        Compilation compilation,
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         List<IPropertySymbol> nestedProperties,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
@@ -168,7 +169,7 @@ internal static class RuleEmitter
         }
         else
         {
-            EmitNestedPathStop(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName, ctx, fields);
+            EmitNestedPathStop(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, modelParamName, ctx, fields);
         }
 
         // [CustomValidation] methods always run last.
@@ -244,19 +245,10 @@ internal static class RuleEmitter
     /// </summary>
     private static IEnumerable<(IMethodSymbol Method, bool ByRef)> CustomValidationMethods(INamedTypeSymbol classSymbol, Compilation compilation)
     {
-        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IMethodSymbol method) continue;
-            bool hasAttr = false;
-            foreach (var attr in method.GetAttributes())
-            {
-                if (string.Equals(attr.AttributeClass?.ToDisplayString(), CustomValidationAttributeFqn, StringComparison.Ordinal))
-                {
-                    hasAttr = true;
-                    break;
-                }
-            }
-            if (!hasAttr) continue;
+            if (FindCustomValidationAttribute(method, out _) is null) continue;
             // Only emit if the signature is one ZV0013 accepts: not generic, no parameters, and a
             // return type the generated validator knows how to walk.
             if (method.IsGenericMethod || method.Parameters.Length != 0) continue;
@@ -265,6 +257,31 @@ internal static class RuleEmitter
             if (MethodReachability.Classify(compilation, classSymbol, method) != MethodReach.Callable) continue;
             yield return (method, byRef);
         }
+    }
+
+    /// <summary>
+    /// The <c>[CustomValidation]</c> attribute <paramref name="method"/> carries, declared on it
+    /// or on a method it overrides, or <see langword="null"/> when it has none.
+    /// <paramref name="declaration"/> is the method the attribute is written on. The attribute
+    /// keeps the default <c>Inherited = true</c>, so an override that does not repeat it still
+    /// carries it, issue #240. <see cref="MemberWalker.GetMembersIncludingBase"/> yields only the
+    /// most-derived override, so the validator makes one call, which dispatches to it.
+    /// </summary>
+    public static AttributeData? FindCustomValidationAttribute(IMethodSymbol method, out IMethodSymbol declaration)
+    {
+        for (IMethodSymbol? current = method; current is not null; current = current.OverriddenMethod)
+        {
+            foreach (var attr in current.GetAttributes())
+            {
+                if (string.Equals(attr.AttributeClass?.ToDisplayString(), CustomValidationAttributeFqn, StringComparison.Ordinal))
+                {
+                    declaration = current;
+                    return attr;
+                }
+            }
+        }
+        declaration = method;
+        return null;
     }
 
     private static string CustomValidationStatement(IMethodSymbol method) =>
@@ -298,6 +315,7 @@ internal static class RuleEmitter
     private static void EmitNestedPathStop(
         StringBuilder sb,
         INamedTypeSymbol classSymbol,
+        Compilation compilation,
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         List<IPropertySymbol> nestedProperties,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
@@ -308,7 +326,7 @@ internal static class RuleEmitter
         int groupIdx = 0;
         int collCi = 0;
 
-        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IPropertySymbol prop) continue;
 
@@ -886,7 +904,7 @@ internal static class RuleEmitter
     /// </summary>
     public static IEnumerable<(string Name, string Statement, bool Certain)> ProbeCalls(INamedTypeSymbol classSymbol, Compilation compilation)
     {
-        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IPropertySymbol prop) continue;
             foreach (var attr in prop.GetAttributes())
@@ -1347,7 +1365,7 @@ internal static class RuleEmitter
     }
 
     private static IEnumerable<IPropertySymbol> GetNestedValidateProperties(INamedTypeSymbol classSymbol, Compilation compilation) =>
-        MemberWalker.GetMembersIncludingBase(classSymbol)
+        MemberWalker.GetMembersIncludingBase(classSymbol, compilation)
             .OfType<IPropertySymbol>()
             // First arm: type has [Validate] (auto-compose) — also covers the overlap where [ValidateWith] is present on a [Validate] type; [ValidateWith] wins in CollectNestedValidatorFields.
             // Second arm: [ValidateWith] on a non-collection property whose type has no [Validate].
@@ -1392,7 +1410,7 @@ internal static class RuleEmitter
     }
 
     private static IEnumerable<(IPropertySymbol Property, INamedTypeSymbol ElementType)> GetCollectionValidateProperties(INamedTypeSymbol classSymbol, Compilation compilation) =>
-        MemberWalker.GetMembersIncludingBase(classSymbol)
+        MemberWalker.GetMembersIncludingBase(classSymbol, compilation)
             .OfType<IPropertySymbol>()
             .Select(p =>
             {
@@ -1410,7 +1428,7 @@ internal static class RuleEmitter
         CollectNestedValidatorFields(INamedTypeSymbol classSymbol, Compilation compilation)
     {
         var result = new System.Collections.Generic.List<(string, string, string)>();
-        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IPropertySymbol prop) continue;
 

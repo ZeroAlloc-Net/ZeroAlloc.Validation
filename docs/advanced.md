@@ -189,9 +189,9 @@ public class Order : AuditedBase
 // OrderValidator enforces both ModifiedBy and Total.
 ```
 
-**Hidden and overridden properties.** When a derived type redeclares a property with `new` or `override`, the most-derived declaration wins and its attributes are the ones applied — the base declaration's rules are not also run.
+**Hidden and overridden properties.** When a derived type redeclares a property with `new` or `override`, the most-derived declaration wins and its attributes are the ones applied — the base declaration's rules are not also run. A `[CustomValidation]` method is the exception: an `override` that does not repeat the attribute still inherits it, so the check runs once, through the override.
 
-**Accessibility.** The generated validator is a separate class, so it can only reach `public` base members (and `internal` ones declared in the same assembly). Rules on a `protected` or `private` base member — or that depend on a `[CustomValidation]`, `[Must]`, `When` or `Unless` method that is `protected` or `private` on a base type — cannot be enforced, and are reported at compile time as [ZV0017](./diagnostics.md#zv0017) rather than silently dropped. A method that is static, or inaccessible on the `[Validate]` type itself, fails the build with [ZV0028](./diagnostics.md#zv0028) instead.
+**Accessibility.** The generated validator is a separate class, so it can only reach `public` base members, and `internal` ones declared in the same assembly or in an assembly that grants yours `[InternalsVisibleTo]`. Rules on a `protected` or `private` base member — or that depend on a `[CustomValidation]`, `[Must]`, `When` or `Unless` method that is `protected` or `private` on a base type — cannot be enforced, and are reported at compile time as [ZV0017](./diagnostics.md#zv0017) rather than silently dropped. A method that is static, or inaccessible on the `[Validate]` type itself, fails the build with [ZV0028](./diagnostics.md#zv0028) instead.
 
 **Opting out.** Set `IncludeBaseProperties = false` to validate only the members declared directly on the type:
 

@@ -25,10 +25,10 @@ internal static class MemberWalker
     /// Returns only <paramref name="type"/>'s own members when
     /// <c>[Validate(IncludeBaseProperties = false)]</c> is set.
     /// </summary>
-    public static ImmutableArray<ISymbol> GetMembersIncludingBase(INamedTypeSymbol type)
+    public static ImmutableArray<ISymbol> GetMembersIncludingBase(INamedTypeSymbol type, Compilation compilation)
     {
         if (!IncludesBaseProperties(type))
-            return ReadableMembers(type, type);
+            return ReadableMembers(type, compilation);
 
         // Derived -> base, so the most-derived declaration of a hidden member is the one kept.
         var levels = new List<INamedTypeSymbol>();
@@ -36,7 +36,7 @@ internal static class MemberWalker
             levels.Add(current);
 
         if (levels.Count <= 1)
-            return ReadableMembers(type, type);
+            return ReadableMembers(type, compilation);
 
         var perLevel = new List<List<ISymbol>>(levels.Count);
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -55,14 +55,14 @@ internal static class MemberWalker
                 // `instance.Prop` binds to a property the validator can see even when it cannot
                 // read it, a static one or one without a getter, so that property still hides
                 // the base declarations of the same name.
-                if (member is IPropertySymbol property && GetUnreadableReason(property, type) != UnreadableReason.None)
+                if (member is IPropertySymbol property && GetUnreadableReason(property, compilation) != UnreadableReason.None)
                 {
-                    if (IsAccessibleAccessibility(property.DeclaredAccessibility, property, type))
+                    if (IsAccessible(property, compilation))
                         hiding.Add(property);
                     continue;
                 }
 
-                if (isBase && !IsAccessibleFrom(member, type)) continue;
+                if (isBase && !IsAccessibleFrom(member, compilation)) continue;
                 kept.Add(member);
             }
 
@@ -93,7 +93,7 @@ internal static class MemberWalker
     /// filters it with <see cref="MethodReachability.IsReportedByBaseValidator"/>, which knows
     /// whether that base type walks the member's declaring type.
     /// </summary>
-    public static IEnumerable<ISymbol> GetInaccessibleBaseMembers(INamedTypeSymbol type)
+    public static IEnumerable<ISymbol> GetInaccessibleBaseMembers(INamedTypeSymbol type, Compilation compilation)
     {
         if (!IncludesBaseProperties(type)) yield break;
 
@@ -104,8 +104,8 @@ internal static class MemberWalker
                 if (member is not IPropertySymbol && member is not IMethodSymbol) continue;
                 // A static, getter-less or indexer property cannot be read however accessible it
                 // is; that is ZV0027's case, reported at each rule, not an accessibility problem.
-                if (member is IPropertySymbol property && IsUnreadableByShape(GetUnreadableReason(property, type))) continue;
-                if (IsAccessibleFrom(member, type)) continue;
+                if (member is IPropertySymbol property && IsUnreadableByShape(GetUnreadableReason(property, compilation))) continue;
+                if (IsAccessibleFrom(member, compilation)) continue;
                 if (!HasZeroAllocValidationAttribute(member)) continue;
                 yield return member;
             }
@@ -113,20 +113,20 @@ internal static class MemberWalker
     }
 
     /// <summary>
-    /// Why the generated validator for <paramref name="validatedType"/>, an unrelated class in the
-    /// same assembly, cannot read <paramref name="property"/> as <c>instance.Prop</c>, or
-    /// <see cref="UnreadableReason.None"/> when it can. The shape of the property is checked
-    /// before its accessibility, so a private static property reports as static.
+    /// Why the generated validator, an unrelated class in the assembly
+    /// <paramref name="compilation"/> builds, cannot read <paramref name="property"/> as
+    /// <c>instance.Prop</c>, or <see cref="UnreadableReason.None"/> when it can. The shape of the
+    /// property is checked before its accessibility, so a private static property reports as static.
     /// </summary>
-    public static UnreadableReason GetUnreadableReason(IPropertySymbol property, INamedTypeSymbol validatedType)
+    public static UnreadableReason GetUnreadableReason(IPropertySymbol property, Compilation compilation)
     {
         if (property.IsIndexer) return UnreadableReason.Indexer;
         if (property.IsStatic) return UnreadableReason.Static;
         var getter = FindGetter(property);
         if (getter is null) return UnreadableReason.NoGetter;
-        if (!IsAccessibleAccessibility(property.DeclaredAccessibility, property, validatedType))
+        if (!IsAccessible(property, compilation))
             return UnreadableReason.Inaccessible;
-        if (!IsAccessibleAccessibility(getter.DeclaredAccessibility, getter, validatedType))
+        if (!IsAccessible(getter, compilation))
             return UnreadableReason.GetterInaccessible;
         return UnreadableReason.None;
     }
@@ -146,14 +146,14 @@ internal static class MemberWalker
     }
 
     /// <summary>
-    /// Whether <paramref name="member"/>, declared on <paramref name="validatedType"/> or one of
-    /// its base types, hides a base declaration of the same name from the generated validator,
+    /// Whether <paramref name="member"/>, declared on the validated type or one of its base
+    /// types, hides a base declaration of the same name from the generated validator,
     /// as <see cref="GetMembersIncludingBase"/> treats it: name lookup from the validator skips a
     /// member it cannot access, but binds to an accessible one even when it cannot be read.
     /// </summary>
-    public static bool HidesBaseMembers(ISymbol member, INamedTypeSymbol validatedType) =>
+    public static bool HidesBaseMembers(ISymbol member, Compilation compilation) =>
         member is IPropertySymbol or IFieldSymbol
-        && IsAccessibleAccessibility(member.DeclaredAccessibility, member, validatedType);
+        && IsAccessible(member, compilation);
 
     /// <summary>
     /// Whether <paramref name="reason"/> holds whatever the property's accessibility: a static
@@ -163,16 +163,15 @@ internal static class MemberWalker
         reason is UnreadableReason.Static or UnreadableReason.Indexer or UnreadableReason.NoGetter;
 
     /// <summary>
-    /// <paramref name="type"/>'s own members without the properties the validator for
-    /// <paramref name="validatedType"/> cannot read.
+    /// <paramref name="type"/>'s own members without the properties the validator cannot read.
     /// </summary>
-    private static ImmutableArray<ISymbol> ReadableMembers(INamedTypeSymbol type, INamedTypeSymbol validatedType)
+    private static ImmutableArray<ISymbol> ReadableMembers(INamedTypeSymbol type, Compilation compilation)
     {
         var members = type.GetMembers();
         var builder = ImmutableArray.CreateBuilder<ISymbol>(members.Length);
         foreach (var member in members)
         {
-            if (member is IPropertySymbol property && GetUnreadableReason(property, validatedType) != UnreadableReason.None)
+            if (member is IPropertySymbol property && GetUnreadableReason(property, compilation) != UnreadableReason.None)
                 continue;
             builder.Add(member);
         }
@@ -221,14 +220,12 @@ internal static class MemberWalker
     }
 
     /// <summary>
-    /// Whether the generated validator for <paramref name="accessingType"/> — an unrelated class
-    /// in the same assembly — may reference <paramref name="member"/>. <c>protected</c> and
-    /// <c>private</c> members are not reachable from it, and <c>internal</c> members only when
-    /// the declaring assembly is the one being compiled.
+    /// Whether the generated validator may reference <paramref name="member"/>, and for a
+    /// property also call its getter; see <see cref="IsAccessible"/>.
     /// </summary>
-    private static bool IsAccessibleFrom(ISymbol member, INamedTypeSymbol accessingType)
+    private static bool IsAccessibleFrom(ISymbol member, Compilation compilation)
     {
-        if (!IsAccessibleAccessibility(member.DeclaredAccessibility, member, accessingType))
+        if (!IsAccessible(member, compilation))
             return false;
 
         // A property also needs a getter the validator can call.
@@ -236,22 +233,22 @@ internal static class MemberWalker
         {
             var getter = FindGetter(prop);
             if (getter is null) return false;
-            if (!IsAccessibleAccessibility(getter.DeclaredAccessibility, getter, accessingType))
+            if (!IsAccessible(getter, compilation))
                 return false;
         }
 
         return true;
     }
 
-    private static bool IsAccessibleAccessibility(Accessibility accessibility, ISymbol member, INamedTypeSymbol accessingType) =>
-        accessibility switch
-        {
-            Accessibility.Public => true,
-            Accessibility.Internal or Accessibility.ProtectedOrInternal =>
-                SymbolEqualityComparer.Default.Equals(
-                    member.ContainingAssembly, accessingType.ContainingAssembly),
-            _ => false,
-        };
+    /// <summary>
+    /// Whether the generated validator, a top-level class in the assembly
+    /// <paramref name="compilation"/> builds and outside the model's type hierarchy, may
+    /// reference <paramref name="member"/>. The compiler decides: <c>protected</c> and
+    /// <c>private</c> members are out of reach, and an <c>internal</c> member declared in another
+    /// assembly is in reach when that assembly grants this one <c>[InternalsVisibleTo]</c>.
+    /// </summary>
+    private static bool IsAccessible(ISymbol member, Compilation compilation) =>
+        compilation.IsSymbolAccessibleWithin(member, compilation.Assembly);
 
     private static bool HasZeroAllocValidationAttribute(ISymbol member)
     {

@@ -678,7 +678,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
     private static void ReportNestedDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
-        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IPropertySymbol prop) continue;
 
@@ -691,7 +691,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         ReportCustomValidationDiagnostics(ctx, classSymbol, compilation);
         ReportInaccessibleBaseMemberDiagnostics(ctx, classSymbol, compilation);
         ReportSkipWhenDiagnostics(ctx, classSymbol, compilation);
-        ReportDuplicateRuleAttributeDiagnostics(ctx, classSymbol);
+        ReportDuplicateRuleAttributeDiagnostics(ctx, classSymbol, compilation);
         ReportUnreadValidationAttributeDiagnostics(ctx, classSymbol, compilation);
     }
 
@@ -733,7 +733,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                     {
                         case IPropertySymbol property:
                             if (!hidden.Contains(property.Name))
-                                ReportUnreadablePropertyAttributes(ctx, property, classSymbol, isBase);
+                                ReportUnreadablePropertyAttributes(ctx, property, compilation, isBase);
                             break;
                         case IFieldSymbol field:
                             ReportUnreadValidationAttributes(ctx, field, field.Name);
@@ -748,7 +748,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
             foreach (var member in type.GetMembers())
             {
-                if (MemberWalker.HidesBaseMembers(member, classSymbol))
+                if (MemberWalker.HidesBaseMembers(member, compilation))
                     hidden.Add(member.Name);
             }
         }
@@ -826,9 +826,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// base type, a property that is only inaccessible is ZV0017's case and is not reported again.
     /// </summary>
     private static void ReportUnreadablePropertyAttributes(
-        SourceProductionContext ctx, IPropertySymbol property, INamedTypeSymbol classSymbol, bool isBase)
+        SourceProductionContext ctx, IPropertySymbol property, Compilation compilation, bool isBase)
     {
-        var reason = MemberWalker.GetUnreadableReason(property, classSymbol);
+        var reason = MemberWalker.GetUnreadableReason(property, compilation);
         if (reason == UnreadableReason.None) return;
         if (isBase && !MemberWalker.IsUnreadableByShape(reason)) return;
 
@@ -875,9 +875,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// arguments. Repeating one with *identical* arguments is not: the rule runs twice and the
     /// same failure is reported twice. Only that exact-duplicate case is reported.
     /// </summary>
-    private static void ReportDuplicateRuleAttributeDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
+    private static void ReportDuplicateRuleAttributeDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
-        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IPropertySymbol prop) continue;
 
@@ -951,7 +951,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// </summary>
     private static void ReportInaccessibleBaseMemberDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
-        foreach (var member in MemberWalker.GetInaccessibleBaseMembers(classSymbol))
+        foreach (var member in MemberWalker.GetInaccessibleBaseMembers(classSymbol, compilation))
         {
             // A [Validate] base type that walks the member's declaring type reports it, as ZV0027
             // for its own properties or ZV0028 for its own methods.
@@ -972,7 +972,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         }
 
         // A reachable property can still carry a rule that calls a method the validator cannot.
-        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IPropertySymbol prop) continue;
             var reportingBase = MethodReachability.FindReportingBaseValidator(compilation, classSymbol, prop.ContainingType);
@@ -1008,34 +1008,27 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// <see cref="ReportInaccessibleBaseMemberDiagnostics"/>. A method declared on a base type is
     /// left to the generation of a <c>[Validate]</c> base type that walks it, as
     /// <see cref="MethodReachability.IsReportedByBaseValidator"/> decides, so it is reported once.
+    /// An override that does not repeat the attribute inherits it, issue #240, and is judged as the
+    /// method the attribute is written on, which shares its signature. When that declaration is
+    /// itself out of reach it is already reported, as ZV0017 or by its own type, so the override
+    /// adds nothing.
     /// </summary>
     private static void ReportCustomValidationDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
-        const string customValidationFqn = "ZeroAlloc.Validation.CustomValidationAttribute";
-
         // GetMembersIncludingBase leaves out inaccessible base members; the static ones among
         // them are reported here rather than as ZV0017.
-        var candidates = MemberWalker.GetMembersIncludingBase(classSymbol)
-            .Concat(MemberWalker.GetInaccessibleBaseMembers(classSymbol).Where(m => m is IMethodSymbol { IsStatic: true }));
+        var candidates = MemberWalker.GetMembersIncludingBase(classSymbol, compilation)
+            .Concat(MemberWalker.GetInaccessibleBaseMembers(classSymbol, compilation).Where(m => m is IMethodSymbol { IsStatic: true }));
 
         foreach (var member in candidates)
         {
             if (member is not IMethodSymbol method) continue;
 
-            AttributeData? attrData = null;
-            foreach (var attr in method.GetAttributes())
-            {
-                if (string.Equals(attr.AttributeClass?.ToDisplayString(), customValidationFqn, StringComparison.Ordinal))
-                {
-                    attrData = attr;
-                    break;
-                }
-            }
-            if (attrData is null) continue;
+            if (RuleEmitter.FindCustomValidationAttribute(method, out var declaration) is not { } attrData) continue;
 
-            // A [Validate] base type that walks the method's declaring type reports it, as ZV0013
-            // or ZV0028.
-            if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, method.ContainingType))
+            // A [Validate] base type that walks the type declaring the attributed method reports
+            // it, as ZV0013 or ZV0028.
+            if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, declaration.ContainingType))
                 continue;
 
             // instance.Check<T>() cannot infer T, so a generic method is a signature error too.
@@ -1053,7 +1046,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             }
 
             var reach = MethodReachability.Classify(compilation, classSymbol, method);
-            if (reach is MethodReach.Static or MethodReach.Inaccessible)
+            if (reach is MethodReach.Static or MethodReach.Inaccessible
+                && (SymbolEqualityComparer.Default.Equals(declaration, method)
+                    || MethodReachability.Classify(compilation, classSymbol, declaration) == MethodReach.Callable))
             {
                 ReportZV0028(ctx, attrData, method, method.Name, "[CustomValidation]", reach);
             }
