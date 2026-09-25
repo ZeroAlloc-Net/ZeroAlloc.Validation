@@ -1532,7 +1532,7 @@ public class GeneratorRuleEmissionTests
                 public string Name { get; set; } = "";
 
                 [CustomValidation]
-                private IEnumerable<ValidationFailure> Validate() =>
+                public IEnumerable<ValidationFailure> Validate() =>
                     System.Array.Empty<ValidationFailure>();
             }
             """;
@@ -1557,11 +1557,11 @@ public class GeneratorRuleEmissionTests
             public class M
             {
                 [CustomValidation]
-                private IEnumerable<ValidationFailure> ValidateFirst() =>
+                public IEnumerable<ValidationFailure> ValidateFirst() =>
                     System.Array.Empty<ValidationFailure>();
 
                 [CustomValidation]
-                private IEnumerable<ValidationFailure> ValidateSecond() =>
+                public IEnumerable<ValidationFailure> ValidateSecond() =>
                     System.Array.Empty<ValidationFailure>();
             }
             """;

@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0026 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0028 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -27,6 +27,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0023](#zv0023) | Error | Custom rule attribute not accessible from the generated validator |
 | [ZV0024](#zv0024) | Error | Validation attribute applied where the generator does not read it |
 | [ZV0026](#zv0026) | Warning | [RuleMessage] on a class that is not a custom rule |
+| [ZV0028](#zv0028) | Error | Validation method the generated validator cannot call |
 
 ---
 
@@ -60,7 +61,9 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 
 **Title:** Invalid [CustomValidation] method signature
 
-**When fired:** A method decorated with `[CustomValidation]` has parameters, or does not return `IEnumerable<ValidationFailure>`.
+**When fired:** A method decorated with `[CustomValidation]` has parameters, or does not return `IEnumerable<ValidationFailure>`, `ValidationFailure[]` or `ReadOnlySpan<ValidationFailure>`.
+
+The signature is checked first. A method that is also static, or also inaccessible on the `[Validate]` type itself, reports ZV0013 only; once the signature is fixed, [ZV0028](#zv0028) reports the rest. An inaccessible instance method on a base type reports [ZV0017](#zv0017) only, whatever its signature.
 
 **Fix:** Ensure the method has no parameters and returns `IEnumerable<ValidationFailure>`:
 
@@ -161,12 +164,13 @@ public partial class PriceCommand
 
 **Title:** Validation rules depending on an inaccessible base member are ignored
 
-**When fired:** A `[Validate]` type inherits from a base type that declares validation rules, but the member those rules depend on cannot be referenced from the generated validator. The generated validator is a separate class, so it can reach `public` members — and `internal` ones when the base type lives in the same assembly — but never `private` or `protected` ones. Two cases fire this:
+**When fired:** A `[Validate]` type inherits from a base type that declares validation rules, but the member those rules depend on cannot be referenced from the generated validator. The generated validator is a separate class, so it can reach `public` members — and `internal` ones when the base type lives in the same assembly — but never `private` or `protected` ones. Three cases fire this:
 
 - a base property carrying rule attributes is `protected` or `private` (or exposes no accessible getter);
-- a rule on an otherwise-reachable property names a `When` / `Unless` method that is `protected` or `private` on a base type.
+- a `[CustomValidation]` method on a base type is `protected` or `private`;
+- a rule on an otherwise-reachable property names a `When` / `Unless` method or a `[Must]` predicate that is `protected` or `private` on a base type.
 
-In both cases the rule is dropped rather than emitted as code that would not compile.
+In each case the rule is dropped rather than emitted as code that would not compile. A static method is reported as [ZV0028](#zv0028) instead, wherever it is declared, because widening it would not make it callable. So is an inaccessible method declared on the `[Validate]` type itself, since that type is yours to change. A rule declared on a base type that is itself `[Validate]` is reported once, by that type.
 
 **Fix:** Widen the member to `public` (or `internal` within the same assembly), or move it onto the derived type:
 
@@ -464,3 +468,46 @@ The warning is reported at the `[RuleMessage]` attribute, whether or not the pro
 
 **Fix:** Derive the class from `ValidationAttribute<T>` if it is meant to be a rule, or remove the
 `[RuleMessage]`. Nothing is generated differently, so this is a warning rather than an error.
+
+---
+
+## ZV0028
+
+**Severity:** Error
+
+**Title:** Validation method the generated validator cannot call
+
+**When fired:** The generated validator is a separate class, so it calls the model's methods as `instance.Method(...)`. That call does not compile when the method a rule depends on is static, or is `private`, `protected` or `private protected`. Four usages are checked:
+
+- a `[CustomValidation]` method;
+- the predicate a `[Must]` names;
+- the method a rule's `When` names;
+- the method a rule's `Unless` names.
+
+```csharp
+[Validate]
+public class Order
+{
+    [Must(nameof(IsKnownCode))]                  // ZV0028 — the method is private
+    public string? Code { get; set; }
+
+    [NotEmpty(When = nameof(IsShipped))]         // ZV0028 — the method is static
+    public string? TrackingNumber { get; set; }
+
+    [CustomValidation]                           // ZV0028 — the method is private
+    private IEnumerable<ValidationFailure> CheckTotals() { yield break; }
+
+    private bool IsKnownCode(string? code) => code is "A" or "B";
+    public static bool IsShipped() => true;
+}
+```
+
+> Method '{0}', used by {1}, cannot be called from the generated validator because it {2}
+
+The error is reported at the attribute. That rule is left out rather than emitted as code that fails with CS0122 or CS0176, and every other rule on the model is still validated. A `[Must]`, `When` or `Unless` method resolves the way the call would: an overload that cannot take the arguments is ignored, and the lookup stops at the most-derived type that declares an accessible overload that can. The rule is fine when one of that type's overloads is an instance method. When they are all static, the call binds to a static method, so ZV0028 is reported even if a base type declares an instance overload. A name that matches no method at all is left to the compiler.
+
+The generated validator lives in the model's assembly, so `internal` and `protected internal` methods are callable and are not reported.
+
+On a base type, a static method is reported the same way. A base method that is only inaccessible stays [ZV0017](#zv0017), a warning, because the base type may not be yours to change. A `[CustomValidation]` method with an invalid signature that is static, or inaccessible on the `[Validate]` type itself, is reported as [ZV0013](#zv0013) only; an inaccessible instance method on a base type is reported as ZV0017 only.
+
+**Fix:** Make the method a `public` or `internal` instance method.

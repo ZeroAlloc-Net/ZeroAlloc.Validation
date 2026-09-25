@@ -117,6 +117,19 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             + "ValidationAttribute<T>. On any other class nothing reads it. Derive the class from "
             + "ValidationAttribute<T>, or remove the attribute.");
 
+    private static readonly DiagnosticDescriptor ZV0028 = new DiagnosticDescriptor(
+        id: "ZV0028",
+        title: "Validation method the generated validator cannot call",
+        messageFormat: "Method '{0}', used by {1}, cannot be called from the generated validator because it {2}",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description:
+            "The generated validator is a separate class, so it calls [CustomValidation], [Must], "
+            + "When and Unless methods as instance.Method(). A static method, or one that is private "
+            + "or protected, cannot be called that way, so the rule is skipped. Make the method a "
+            + "public or internal instance method.");
+
     /// <summary>
     /// ZV0026's model: a <c>[RuleMessage]</c> usage on a class that is not a custom rule. Plain
     /// strings and spans only, so the step compares by value and stays cached across edits that
@@ -284,7 +297,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         if (classSymbol.DeclaredAccessibility == Accessibility.Private)
             return;
 
-        ReportNestedDiagnostics(ctx, classSymbol);
+        ReportNestedDiagnostics(ctx, classSymbol, compilation);
         ReportDuplicateOrderDiagnostics(ctx, syncBehaviors, asyncBehaviors, classSymbol.Name);
 
         var namespaceName = classSymbol.ContainingNamespace.IsGlobalNamespace
@@ -633,7 +646,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         }
     }
 
-    private static void ReportNestedDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
+    private static void ReportNestedDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
         {
@@ -645,8 +658,8 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             ReportZV0011IfApplicable(ctx, prop, member, validateWithAttr);
             ReportZV0012IfApplicable(ctx, prop, member, validateWithAttr);
         }
-        ReportCustomValidationDiagnostics(ctx, classSymbol);
-        ReportInaccessibleBaseMemberDiagnostics(ctx, classSymbol);
+        ReportCustomValidationDiagnostics(ctx, classSymbol, compilation);
+        ReportInaccessibleBaseMemberDiagnostics(ctx, classSymbol, compilation);
         ReportDuplicateRuleAttributeDiagnostics(ctx, classSymbol);
         ReportUnreadValidationAttributeDiagnostics(ctx, classSymbol);
     }
@@ -782,10 +795,24 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             : System.Convert.ToString(value.Value, System.Globalization.CultureInfo.InvariantCulture) ?? "null";
     }
 
-    private static void ReportInaccessibleBaseMemberDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
+    /// <summary>
+    /// ZV0017 for base members the generated validator cannot reach, and ZV0017 or ZV0028 for the
+    /// <c>When</c>, <c>Unless</c> and <c>[Must]</c> methods rules call. A static method is ZV0028
+    /// wherever it is declared, since widening it would not make it callable. An inaccessible
+    /// instance method is ZV0028 on the model and ZV0017 on a base type, which may not be the
+    /// author's to change. A usage declared on a <c>[Validate]</c> base type is left to that
+    /// type's own generation, so it is reported once and under one ID.
+    /// </summary>
+    private static void ReportInaccessibleBaseMemberDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         foreach (var member in MemberWalker.GetInaccessibleBaseMembers(classSymbol))
         {
+            // A static [CustomValidation] method is reported by ReportCustomValidationDiagnostics
+            // as ZV0013 or ZV0028.
+            if (member is IMethodSymbol method
+                && (method.IsStatic || MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, method.ContainingType)))
+                continue;
+
             ctx.ReportDiagnostic(Diagnostic.Create(
                 ZV0017,
                 member.Locations.FirstOrDefault(),
@@ -794,43 +821,61 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 classSymbol.Name));
         }
 
-        // A reachable property can still carry a rule guarded by an unreachable base helper.
+        // A reachable property can still carry a rule that calls a method the validator cannot.
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
         {
             if (member is not IPropertySymbol prop) continue;
+            if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, prop.ContainingType)) continue;
 
-            foreach (var methodName in RuleEmitter.GetUnreachableConditionMethods(classSymbol, prop))
+            foreach (var call in RuleEmitter.GetUnreachableMethodCalls(compilation, classSymbol, prop))
             {
-                ctx.ReportDiagnostic(Diagnostic.Create(
-                    ZV0017,
-                    prop.Locations.FirstOrDefault(),
-                    prop.ContainingType?.Name,
-                    methodName,
-                    classSymbol.Name));
+                if (call.Reach == MethodReach.InaccessibleOnBase)
+                {
+                    ctx.ReportDiagnostic(Diagnostic.Create(
+                        ZV0017,
+                        prop.Locations.FirstOrDefault(),
+                        call.Method?.ContainingType?.Name,
+                        call.MethodName,
+                        classSymbol.Name));
+                }
+                else
+                {
+                    ReportZV0028(ctx, call.Attribute, prop, call.MethodName, call.Usage, call.Reach);
+                }
             }
         }
     }
 
-    private static void ReportCustomValidationDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
+    /// <summary>
+    /// ZV0013 for a <c>[CustomValidation]</c> method whose signature the validator cannot use, and
+    /// otherwise ZV0028 when the method is static or, on the model itself, inaccessible. The
+    /// signature is checked first, so a method gets one diagnostic. An inaccessible instance
+    /// method on a base type is ZV0017's case, reported by
+    /// <see cref="ReportInaccessibleBaseMemberDiagnostics"/>.
+    /// </summary>
+    private static void ReportCustomValidationDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         const string customValidationFqn = "ZeroAlloc.Validation.CustomValidationAttribute";
 
-        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
+        // GetMembersIncludingBase leaves out inaccessible base members; the static ones among
+        // them are reported here rather than as ZV0017.
+        var candidates = MemberWalker.GetMembersIncludingBase(classSymbol)
+            .Concat(MemberWalker.GetInaccessibleBaseMembers(classSymbol).Where(m => m is IMethodSymbol { IsStatic: true }));
+
+        foreach (var member in candidates)
         {
             if (member is not IMethodSymbol method) continue;
 
-            bool hasAttr = false;
             AttributeData? attrData = null;
             foreach (var attr in method.GetAttributes())
             {
                 if (string.Equals(attr.AttributeClass?.ToDisplayString(), customValidationFqn, StringComparison.Ordinal))
                 {
-                    hasAttr = true;
                     attrData = attr;
                     break;
                 }
             }
-            if (!hasAttr) continue;
+            if (attrData is null) continue;
 
             bool validSignature = method.Parameters.Length == 0
                 && IsSupportedCustomValidationReturnType(method.ReturnType);
@@ -838,11 +883,37 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             if (!validSignature)
             {
                 ctx.ReportDiagnostic(Diagnostic.Create(ZV0013,
-                    attrData?.ApplicationSyntaxReference?.GetSyntax().GetLocation()
+                    attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation()
                         ?? member.Locations.FirstOrDefault(),
                     method.Name));
+                continue;
+            }
+
+            var reach = MethodReachability.Classify(compilation, classSymbol, method);
+            if (reach is MethodReach.Static or MethodReach.Inaccessible
+                && !MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, method.ContainingType))
+            {
+                ReportZV0028(ctx, attrData, method, method.Name, "[CustomValidation]", reach);
             }
         }
+    }
+
+    /// <summary>
+    /// ZV0028: a <c>[CustomValidation]</c>, <c>[Must]</c>, <c>When</c> or <c>Unless</c> method the
+    /// generated validator cannot call as <c>instance.Method()</c>. Reported at the attribute; the
+    /// rule has already been left out of the generated code.
+    /// </summary>
+    private static void ReportZV0028(
+        SourceProductionContext ctx, AttributeData attr, ISymbol target, string methodName, string usage, MethodReach reach)
+    {
+        ctx.ReportDiagnostic(Diagnostic.Create(
+            ZV0028,
+            attr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
+                ?? target.Locations.FirstOrDefault(l => l.IsInSource)
+                ?? Location.None,
+            methodName,
+            usage,
+            reach == MethodReach.Static ? "is static" : "is not accessible from it"));
     }
 
     /// <summary>

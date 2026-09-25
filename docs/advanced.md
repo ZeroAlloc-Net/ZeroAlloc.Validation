@@ -189,7 +189,7 @@ public class Order : AuditedBase
 
 **Hidden and overridden properties.** When a derived type redeclares a property with `new` or `override`, the most-derived declaration wins and its attributes are the ones applied — the base declaration's rules are not also run.
 
-**Accessibility.** The generated validator is a separate class, so it can only reach `public` base members (and `internal` ones declared in the same assembly). Rules on a `protected` or `private` base member — or guarded by a `When` / `Unless` method that is `protected` or `private` on a base type — cannot be enforced, and are reported at compile time as [ZV0017](./diagnostics.md#zv0017) rather than silently dropped.
+**Accessibility.** The generated validator is a separate class, so it can only reach `public` base members (and `internal` ones declared in the same assembly). Rules on a `protected` or `private` base member — or that depend on a `[CustomValidation]`, `[Must]`, `When` or `Unless` method that is `protected` or `private` on a base type — cannot be enforced, and are reported at compile time as [ZV0017](./diagnostics.md#zv0017) rather than silently dropped. A method that is static, or inaccessible on the `[Validate]` type itself, fails the build with [ZV0028](./diagnostics.md#zv0028) instead.
 
 **Opting out.** Set `IncludeBaseProperties = false` to validate only the members declared directly on the type:
 

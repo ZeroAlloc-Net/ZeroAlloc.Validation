@@ -110,30 +110,6 @@ internal static class MemberWalker
     }
 
     /// <summary>
-    /// Whether a <c>When</c>/<c>Unless</c> method named <paramref name="methodName"/> can be
-    /// called from the generated validator for <paramref name="type"/>. A method declared on
-    /// <paramref name="type"/> itself — or one that does not resolve at all — is left to the
-    /// compiler to judge, unchanged; only a method reached through the base chain is screened,
-    /// so an inherited rule guarded by a <c>protected</c> helper is dropped with ZV0017 instead
-    /// of emitting a call that cannot compile.
-    /// </summary>
-    public static bool IsConditionMethodAccessible(INamedTypeSymbol type, string methodName)
-    {
-        bool isBase = false;
-        for (var current = type; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
-        {
-            foreach (var member in current.GetMembers(methodName))
-            {
-                if (member is not IMethodSymbol method) continue;
-                if (method.Parameters.Length != 0) continue;
-                return !isBase || IsAccessibleFrom(method, type);
-            }
-            isBase = true;
-        }
-        return true;
-    }
-
-    /// <summary>
     /// Whether <c>[Validate]</c> on <paramref name="type"/> leaves base-type rules switched on.
     /// Absent the named argument the answer is <see langword="true"/> — inheriting base rules is
     /// the default, matching the attribute's own <c>IncludeBaseProperties = true</c> initializer.
