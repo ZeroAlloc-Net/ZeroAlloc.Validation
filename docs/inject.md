@@ -59,7 +59,9 @@ services.TryAddSingleton<MoneyChecker>();                              // a [Val
 ```
 
 - A nested model from a referenced assembly is registered when its generated validator is accessible from your assembly. An internal one is left to that assembly's own `AddZeroAllocValidators()`.
-- A `[ValidateWith]` validator is registered by its own type, because that is what the constructor takes, unless it is abstract; its own constructor dependencies come from the container as usual.
+- A `[ValidateWith]` validator is registered by its own type, because that is what the constructor takes, unless it is abstract. It is registered as a **singleton**, like every validator here, so its own constructor dependencies come from the root container: it must not depend on scoped services, which the container would reject when scope validation is on and would otherwise capture for the life of the application. Register it yourself with the lifetime it needs before calling `AddZeroAllocValidators()` if that does not fit, bearing in mind that the composed validator holding it is a singleton too.
+- `[ValidateWith(typeof(AddressValidator))]` naming the model's own generated validator, which ZV0011 reports as redundant, takes the ordinary `ValidatorFor<Address>` path.
+- Only the properties the generated validator walks count: a base-class property left out by `[Validate(IncludeBaseProperties = false)]`, or one the validator cannot read, registers nothing.
 - Registering your own `ValidatorFor<Address>` **before** calling `AddZeroAllocValidators()` replaces the nested validator every composed validator receives, because each registration is a `TryAdd`.
 
 Before 2.0 the constructor took the nested validator's concrete type, which `AddZeroAllocValidators()` did not register, so resolving a composed validator threw. See [Migrating to v2](./migrating-to-v2.md).

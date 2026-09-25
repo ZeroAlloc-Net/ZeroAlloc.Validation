@@ -36,6 +36,12 @@
          ValidatorRegistrationEmitter can register them too, issue #246. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\ValidatorDependencies.cs"
              Link="Shared\ValidatorDependencies.cs" />
+    <!-- MemberWalker decides which properties a generated validator walks, so the dependencies
+         listed are exactly the ones its constructor takes, issue #246. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\MemberWalker.cs"
+             Link="Shared\MemberWalker.cs" />
+    <Compile Include="..\ZeroAlloc.Validation.Inject\UnreadableReason.cs"
+             Link="Shared\UnreadableReason.cs" />
   </ItemGroup>
 
 </Project>

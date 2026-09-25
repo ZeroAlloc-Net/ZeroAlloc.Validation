@@ -44,6 +44,13 @@
          NestedValidatorAccessibility checks, issue #246. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\ValidatorDependencies.cs"
              Link="Shared\ValidatorDependencies.cs" />
+    <!-- MemberWalker decides which properties a generated validator walks. Shared so the DI glue
+         registers exactly the validators the constructor takes, issue #246. The ZV0017 part,
+         which needs CustomRules, stays here in MemberWalker.InaccessibleBaseMembers.cs. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\MemberWalker.cs"
+             Link="Shared\MemberWalker.cs" />
+    <Compile Include="..\ZeroAlloc.Validation.Inject\UnreadableReason.cs"
+             Link="Shared\UnreadableReason.cs" />
     <!-- GeneratedValidatorNames names the generated validator, issue #207. Shared so the
          Inject, Options and ASP.NET Core generators name the same class this one declares. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedValidatorNames.cs"

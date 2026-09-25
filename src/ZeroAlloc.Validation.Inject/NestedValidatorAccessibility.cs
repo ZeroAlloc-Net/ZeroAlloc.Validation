@@ -24,9 +24,9 @@ namespace ZeroAlloc.Validation.Generator.Shared;
 /// caller, and an internal <c>X</c> on a public model failed to compile with CS0051.
 /// </para>
 /// <para>
-/// <see cref="ValidatorDependencies"/> lists the parameters. It can list more properties than the
-/// real constructor takes, which only makes this check more conservative; the one direction that
-/// must never happen is a public validator whose constructor takes an internal parameter.
+/// <see cref="ValidatorDependencies"/> lists the parameters, the same routine the generated
+/// constructor is declared from, so a property the constructor does not take, such as a base
+/// property under <c>[Validate(IncludeBaseProperties = false)]</c>, does not count.
 /// </para>
 /// </remarks>
 public static class NestedValidatorAccessibility
@@ -36,9 +36,10 @@ public static class NestedValidatorAccessibility
         if (!IsEffectivelyPublic(model))
             return false;
 
-        foreach (var dependency in ValidatorDependencies.Of(model, compilation))
+        var dependencies = ValidatorDependencies.Of(model, compilation);
+        for (var i = 0; i < dependencies.Count; i++)
         {
-            if (!IsEffectivelyPublic(dependency.Type))
+            if (!IsEffectivelyPublic(dependencies[i].Type))
                 return false;
         }
 

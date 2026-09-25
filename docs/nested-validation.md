@@ -123,7 +123,7 @@ public class Order
 }
 ```
 
-The outer validator's constructor takes a `[ValidateWith]` validator by its own type, `MyAddressValidator` here, not as `ValidatorFor<ExternalAddress>`: the attribute names exactly one validator, and two properties of the same type can name different ones. `AddZeroAllocValidators()` registers it by that type, unless it is abstract.
+The outer validator's constructor takes a `[ValidateWith]` validator by its own type, `MyAddressValidator` here, not as `ValidatorFor<ExternalAddress>`: the attribute names exactly one validator, and two properties of the same type can name different ones. `AddZeroAllocValidators()` registers it by that type as a singleton, unless it is abstract, so it must not depend on scoped services.
 
 > **Note:** Using `[ValidateWith]` on a property whose type already carries `[Validate]` produces a **ZV0011** compiler warning. The auto-generated validator is used by default; `[ValidateWith]` should only be needed for types you do not control.
 

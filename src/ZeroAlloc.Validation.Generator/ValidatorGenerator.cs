@@ -737,7 +737,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             if (validateWithAttr is null) continue;
 
             ReportZV0011IfApplicable(ctx, prop, member, validateWithAttr, compilation);
-            ReportZV0012IfApplicable(ctx, prop, member, validateWithAttr);
+            ReportZV0012IfApplicable(ctx, prop, member, validateWithAttr, compilation);
         }
         ReportCustomValidationDiagnostics(ctx, classSymbol, compilation);
         ReportInaccessibleBaseMemberDiagnostics(ctx, classSymbol, compilation);
@@ -1276,13 +1276,20 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         SourceProductionContext ctx,
         IPropertySymbol prop,
         ISymbol member,
-        AttributeData validateWithAttr)
+        AttributeData validateWithAttr,
+        Compilation compilation)
     {
         var specifiedType = validateWithAttr.ConstructorArguments.Length > 0
             ? validateWithAttr.ConstructorArguments[0].Value as INamedTypeSymbol
             : null;
 
         if (specifiedType is null) return;
+
+        // The model's own validator generated in this compilation is an error type here, since
+        // generator output is invisible to generators, so its base type cannot be checked. It is
+        // a ValidatorFor of the right model by construction, and the property takes the
+        // auto-composed path; ZV0011 already reports the redundant attribute, issue #246.
+        if (ValidatorDependencies.GeneratedValidatorNamedBy(prop, specifiedType, compilation) is not null) return;
 
         ITypeSymbol expectedModelType = RuleEmitter.GetCollectionElementTypePublic(prop) ?? prop.Type;
 

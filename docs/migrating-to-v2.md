@@ -204,7 +204,10 @@ The registration methods also register each validator a composed one takes that 
 own `[Validate]` scan does not cover: a nested model declared in a referenced assembly, when its
 validator is accessible, and each `[ValidateWith]` validator. A `[ValidateWith(typeof(X))]`
 property still takes `X` itself, since the attribute names exactly one validator, and it is now
-registered as `X` unless `X` is abstract.
+registered as a singleton `X` unless `X` is abstract, so `X` must not depend on scoped services.
+`[ValidateWith(typeof(AddressValidator))]` naming the model's own generated validator, which
+ZV0011 reports as redundant, no longer also raises a false ZV0012: the property takes the
+ordinary `ValidatorFor<Address>` path.
 
 A validator whose model is public and whose nested model is public is now `public` even when the
 nested model's own validator is internal: its constructor no longer names that validator.

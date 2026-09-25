@@ -68,6 +68,20 @@ internal static class GeneratedValidatorNames
             : $"global::{ValidatorName(model)}";
 
     /// <summary>
+    /// The validator's metadata name, for <c>GetTypeByMetadataName</c>, for example
+    /// <c>class.Models.Outer_RequestValidator</c>: namespace segments are never escaped there,
+    /// so a keyword namespace written <c>@class.Models</c> in code is looked up as
+    /// <c>class.Models</c>, issue #246.
+    /// </summary>
+    public static string MetadataName(INamedTypeSymbol model)
+    {
+        var ns = model.ContainingNamespace;
+        return ns is null || ns.IsGlobalNamespace
+            ? ValidatorName(model)
+            : $"{ns.ToDisplayString(HintNamespaceFormat)}.{ValidatorName(model)}";
+    }
+
+    /// <summary>
     /// The hint name of the validator's generated file, for example
     /// <c>Ns.Outer_RequestValidator.g.cs</c>. It includes the namespace, so same-named models in
     /// two namespaces do not produce the same hint name and fail the generator.

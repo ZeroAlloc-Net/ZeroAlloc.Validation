@@ -53,26 +53,37 @@ public static class ValidatorRegistrationEmitter
 
         while (pending.Count > 0)
         {
-            foreach (var dependency in ValidatorDependencies.Of(pending.Dequeue(), compilation))
+            foreach (var (_, type, isValidateWith, model) in ValidatorDependencies.Of(pending.Dequeue(), compilation))
             {
-                if (dependency.IsValidateWith)
+                if (isValidateWith)
                 {
-                    if (IsConstructible(dependency.Type, compilation) && validateWith.Add(dependency.Type))
+                    if (IsConstructible(type, compilation) && validateWith.Add(type))
                     {
                         sb.AppendLine(
-                            $"        services.TryAddSingleton<{dependency.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>();");
+                            $"        services.TryAddSingleton<{type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>();");
                     }
+
+                    // [ValidateWith] naming a referenced assembly's generated validator for the
+                    // property's own model: that validator's constructor takes the model's nested
+                    // validators, so the model is followed too.
+                    if (model is not null
+                        && SymbolEqualityComparer.Default.Equals(type, ReferencedValidator(model, compilation)))
+                        Register(model);
                     continue;
                 }
 
-                var nested = dependency.Type.OriginalDefinition;
-                if (registered.Contains(nested) || ValidatorNameIfAccessible(nested, compilation) is not { } validatorName)
-                    continue;
-
-                registered.Add(nested);
-                AppendValidatorFor(sb, nested, validatorName);
-                pending.Enqueue(nested);
+                Register(type);
             }
+        }
+
+        void Register(INamedTypeSymbol nested)
+        {
+            if (registered.Contains(nested) || ValidatorNameIfAccessible(nested, compilation) is not { } validatorName)
+                return;
+
+            registered.Add(nested);
+            AppendValidatorFor(sb, nested, validatorName);
+            pending.Enqueue(nested);
         }
     }
 
@@ -91,18 +102,27 @@ public static class ValidatorRegistrationEmitter
     /// </summary>
     private static string? ValidatorNameIfAccessible(INamedTypeSymbol model, Compilation compilation)
     {
-        var name = GeneratedValidatorNames.QualifiedValidatorName(model);
         if (SymbolEqualityComparer.Default.Equals(model.ContainingAssembly, compilation.Assembly))
-            return name;
+            return GeneratedValidatorNames.QualifiedValidatorName(model);
 
-        var ns = model.ContainingNamespace;
-        var metadataName = ns is null || ns.IsGlobalNamespace
-            ? GeneratedValidatorNames.ValidatorName(model)
-            : $"{ns.ToDisplayString()}.{GeneratedValidatorNames.ValidatorName(model)}";
+        return ReferencedValidator(model, compilation) is not null
+            ? GeneratedValidatorNames.QualifiedValidatorName(model)
+            : null;
+    }
 
-        var validator = model.ContainingAssembly?.GetTypeByMetadataName(metadataName);
+    /// <summary>
+    /// <paramref name="model"/>'s generated validator, declared in the referenced assembly that
+    /// declares the model, when this compilation can access it, otherwise <see langword="null"/>.
+    /// Looked up by metadata name, whose namespace is never keyword-escaped.
+    /// </summary>
+    private static INamedTypeSymbol? ReferencedValidator(INamedTypeSymbol model, Compilation compilation)
+    {
+        if (SymbolEqualityComparer.Default.Equals(model.ContainingAssembly, compilation.Assembly))
+            return null;
+
+        var validator = model.ContainingAssembly?.GetTypeByMetadataName(GeneratedValidatorNames.MetadataName(model));
         return validator is not null && compilation.IsSymbolAccessibleWithin(validator, compilation.Assembly)
-            ? name
+            ? validator
             : null;
     }
 

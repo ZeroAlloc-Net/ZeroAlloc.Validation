@@ -50,4 +50,20 @@ public class ComposedOptionsIntegrationTests
         Assert.Contains(ex.Failures, f => f.Contains("Leader.Port", System.StringComparison.Ordinal));
         Assert.Contains(ex.Failures, f => f.Contains("Followers[1].Port", System.StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void ComposedOptions_InvalidThirdLevel_FailValidation()
+    {
+        using var sp = Build(new ClusterOptions
+        {
+            Name = "c1",
+            Leader = new NodeOptions { Port = 1, Tls = new TlsOptions { Version = 0 } },
+            Followers = [new NodeOptions { Port = 2, Tls = new TlsOptions { Version = 0 } }],
+        });
+
+        var ex = Assert.Throws<OptionsValidationException>(
+            () => sp.GetRequiredService<IOptions<ClusterOptions>>().Value);
+        Assert.Contains(ex.Failures, f => f.Contains("Leader.Tls.Version", System.StringComparison.Ordinal));
+        Assert.Contains(ex.Failures, f => f.Contains("Followers[0].Tls.Version", System.StringComparison.Ordinal));
+    }
 }

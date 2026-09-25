@@ -1,4 +1,4 @@
-namespace ZeroAlloc.Validation.Generator;
+namespace ZeroAlloc.Validation.Generator.Shared;
 
 /// <summary>
 /// Why the generated validator cannot read a property as <c>instance.Prop</c>; see
