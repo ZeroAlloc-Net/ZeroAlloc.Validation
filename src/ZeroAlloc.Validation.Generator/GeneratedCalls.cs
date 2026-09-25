@@ -1,13 +1,16 @@
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using ZeroAlloc.Validation.Generator.Shared;
 
 namespace ZeroAlloc.Validation.Generator;
 
 /// <summary>
-/// The code the generated validator uses to call the model's methods, and the file context it
-/// is compiled in. The emitter and <see cref="MethodCallProbe"/> both build their text here, so
-/// the probe compiles exactly what the validator will contain.
+/// The code the generated validator uses to read the model's properties and call its methods,
+/// and the file context it is compiled in. The emitter and <see cref="MethodCallProbe"/> both
+/// build their text here, so the probe compiles exactly what the validator will contain. Every
+/// member name goes through <see cref="Identifier"/>, so one declared with a keyword name, such
+/// as <c>@class</c>, is written <c>instance.@class</c>, issue #242.
 /// </summary>
 internal static class GeneratedCalls
 {
@@ -44,32 +47,43 @@ internal static class GeneratedCalls
     }
 
     /// <summary>The namespace the validator for <paramref name="model"/> is declared in.</summary>
-    public static string? NamespaceOf(INamedTypeSymbol model) =>
-        model.ContainingNamespace.IsGlobalNamespace ? null : model.ContainingNamespace.ToDisplayString();
+    public static string? NamespaceOf(INamedTypeSymbol model) => GeneratedValidatorNames.NamespaceName(model);
+
+    /// <summary>
+    /// <paramref name="name"/>, a member name as the symbol reports it, written as C# code: a
+    /// reserved keyword such as <c>class</c> gets the <c>@</c> escape it was declared with. A
+    /// contextual keyword such as <c>value</c> or <c>nameof</c> is an identifier wherever the
+    /// generated code names a member, after <c>instance.</c>, so it is left as it is.
+    /// </summary>
+    public static string Identifier(string name) =>
+        SyntaxFacts.GetKeywordKind(name) == SyntaxKind.None ? name : "@" + name;
+
+    /// <summary><c>instance.Member</c>, with the member name escaped where it is a keyword.</summary>
+    public static string MemberAccess(string model, string member) => $"{model}.{Identifier(member)}";
 
     /// <summary>The value a <c>[Must]</c> predicate receives: the property, not unwrapped.</summary>
-    public static string RawPropertyAccess(string model, IPropertySymbol prop) => $"{model}.{prop.Name}";
+    public static string RawPropertyAccess(string model, IPropertySymbol prop) => MemberAccess(model, prop.Name);
 
     /// <summary>A <c>When</c> guard, followed by the rule's condition.</summary>
-    public static string WhenGuard(string model, string method) => $"{model}.{method}() && ";
+    public static string WhenGuard(string model, string method) => $"{MemberAccess(model, method)}() && ";
 
     /// <summary>An <c>Unless</c> guard, followed by the rule's condition.</summary>
-    public static string UnlessGuard(string model, string method) => $"!{model}.{method}() && ";
+    public static string UnlessGuard(string model, string method) => $"!{MemberAccess(model, method)}() && ";
 
     /// <summary>A <c>[Must]</c> rule's failure condition.</summary>
-    public static string MustCondition(string model, string method, string argument) => $"!{model}.{method}({argument})";
+    public static string MustCondition(string model, string method, string argument) => $"!{MemberAccess(model, method)}({argument})";
 
     /// <summary>The <c>[SkipWhen]</c> condition.</summary>
-    public static string SkipWhenCondition(string model, string method) => $"{model}.{method}()";
+    public static string SkipWhenCondition(string model, string method) => $"{MemberAccess(model, method)}()";
 
     /// <summary>A <c>[CustomValidation]</c> call, on the model or through <paramref name="receiverType"/>.</summary>
     public static string CustomValidationCall(string model, string method, string? receiverType) =>
-        receiverType is null ? $"{model}.{method}()" : $"(({receiverType}){model}).{method}()";
+        receiverType is null ? $"{MemberAccess(model, method)}()" : $"{MemberAccess($"(({receiverType}){model})", method)}()";
 
     /// <summary>
-    /// Whether <paramref name="name"/> can follow <c>instance.</c> in generated code at all. Any
-    /// other text would not parse there, so it is reported without being compiled.
+    /// Whether <paramref name="name"/> can follow <c>instance.</c> in generated code at all, once
+    /// <see cref="Identifier"/> has escaped it. Any other text would not parse there, so it is
+    /// reported without being compiled.
     /// </summary>
-    public static bool IsMethodName(string name) =>
-        SyntaxFacts.IsValidIdentifier(name) && SyntaxFacts.GetKeywordKind(name) == SyntaxKind.None;
+    public static bool IsMethodName(string name) => SyntaxFacts.IsValidIdentifier(name);
 }

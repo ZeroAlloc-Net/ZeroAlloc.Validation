@@ -90,6 +90,7 @@ internal static class RuleEmitter
         var byProperty = CollectPropertyRules(classSymbol, compilation, ctx);
         var nestedProperties = GetNestedValidateProperties(classSymbol, compilation).ToList();
         var collectionProperties = GetCollectionValidateProperties(classSymbol, compilation).ToList();
+        var validatorFields = NestedValidatorFieldsByProperty(classSymbol, compilation);
         var customMethods = CollectCustomValidationMethods(classSymbol, compilation);
         bool hasNested = nestedProperties.Count > 0 || collectionProperties.Count > 0 || customMethods.Count > 0;
         int totalDirectRules = byProperty.Sum(x => x.Rules.Count);
@@ -99,7 +100,7 @@ internal static class RuleEmitter
         bool validatorStop = GetBoolNamedArg(validateAttr, "StopOnFirstFailure");
 
         if (hasNested)
-            EmitNestedPath(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, customMethods, modelParamName, validatorStop, totalDirectRules, ctx, fields);
+            EmitNestedPath(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, customMethods, modelParamName, validatorStop, totalDirectRules, ctx, fields);
         else
             EmitFlatPath(sb, classSymbol, byProperty, totalDirectRules, modelParamName, validatorStop, ctx, fields);
     }
@@ -151,6 +152,7 @@ internal static class RuleEmitter
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         List<IPropertySymbol> nestedProperties,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
+        Dictionary<IPropertySymbol, string> validatorFields,
         List<CustomValidationCall> customMethods,
         string modelParamName,
         bool validatorStop,
@@ -164,12 +166,12 @@ internal static class RuleEmitter
         if (!validatorStop)
         {
             EmitPropertyRulesWithAdd(sb, byProperty, classSymbol, modelParamName, ctx, fields);
-            EmitNestedValidators(sb, nestedProperties, modelParamName);
-            EmitCollectionValidators(sb, collectionProperties, modelParamName);
+            EmitNestedValidators(sb, nestedProperties, validatorFields, modelParamName);
+            EmitCollectionValidators(sb, collectionProperties, validatorFields, modelParamName);
         }
         else
         {
-            EmitNestedPathStop(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, modelParamName, ctx, fields);
+            EmitNestedPathStop(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, modelParamName, ctx, fields);
         }
 
         // [CustomValidation] methods always run last.
@@ -319,6 +321,7 @@ internal static class RuleEmitter
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         List<IPropertySymbol> nestedProperties,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
+        Dictionary<IPropertySymbol, string> validatorFields,
         string modelParamName,
         SourceProductionContext? ctx,
         GeneratedFields? fields = null)
@@ -345,10 +348,10 @@ internal static class RuleEmitter
                 EmitPropertyRulesForProp(sb, directProp, directRules, classSymbol, modelParamName, ctx, fields);
 
             if (nestedProp is not null)
-                EmitNestedValidatorForProp(sb, nestedProp, modelParamName);
+                EmitNestedValidatorForProp(sb, nestedProp, ValidatorField(validatorFields, nestedProp), modelParamName);
 
             if (collProp is not null && collElementType is not null)
-                EmitCollectionValidatorForProp(sb, collProp, collElementType, collCi++, modelParamName);
+                EmitCollectionValidatorForProp(sb, collProp, collElementType, ValidatorField(validatorFields, collProp), collCi++, modelParamName);
 
             sb.AppendLine($"        if (_buf.Count > _b{groupIdx}) return _buf.ToResult();");
             sb.AppendLine();
@@ -458,24 +461,26 @@ internal static class RuleEmitter
     private static void EmitNestedValidators(
         StringBuilder sb,
         List<IPropertySymbol> nestedProperties,
+        Dictionary<IPropertySymbol, string> validatorFields,
         string modelParamName)
     {
         for (int ni = 0; ni < nestedProperties.Count; ni++)
-            EmitNestedValidatorForProp(sb, nestedProperties[ni], modelParamName);
+            EmitNestedValidatorForProp(sb, nestedProperties[ni], ValidatorField(validatorFields, nestedProperties[ni]), modelParamName);
     }
 
-    private static void EmitNestedValidatorForProp(StringBuilder sb, IPropertySymbol nestedProp, string modelParamName)
+    private static void EmitNestedValidatorForProp(StringBuilder sb, IPropertySymbol nestedProp, string validatorField, string modelParamName)
     {
         var propName = nestedProp.Name;
-        var camelN = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture) + propName.Substring(1);
+
+        var access = GeneratedCalls.MemberAccess(modelParamName, propName);
 
         var needsPropGuard = NeedsNullGuard(nestedProp.Type);
         if (needsPropGuard)
         {
-            sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
+            sb.AppendLine($"        if ({access} is not null)");
             sb.AppendLine("        {");
         }
-        sb.AppendLine($"            var nestedResult = _{camelN}Validator.Validate({modelParamName}.{propName});");
+        sb.AppendLine($"            var nestedResult = {validatorField}.Validate({access});");
         sb.AppendLine("            foreach (ref readonly var f in nestedResult.Failures)");
         sb.AppendLine($"                _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
         if (needsPropGuard)
@@ -488,23 +493,28 @@ internal static class RuleEmitter
     private static void EmitCollectionValidators(
         StringBuilder sb,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
+        Dictionary<IPropertySymbol, string> validatorFields,
         string modelParamName)
     {
         for (int ci = 0; ci < collectionProperties.Count; ci++)
-            EmitCollectionValidatorForProp(sb, collectionProperties[ci].Property, collectionProperties[ci].ElementType, ci, modelParamName);
+        {
+            var property = collectionProperties[ci].Property;
+            EmitCollectionValidatorForProp(sb, property, collectionProperties[ci].ElementType, ValidatorField(validatorFields, property), ci, modelParamName);
+        }
     }
 
-    private static void EmitCollectionValidatorForProp(StringBuilder sb, IPropertySymbol collProp, INamedTypeSymbol elementType, int ci, string modelParamName)
+    private static void EmitCollectionValidatorForProp(StringBuilder sb, IPropertySymbol collProp, INamedTypeSymbol elementType, string validatorField, int ci, string modelParamName)
     {
         var propName = collProp.Name;
         var varName = $"_c{ci.ToString(CultureInfo.InvariantCulture)}";
-        var camelC = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture) + propName.Substring(1);
 
         var style = ClassifyCollectionIteration(collProp.Type);
 
-        sb.AppendLine($"        if ({modelParamName}.{propName} is not null)");
+        var access = GeneratedCalls.MemberAccess(modelParamName, propName);
+
+        sb.AppendLine($"        if ({access} is not null)");
         sb.AppendLine("        {");
-        sb.AppendLine($"            var {varName}Src = {modelParamName}.{propName};");
+        sb.AppendLine($"            var {varName}Src = {access};");
 
         switch (style)
         {
@@ -536,7 +546,7 @@ internal static class RuleEmitter
             sb.AppendLine($"                if ({varName}Item is not null)");
             sb.AppendLine("                {");
         }
-        sb.AppendLine($"                    var {varName}Result = _{camelC}Validator.Validate({varName}Item);");
+        sb.AppendLine($"                    var {varName}Result = {validatorField}.Validate({varName}Item);");
         sb.AppendLine($"                    foreach (ref readonly var f in {varName}Result.Failures)");
         sb.AppendLine($"                        _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
         if (needsItemGuard)
@@ -1424,10 +1434,57 @@ internal static class RuleEmitter
             .Where(x => x.HasValue)
             .Select(x => x!.Value);
 
-    public static System.Collections.Generic.List<(string FieldName, string ParamName, string QualifiedValidatorType)>
+    /// <summary>
+    /// The generated validator's fields and constructor parameters for its nested and collection
+    /// properties, with the member each parameter's documentation names; see
+    /// <see cref="NestedValidatorFields"/>.
+    /// </summary>
+    public static System.Collections.Generic.List<(string FieldName, string ParamName, string QualifiedValidatorType, string MemberDescription)>
         CollectNestedValidatorFields(INamedTypeSymbol classSymbol, Compilation compilation)
     {
-        var result = new System.Collections.Generic.List<(string, string, string)>();
+        var fields = NestedValidatorFields(classSymbol, compilation);
+        var result = new System.Collections.Generic.List<(string, string, string, string)>(fields.Count);
+        for (var i = 0; i < fields.Count; i++)
+            result.Add((fields[i].FieldName, fields[i].ParamName, fields[i].QualifiedValidatorType, fields[i].MemberDescription));
+        return result;
+    }
+
+    /// <summary>
+    /// The validator field each nested or collection property is validated through, as
+    /// <see cref="CollectNestedValidatorFields"/> declares it.
+    /// </summary>
+    private static Dictionary<IPropertySymbol, string> NestedValidatorFieldsByProperty(INamedTypeSymbol classSymbol, Compilation compilation)
+    {
+        var fields = NestedValidatorFields(classSymbol, compilation);
+        var result = new Dictionary<IPropertySymbol, string>(SymbolEqualityComparer.Default);
+        for (var i = 0; i < fields.Count; i++)
+            result[fields[i].Property] = fields[i].FieldName;
+        return result;
+    }
+
+    /// <summary>
+    /// The field <paramref name="prop"/> is validated through. Every property the emit paths
+    /// validate as a nested model or collection is in <paramref name="validatorFields"/>; the
+    /// fallback is the name it would have without a collision.
+    /// </summary>
+    private static string ValidatorField(Dictionary<IPropertySymbol, string> validatorFields, IPropertySymbol prop) =>
+        validatorFields.TryGetValue(prop, out var field) ? field : $"_{CamelCase(prop.Name)}Validator";
+
+    /// <summary>
+    /// One validator field and constructor parameter per nested or collection property, in
+    /// declaration order. Each is named after the property in camel case, <c>_addressValidator</c>
+    /// and <c>addressValidator</c>. Two properties whose names differ only in the case of the first
+    /// letter, such as <c>Address</c> and <c>address</c>, would share that name, so the later one
+    /// gets the first free numeric suffix, <c>address2</c>, skipping any name another property
+    /// already takes. A model without such a pair keeps exactly the names it always had.
+    /// The documentation names the member as the camel-cased name with its first letter
+    /// capitalised, as it always has; the properties of such a pair are named as declared
+    /// instead, since that form would give both the same name.
+    /// </summary>
+    private static List<(IPropertySymbol Property, string FieldName, string ParamName, string QualifiedValidatorType, string MemberDescription)>
+        NestedValidatorFields(INamedTypeSymbol classSymbol, Compilation compilation)
+    {
+        var properties = new List<(IPropertySymbol Property, string Camel, string QualifiedValidatorType)>();
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IPropertySymbol prop) continue;
@@ -1454,14 +1511,41 @@ internal static class RuleEmitter
             }
 
             if (qualifiedType is null) continue;
+            properties.Add((prop, CamelCase(prop.Name), qualifiedType));
+        }
 
-            var propName = prop.Name;
-            var camel = char.ToLowerInvariant(propName[0]).ToString(CultureInfo.InvariantCulture)
-                        + propName.Substring(1);
-            result.Add(($"_{camel}Validator", $"{camel}Validator", qualifiedType));
+        var natural = new HashSet<string>(StringComparer.Ordinal);
+        var shared = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < properties.Count; i++)
+        {
+            if (!natural.Add(properties[i].Camel))
+                shared.Add(properties[i].Camel);
+        }
+
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<(IPropertySymbol, string, string, string, string)>(properties.Count);
+        for (var i = 0; i < properties.Count; i++)
+        {
+            var (prop, camel, qualifiedType) = properties[i];
+            var name = camel;
+            var description = shared.Contains(camel)
+                ? prop.Name
+                : char.ToUpperInvariant(camel[0]).ToString(CultureInfo.InvariantCulture) + camel.Substring(1);
+            if (!used.Add(name))
+            {
+                for (var n = 2; ; n++)
+                {
+                    name = camel + n.ToString(CultureInfo.InvariantCulture);
+                    if (!natural.Contains(name) && used.Add(name)) break;
+                }
+            }
+            result.Add((prop, $"_{name}Validator", $"{name}Validator", qualifiedType, description));
         }
         return result;
     }
+
+    private static string CamelCase(string name) =>
+        char.ToLowerInvariant(name[0]).ToString(CultureInfo.InvariantCulture) + name.Substring(1);
 
     internal static ITypeSymbol? GetCollectionElementTypePublic(IPropertySymbol prop) => GetCollectionElementType(prop);
 
@@ -1535,9 +1619,9 @@ internal static class RuleEmitter
     /// </summary>
     private static string BuildPropertyAccess(string modelParamName, IPropertySymbol prop)
     {
-        var raw = $"{modelParamName}.{prop.Name}";
+        var raw = GeneratedCalls.RawPropertyAccess(modelParamName, prop);
         var unwrapMember = GetValueObjectUnwrapMember(prop.Type);
-        return unwrapMember is not null ? $"{raw}.{unwrapMember}" : raw;
+        return unwrapMember is not null ? GeneratedCalls.MemberAccess(raw, unwrapMember) : raw;
     }
 
     private static readonly DiagnosticDescriptor ZV0016 = new DiagnosticDescriptor(

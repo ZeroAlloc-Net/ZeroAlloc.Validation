@@ -70,6 +70,8 @@ public sealed class OrderValidator : ValidatorFor<Order>
 
 The nested validator is always injected via constructor — the generator never uses `new AddressValidator()` directly.
 
+Each nested validator's field and constructor parameter are named after the property in camel case, `shippingAddressValidator` for `ShippingAddress`. Two properties whose names differ only in the case of the first letter, such as `Address` and `address`, would get the same name, so the later one in declaration order takes the first free numeric suffix: `addressValidator` and `address2Validator`. Every other model keeps the plain names.
+
 ## Failure path prefixing
 
 Failures from the nested validator are prefixed with the parent property name and a dot before being added to the outer result buffer. A failure on `Street` inside `ShippingAddress` surfaces as `"ShippingAddress.Street"`.

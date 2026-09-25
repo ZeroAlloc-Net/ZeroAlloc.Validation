@@ -25,3 +25,4 @@ ZV0027 | ZeroAlloc.Validation | Error | Validation attribute applied to a proper
 ZV0028 | ZeroAlloc.Validation | Error | Validation method the generated validator cannot call
 ZV0029 | ZeroAlloc.Validation | Error | [Validate] on a generic type
 ZV0030 | ZeroAlloc.Validation | Error | Validation method call that does not compile
+ZV0031 | ZeroAlloc.Validation | Error | Two [Validate] models whose validators would have the same name
