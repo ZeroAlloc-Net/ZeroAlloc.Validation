@@ -88,9 +88,10 @@ internal static class MemberWalker
     /// <summary>
     /// Base-type members that carry ZeroAlloc validation attributes but cannot be referenced
     /// from the generated validator (a separate class), so their rules are silently dropped.
-    /// Reported as ZV0017 rather than emitting code that would not compile. The walk stops at a
-    /// base type that is itself <c>[Validate]</c>: its own generation reports its members, as
-    /// ZV0027 for its own unreadable properties, so the same rule is not reported twice.
+    /// Reported as ZV0017 rather than emitting code that would not compile. A member that the
+    /// generation of a <c>[Validate]</c> base type reports instead is still returned; the caller
+    /// filters it with <see cref="MethodReachability.IsReportedByBaseValidator"/>, which knows
+    /// whether that base type walks the member's declaring type.
     /// </summary>
     public static IEnumerable<ISymbol> GetInaccessibleBaseMembers(INamedTypeSymbol type)
     {
@@ -98,8 +99,6 @@ internal static class MemberWalker
 
         for (var current = type.BaseType; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
         {
-            if (HasValidateAttribute(current)) yield break;
-
             foreach (var member in current.GetMembers())
             {
                 if (member is not IPropertySymbol && member is not IMethodSymbol) continue;
@@ -253,16 +252,6 @@ internal static class MemberWalker
                     member.ContainingAssembly, accessingType.ContainingAssembly),
             _ => false,
         };
-
-    private static bool HasValidateAttribute(INamedTypeSymbol type)
-    {
-        foreach (var attr in type.GetAttributes())
-        {
-            if (string.Equals(attr.AttributeClass?.ToDisplayString(), ValidateAttributeFqn, StringComparison.Ordinal))
-                return true;
-        }
-        return false;
-    }
 
     private static bool HasZeroAllocValidationAttribute(ISymbol member)
     {

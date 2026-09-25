@@ -452,6 +452,112 @@ public class UnreadablePropertyDiagnosticTests
         Assert.Equal(new[] { "Other", "Home.Street" }, FailedProperties(output));
     }
 
+    private const string UnreadableAndUncallableMembers = """
+            [NotEmpty] public static string? Code { get; set; }
+
+            [Must(nameof(IsKnown))] public string? Name { get; set; } = "x";
+
+            [CustomValidation]
+            private System.Collections.Generic.IEnumerable<ValidationFailure> Extra() { yield break; }
+
+            private bool IsKnown(string? value) => value is not null;
+        """;
+
+    [Fact]
+    public void Model_with_an_unreadable_property_and_uncallable_methods_reports_each_usage_once()
+    {
+        // ZV0027 for the property, ZV0028 for each method: one diagnostic per usage, no ZV0017.
+        var source = Prelude + $$"""
+            [Validate]
+            public class Request
+            {
+            {{UnreadableAndUncallableMembers}}
+
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Equal(1, CountDiagnostics(result, "ZV0027"));
+        Assert.Equal(2, CountDiagnostics(result, "ZV0028"));
+        Assert.Equal(0, CountDiagnostics(result, "ZV0017"));
+        Assert.Equal(new[] { "Other" }, FailedProperties(output));
+    }
+
+    [Fact]
+    public void Validate_base_with_an_unreadable_property_and_uncallable_methods_reports_each_usage_once()
+    {
+        // The [Validate] base reports its own members; the derived model adds nothing.
+        var source = Prelude + $$"""
+            [Validate]
+            public class RequestBase
+            {
+            {{UnreadableAndUncallableMembers}}
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Equal(1, CountDiagnostics(result, "ZV0027"));
+        Assert.Equal(2, CountDiagnostics(result, "ZV0028"));
+        Assert.Equal(0, CountDiagnostics(result, "ZV0017"));
+        Assert.Equal(new[] { "Other" }, FailedProperties(output));
+    }
+
+    [Fact]
+    public void Members_above_a_Validate_base_that_excludes_base_properties_are_reported_by_the_model()
+    {
+        // RequestMiddle is [Validate] but does not walk RequestRoot, so RequestRoot's rules are
+        // the model's to report: nothing may be dropped without a diagnostic.
+        var source = Prelude + """
+            public class RequestRoot
+            {
+                [NotEmpty] public static string? Code { get; set; }
+
+                [NotEmpty] protected string? Secret { get; set; }
+
+                [CustomValidation]
+                protected System.Collections.Generic.IEnumerable<ValidationFailure> Extra() { yield break; }
+            }
+
+            [Validate(IncludeBaseProperties = false)]
+            public class RequestMiddle : RequestRoot
+            {
+            }
+
+            [Validate]
+            public class Request : RequestMiddle
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Equal(1, CountDiagnostics(result, "ZV0027"));
+        Assert.Equal(2, CountDiagnostics(result, "ZV0017"));
+        Assert.Equal(0, CountDiagnostics(result, "ZV0028"));
+        Assert.Equal(new[] { "Other" }, FailedProperties(output));
+    }
+
+    private static int CountDiagnostics(GeneratorDriverRunResult result, string id)
+    {
+        var count = 0;
+        foreach (var diagnostic in result.Diagnostics)
+        {
+            if (string.Equals(diagnostic.Id, id, StringComparison.Ordinal))
+                count++;
+        }
+        return count;
+    }
+
     private static Diagnostic SingleZV0027(GeneratorDriverRunResult result)
     {
         var matches = result.Diagnostics
