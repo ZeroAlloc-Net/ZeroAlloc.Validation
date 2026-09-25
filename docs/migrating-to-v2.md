@@ -106,6 +106,25 @@ Make the type, and every type containing it, `internal` or `public`, and drop `f
 follows it and is `internal` too. If the type never needed validating, remove `[Validate]`
 instead.
 
+## A rule on a property the validator cannot read now fails the build (ZV0027)
+
+The generated validator reads each property as `instance.Property`. A rule on a static
+property, an indexer, a property with no getter, or a property whose getter the validator
+cannot access used to be emitted anyway. On the `[Validate]` type itself that already failed
+the build, but with CS0176, CS0154, CS0271 or CS0122 inside generated code. 2.0 reports
+[ZV0027](diagnostics.md#zv0027) at the attribute instead and validates the rest of the model.
+
+One case compiled in 1.x: a rule on a base-type property with no getter, or on a `private` or
+`protected` static base property, was dropped with a [ZV0017](diagnostics.md#zv0017) warning.
+It is now ZV0027, an error, because the rule never runs and making the property public would
+not change that.
+
+### What to do
+
+Move the rule to a public or internal instance property with a readable getter, or remove it.
+A property of a `[Validate]` type that the validator cannot read is no longer composed, and
+nothing is reported for it.
+
 ## A validation method the validator cannot call now fails the build (ZV0028)
 
 The generated validator calls `[CustomValidation]`, `[Must]`, `When` and `Unless` methods as

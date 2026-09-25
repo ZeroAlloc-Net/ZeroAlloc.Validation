@@ -19,14 +19,16 @@ internal static class MemberWalker
     /// the derived type. A member hidden by a more-derived declaration (<c>new</c> or
     /// <c>override</c>) is yielded once, from the most-derived type that declares it.
     /// Base members the generated validator could not legally reference are skipped —
-    /// <see cref="GetInaccessibleBaseMembers"/> reports those separately as ZV0017.
+    /// <see cref="GetInaccessibleBaseMembers"/> reports those separately as ZV0017. A property
+    /// the validator cannot read as <c>instance.Prop</c>, on any level, is skipped as well — see
+    /// <see cref="GetUnreadableReason"/>; ZV0027 reports a rule placed on one.
     /// Returns only <paramref name="type"/>'s own members when
     /// <c>[Validate(IncludeBaseProperties = false)]</c> is set.
     /// </summary>
     public static ImmutableArray<ISymbol> GetMembersIncludingBase(INamedTypeSymbol type)
     {
         if (!IncludesBaseProperties(type))
-            return type.GetMembers();
+            return ReadableMembers(type, type);
 
         // Derived -> base, so the most-derived declaration of a hidden member is the one kept.
         var levels = new List<INamedTypeSymbol>();
@@ -34,7 +36,7 @@ internal static class MemberWalker
             levels.Add(current);
 
         if (levels.Count <= 1)
-            return type.GetMembers();
+            return ReadableMembers(type, type);
 
         var perLevel = new List<List<ISymbol>>(levels.Count);
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -43,17 +45,31 @@ internal static class MemberWalker
         {
             bool isBase = i > 0;
             var kept = new List<ISymbol>();
+            var hiding = new List<ISymbol>();
             foreach (var member in levels[i].GetMembers())
             {
                 // A more-derived level already contributed this member — that declaration wins,
                 // whether it hides the base one with `new` or overrides it.
                 if (seen.Contains(HidingKey(member))) continue;
+
+                // `instance.Prop` binds to a property the validator can see even when it cannot
+                // read it, a static one or one without a getter, so that property still hides
+                // the base declarations of the same name.
+                if (member is IPropertySymbol property && GetUnreadableReason(property, type) != UnreadableReason.None)
+                {
+                    if (IsAccessibleAccessibility(property.DeclaredAccessibility, property, type))
+                        hiding.Add(property);
+                    continue;
+                }
+
                 if (isBase && !IsAccessibleFrom(member, type)) continue;
                 kept.Add(member);
             }
 
             for (int k = 0; k < kept.Count; k++)
                 seen.Add(HidingKey(kept[k]));
+            for (int k = 0; k < hiding.Count; k++)
+                seen.Add(HidingKey(hiding[k]));
 
             perLevel.Add(kept);
         }
@@ -83,11 +99,56 @@ internal static class MemberWalker
             foreach (var member in current.GetMembers())
             {
                 if (member is not IPropertySymbol && member is not IMethodSymbol) continue;
+                // A static, getter-less or indexer property cannot be read however accessible it
+                // is; that is ZV0027's case, reported at each rule, not an accessibility problem.
+                if (member is IPropertySymbol property && IsUnreadableByShape(GetUnreadableReason(property, type))) continue;
                 if (IsAccessibleFrom(member, type)) continue;
                 if (!HasZeroAllocValidationAttribute(member)) continue;
                 yield return member;
             }
         }
+    }
+
+    /// <summary>
+    /// Why the generated validator for <paramref name="validatedType"/>, an unrelated class in the
+    /// same assembly, cannot read <paramref name="property"/> as <c>instance.Prop</c>, or
+    /// <see cref="UnreadableReason.None"/> when it can. The shape of the property is checked
+    /// before its accessibility, so a private static property reports as static.
+    /// </summary>
+    public static UnreadableReason GetUnreadableReason(IPropertySymbol property, INamedTypeSymbol validatedType)
+    {
+        if (property.IsIndexer) return UnreadableReason.Indexer;
+        if (property.IsStatic) return UnreadableReason.Static;
+        if (property.GetMethod is null) return UnreadableReason.NoGetter;
+        if (!IsAccessibleAccessibility(property.DeclaredAccessibility, property, validatedType))
+            return UnreadableReason.Inaccessible;
+        if (!IsAccessibleAccessibility(property.GetMethod.DeclaredAccessibility, property.GetMethod, validatedType))
+            return UnreadableReason.GetterInaccessible;
+        return UnreadableReason.None;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="reason"/> holds whatever the property's accessibility: a static
+    /// property, an indexer, or one with no getter.
+    /// </summary>
+    public static bool IsUnreadableByShape(UnreadableReason reason) =>
+        reason is UnreadableReason.Static or UnreadableReason.Indexer or UnreadableReason.NoGetter;
+
+    /// <summary>
+    /// <paramref name="type"/>'s own members without the properties the validator for
+    /// <paramref name="validatedType"/> cannot read.
+    /// </summary>
+    private static ImmutableArray<ISymbol> ReadableMembers(INamedTypeSymbol type, INamedTypeSymbol validatedType)
+    {
+        var members = type.GetMembers();
+        var builder = ImmutableArray.CreateBuilder<ISymbol>(members.Length);
+        foreach (var member in members)
+        {
+            if (member is IPropertySymbol property && GetUnreadableReason(property, validatedType) != UnreadableReason.None)
+                continue;
+            builder.Add(member);
+        }
+        return builder.ToImmutable();
     }
 
     /// <summary>

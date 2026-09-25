@@ -28,6 +28,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0024](#zv0024) | Error | Validation attribute applied where the generator does not read it |
 | [ZV0025](#zv0025) | Error | [Validate] type not accessible from the generated validator |
 | [ZV0026](#zv0026) | Warning | [RuleMessage] on a class that is not a custom rule |
+| [ZV0027](#zv0027) | Error | Validation attribute applied to a property the generated validator cannot read |
 | [ZV0028](#zv0028) | Error | Validation method the generated validator cannot call |
 
 ---
@@ -167,11 +168,11 @@ public partial class PriceCommand
 
 **When fired:** A `[Validate]` type inherits from a base type that declares validation rules, but the member those rules depend on cannot be referenced from the generated validator. The generated validator is a separate class, so it can reach `public` members — and `internal` ones when the base type lives in the same assembly — but never `private` or `protected` ones. Three cases fire this:
 
-- a base property carrying rule attributes is `protected` or `private` (or exposes no accessible getter);
+- a base property carrying rule attributes is `protected` or `private`, or its getter is;
 - a `[CustomValidation]` method on a base type is `protected` or `private`;
 - a rule on an otherwise-reachable property names a `When` / `Unless` method or a `[Must]` predicate that is `protected` or `private` on a base type.
 
-In each case the rule is dropped rather than emitted as code that would not compile. A static method is reported as [ZV0028](#zv0028) instead, wherever it is declared, because widening it would not make it callable. So is an inaccessible method declared on the `[Validate]` type itself, since that type is yours to change. A rule declared on a base type that is itself `[Validate]` is reported once, by that type.
+In each case the rule is dropped rather than emitted as code that would not compile. A base property that is static, an indexer or has no getter is reported as [ZV0027](#zv0027) instead, because widening it would not make it readable. A static method is reported as [ZV0028](#zv0028) instead, wherever it is declared, because widening it would not make it callable. So is an inaccessible method declared on the `[Validate]` type itself, since that type is yours to change. A rule declared on a base type that is itself `[Validate]` is reported once, by that type.
 
 **Fix:** Widen the member to `public` (or `internal` within the same assembly), or move it onto the derived type:
 
@@ -521,6 +522,47 @@ The warning is reported at the `[RuleMessage]` attribute, whether or not the pro
 
 **Fix:** Derive the class from `ValidationAttribute<T>` if it is meant to be a rule, or remove the
 `[RuleMessage]`. Nothing is generated differently, so this is a warning rather than an error.
+
+---
+
+## ZV0027
+
+**Severity:** Error
+
+**Title:** Validation attribute applied to a property the generated validator cannot read
+
+**When fired:** A rule, meaning any attribute deriving from `ValidationAttribute` such as a built-in rule, `[Must]` or a custom `ValidationAttribute<T>`, or a `[ValidateWith]` is applied to a property that the generated validator cannot read. The validator reads each property as `instance.Property`, which does not compile when the property:
+
+- is `static`;
+- is an indexer;
+- has no `get` accessor;
+- is `private` or `protected`, or its `get` accessor is, when the property is declared on the `[Validate]` type itself.
+
+```csharp
+[Validate]
+public class Order
+{
+    [NotEmpty]                               // ZV0027 — static
+    public static string? DefaultCurrency { get; set; }
+
+    [MaxLength(64)]                          // ZV0027 — no get accessor
+    public string? Password { set => _hash = Hash(value); }
+
+    [NotBlank]                               // ZV0027 — the getter is private
+    public string? Reference { private get; set; }
+
+    [NotEmpty]                               // ZV0027 — an indexer
+    public string this[int index] => _lines[index];
+}
+```
+
+> '{0}' is applied to '{1}', which the generated validator cannot read because the property {2}
+
+The rule is left out rather than emitted as code that fails with CS0176, CS0154, CS0271 or CS0122, and every other property is still validated. Each attribute is reported, so a property with two rules reports twice.
+
+On a base type, a static, indexer or getter-less property is reported the same way. A base property that is only inaccessible stays [ZV0017](#zv0017), a warning, because the base type may not be yours to change. A property of a `[Validate]` type is composed into the parent's validator without any attribute, so when such a property cannot be read it is simply not composed, and nothing is reported.
+
+**Fix:** Put the rule on a public or internal instance property with a readable getter, or remove it. To validate state kept in a static or write-only member, expose it through a readable property, or check it in a `[CustomValidation]` method.
 
 ---
 

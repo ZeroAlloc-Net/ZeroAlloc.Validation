@@ -164,6 +164,14 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         }
     }
 
+    private static readonly DiagnosticDescriptor ZV0027 = new DiagnosticDescriptor(
+        id: "ZV0027",
+        title: "Validation attribute applied to a property the generated validator cannot read",
+        messageFormat: "'{0}' is applied to '{1}', which the generated validator cannot read because the property {2}",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     // The exact MSBuild property name shared, unqualified, across every ZeroAlloc generator
     // package (issue #193). CompilerVisibleProperty in the package's build/buildTransitive
     // props makes it available here as build_property.<name>.
@@ -681,19 +689,24 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// constructor parameters are searched on <paramref name="classSymbol"/> and on each base
     /// type whose properties it validates. The walk stops at a base type that is itself
     /// <c>[Validate]</c>, whose own generation reports its members, so each usage reports once.
+    /// The same walk reports ZV0027 for the properties the validator cannot read.
     /// </summary>
     private static void ReportUnreadValidationAttributeDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
     {
         var includeBase = MemberWalker.IncludesBaseProperties(classSymbol);
         for (var type = classSymbol; type is not null && type.SpecialType != SpecialType.System_Object; type = type.BaseType)
         {
-            if (!SymbolEqualityComparer.Default.Equals(type, classSymbol) && (!includeBase || HasValidateAttribute(type)))
+            bool isBase = !SymbolEqualityComparer.Default.Equals(type, classSymbol);
+            if (isBase && (!includeBase || HasValidateAttribute(type)))
                 break;
 
             foreach (var member in type.GetMembers())
             {
                 switch (member)
                 {
+                    case IPropertySymbol property:
+                        ReportUnreadablePropertyAttributes(ctx, property, classSymbol, isBase);
+                        break;
                     case IFieldSymbol field:
                         ReportUnreadValidationAttributes(ctx, field, field.Name);
                         break;
@@ -753,6 +766,47 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         }
         return type.Locations.FirstOrDefault() ?? Location.None;
     }
+
+    /// <summary>
+    /// ZV0027: the generated validator reads a property as <c>instance.Prop</c>, which does not
+    /// compile for a static property, an indexer, a property with no getter, or one whose getter
+    /// the validator cannot access. <see cref="MemberWalker.GetMembersIncludingBase"/> leaves such
+    /// a property out, and each rule or <c>[ValidateWith]</c> placed on it is reported here. On a
+    /// base type, a property that is only inaccessible is ZV0017's case and is not reported again.
+    /// </summary>
+    private static void ReportUnreadablePropertyAttributes(
+        SourceProductionContext ctx, IPropertySymbol property, INamedTypeSymbol classSymbol, bool isBase)
+    {
+        var reason = MemberWalker.GetUnreadableReason(property, classSymbol);
+        if (reason == UnreadableReason.None) return;
+        if (isBase && !MemberWalker.IsUnreadableByShape(reason)) return;
+
+        foreach (var attr in property.GetAttributes())
+        {
+            if (attr.AttributeClass is not { } attrClass) continue;
+            if (!CustomRules.DerivesFromValidationAttribute(attrClass)
+                && !string.Equals(attrClass.ToDisplayString(), ValidateWithFqn, StringComparison.Ordinal))
+                continue;
+
+            ctx.ReportDiagnostic(Diagnostic.Create(
+                ZV0027,
+                attr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
+                    ?? property.Locations.FirstOrDefault(l => l.IsInSource)
+                    ?? Location.None,
+                attrClass.Name,
+                property.Name,
+                DescribeUnreadableReason(reason)));
+        }
+    }
+
+    private static string DescribeUnreadableReason(UnreadableReason reason) => reason switch
+    {
+        UnreadableReason.Static => "is static",
+        UnreadableReason.Indexer => "is an indexer",
+        UnreadableReason.NoGetter => "has no get accessor",
+        UnreadableReason.Inaccessible => "is not accessible from the generated validator",
+        _ => "has a get accessor the generated validator cannot access",
+    };
 
     private static bool HasValidateAttribute(INamedTypeSymbol type)
     {
