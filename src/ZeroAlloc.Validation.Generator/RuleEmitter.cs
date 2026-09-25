@@ -1501,6 +1501,17 @@ internal static class RuleEmitter
         && propertyType.NullableAnnotation == NullableAnnotation.Annotated
         && valueType.NullableAnnotation == NullableAnnotation.NotAnnotated;
 
+    /// <summary>
+    /// Whether <paramref name="attr"/>'s generated condition consumes the unwrapped operand
+    /// (<c>access</c> in <see cref="BuildCondition"/>) rather than the raw wrapper
+    /// (<c>rawForPredicate</c>). <c>[Must]</c> and custom rules deriving from
+    /// <c>ValidationAttribute&lt;T&gt;</c> both receive the raw wrapper and never count; every
+    /// other rule reaching here is a built-in operand rule (NotNull, GreaterThan, ...) and does.
+    /// </summary>
+    private static bool ConsumesUnwrappedValue(AttributeData attr) =>
+        !CustomRules.IsCustomRule(attr)
+        && !string.Equals(attr.AttributeClass?.ToDisplayString(), MustFqn, StringComparison.Ordinal);
+
     private static Location AttributeLocation(AttributeData attr, IPropertySymbol prop) =>
         attr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
             ?? prop.Locations.FirstOrDefault()
@@ -1516,8 +1527,11 @@ internal static class RuleEmitter
     private static void ReportZV0016IfApplicable(SourceProductionContext? ctx, IPropertySymbol prop, List<AttributeData> rules)
     {
         if (ctx is null) return;
-        // User-defined rules receive the wrapper itself and never unwrap, so only built-ins count.
-        if (rules.TrueForAll(CustomRules.IsCustomRule)) return;
+        // Only a rule that consumes the unwrapped operand (a built-in like NotNull, GreaterThan,
+        // ...) needs auto-unwrap to work. [Must] and custom ValidationAttribute<T> rules both
+        // receive the raw wrapper via rawForPredicate in BuildCondition and never benefit from
+        // it, so a property whose rules are only those never warrants ZV0016.
+        if (!rules.Exists(ConsumesUnwrappedValue)) return;
         if (!HasValueObjectAttribute(prop.Type)) return;
         if (GetValueObjectUnwrapMember(prop.Type) is not null) return;
 
