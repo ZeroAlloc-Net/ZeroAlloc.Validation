@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0024 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0026 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -26,6 +26,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0022](#zv0022) | Warning | Unknown placeholder in a custom rule message |
 | [ZV0023](#zv0023) | Error | Custom rule attribute not accessible from the generated validator |
 | [ZV0024](#zv0024) | Error | Validation attribute applied where the generator does not read it |
+| [ZV0026](#zv0026) | Warning | [RuleMessage] on a class that is not a custom rule |
 
 ---
 
@@ -434,3 +435,32 @@ public record Customer([property: NotBlank] string? Name);
 ```
 
 A field or parameter of a base type that is itself `[Validate]` is reported once, by that type.
+
+---
+
+## ZV0026
+
+**Severity:** Warning
+
+**Title:** [RuleMessage] on a class that is not a custom rule
+
+**When fired:** `[RuleMessage]` is applied to a class that does not derive, directly or through a
+base class, from `ValidationAttribute<T>`. The generator reads `[RuleMessage]` only for custom
+rules, so on any other class, including a subclass of the non-generic `ValidationAttribute`, the
+message is never used:
+
+```csharp
+[RuleMessage("{PropertyName} must not be blank.")]   // ZV0026 — not a ValidationAttribute<T>
+public sealed class NotBlankAttribute : Attribute { }
+```
+
+An abstract base rule, such as `abstract class StringRule : ValidationAttribute<string?>`, is a
+custom rule, so a `[RuleMessage]` on it is not reported; derived rules inherit it.
+
+The warning is reported at the `[RuleMessage]` attribute, whether or not the project has any
+`[Validate]` model.
+
+> '{0}' has [RuleMessage] but does not derive from ValidationAttribute<T>, so the message is never used
+
+**Fix:** Derive the class from `ValidationAttribute<T>` if it is meant to be a rule, or remove the
+`[RuleMessage]`. Nothing is generated differently, so this is a warning rather than an error.

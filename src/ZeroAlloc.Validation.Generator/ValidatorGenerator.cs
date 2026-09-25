@@ -21,6 +21,10 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
     private const string ValidateWithFqn      = "ZeroAlloc.Validation.ValidateWithAttribute";
+    private const string RuleMessageFqn       = "ZeroAlloc.Validation.RuleMessageAttribute";
+
+    /// <summary>Tracking name of the ZV0026 step, so tests can assert that it stays cached.</summary>
+    internal const string MisplacedRuleMessageTrackingName = "MisplacedRuleMessage";
     private const string TransientFqn = "ZeroAlloc.Inject.TransientAttribute";
     private const string ScopedFqn    = "ZeroAlloc.Inject.ScopedAttribute";
     private const string SingletonFqn = "ZeroAlloc.Inject.SingletonAttribute";
@@ -101,6 +105,44 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor ZV0026 = new DiagnosticDescriptor(
+        id: "ZV0026",
+        title: "[RuleMessage] on a class that is not a custom rule",
+        messageFormat: "'{0}' has [RuleMessage] but does not derive from ValidationAttribute<T>, so the message is never used",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description:
+            "[RuleMessage] supplies the default message of a custom rule, an attribute deriving from "
+            + "ValidationAttribute<T>. On any other class nothing reads it. Derive the class from "
+            + "ValidationAttribute<T>, or remove the attribute.");
+
+    /// <summary>
+    /// ZV0026's model: a <c>[RuleMessage]</c> usage on a class that is not a custom rule. Plain
+    /// strings and spans only, so the step compares by value and stays cached across edits that
+    /// do not touch the class; the <see cref="Location"/> is rebuilt when the diagnostic is reported.
+    /// </summary>
+    private readonly record struct MisplacedRuleMessage(
+        string ClassName,
+        string FilePath,
+        Microsoft.CodeAnalysis.Text.TextSpan Span,
+        Microsoft.CodeAnalysis.Text.LinePositionSpan LineSpan)
+    {
+        /// <summary>
+        /// A source location in the compilation's own tree, so <c>#pragma warning disable</c> and
+        /// per-file severity apply to the warning; a file-path location would bypass both.
+        /// </summary>
+        public Location ToLocation(Compilation compilation)
+        {
+            foreach (var tree in compilation.SyntaxTrees)
+            {
+                if (string.Equals(tree.FilePath, FilePath, StringComparison.Ordinal))
+                    return Location.Create(tree, Span);
+            }
+            return Location.Create(FilePath, Span, LineSpan);
+        }
+    }
+
     // The exact MSBuild property name shared, unqualified, across every ZeroAlloc generator
     // package (issue #193). CompilerVisibleProperty in the package's build/buildTransitive
     // props makes it available here as build_property.<name>.
@@ -156,6 +198,47 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
         context.RegisterSourceOutput(combinedWithMode, static (ctx, pair) =>
             Emit(ctx, pair.Left.Left.Left, pair.Left.Left.Right, pair.Left.Right, pair.Right));
+
+        RegisterMisplacedRuleMessage(context);
+    }
+
+    // ZV0026: [RuleMessage] is read only for custom rules. Independent of [Validate], so a
+    // misplaced one is reported even in a project with nothing to generate.
+    private static void RegisterMisplacedRuleMessage(IncrementalGeneratorInitializationContext context)
+    {
+#pragma warning disable EPS06 // IncrementalValuesProvider<T> is a struct; Where, Select and Combine are the standard Roslyn API
+        var misplacedRuleMessages = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                RuleMessageFqn,
+                predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
+                transform: static (ctx, ct) => FindMisplacedRuleMessage(ctx, ct))
+            .Where(static m => m is not null)
+            .Select(static (m, _) => m!.Value)
+            .WithTrackingName(MisplacedRuleMessageTrackingName);
+
+        // Joined with the Compilation only after the tracked step, which therefore stays cached;
+        // the Compilation serves just to turn the model back into a source location.
+        var misplacedWithCompilation = misplacedRuleMessages.Combine(context.CompilationProvider);
+#pragma warning restore EPS06
+
+        context.RegisterSourceOutput(misplacedWithCompilation, static (ctx, pair) =>
+            ctx.ReportDiagnostic(Diagnostic.Create(ZV0026, pair.Left.ToLocation(pair.Right), pair.Left.ClassName)));
+    }
+
+    private static MisplacedRuleMessage? FindMisplacedRuleMessage(GeneratorAttributeSyntaxContext ctx, System.Threading.CancellationToken ct)
+    {
+        if (ctx.TargetSymbol is not INamedTypeSymbol type || CustomRules.TryGetRuleValueType(type, out _))
+            return null;
+        if (ctx.Attributes.IsDefaultOrEmpty
+            || ctx.Attributes[0].ApplicationSyntaxReference?.GetSyntax(ct) is not { } syntax)
+            return null;
+
+        var location = syntax.GetLocation();
+        return new MisplacedRuleMessage(
+            type.Name,
+            location.SourceTree?.FilePath ?? string.Empty,
+            location.SourceSpan,
+            location.GetLineSpan().Span);
     }
 
     // ZV0019: "Public" and "Internal" are the only allowed values, compared case-insensitively;

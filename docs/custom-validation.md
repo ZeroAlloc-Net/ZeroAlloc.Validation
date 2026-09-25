@@ -130,6 +130,10 @@ the rule instance like any other named argument, and it does not set the failure
 `[RuleMessage]` is inherited, so a derived rule attribute that declares no `[RuleMessage]` of
 its own picks up its nearest base class's.
 
+`[RuleMessage]` has an effect only on a class deriving, directly or indirectly, from
+`ValidationAttribute<T>`, including an abstract base rule. On any other class nothing reads it,
+and the generator reports [ZV0026](diagnostics.md#zv0026) at the attribute.
+
 ### Placeholders
 
 Every placeholder except `{PropertyValue}` is resolved at compile time into a constant string.
