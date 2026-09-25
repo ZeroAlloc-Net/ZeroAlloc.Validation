@@ -89,7 +89,7 @@ internal static class RuleEmitter
         var byProperty = CollectPropertyRules(classSymbol, compilation, ctx);
         var nestedProperties = GetNestedValidateProperties(classSymbol).ToList();
         var collectionProperties = GetCollectionValidateProperties(classSymbol).ToList();
-        var customMethods = CollectCustomValidationMethods(classSymbol);
+        var customMethods = CollectCustomValidationMethods(classSymbol, compilation);
         bool hasNested = nestedProperties.Count > 0 || collectionProperties.Count > 0 || customMethods.Count > 0;
         int totalDirectRules = byProperty.Sum(x => x.Rules.Count);
 
@@ -134,7 +134,7 @@ internal static class RuleEmitter
                 if (CustomRules.IsCustomRule(attr) && !CanEmitCustomRule(compilation, prop, attr, ctx))
                     continue;
 
-                if (HasReachableCondition(classSymbol, attr))
+                if (CallsOnlyReachableMethods(compilation, classSymbol, prop, attr))
                     propRules.Add(attr);
             }
             if (propRules.Count > 0)
@@ -228,7 +228,7 @@ internal static class RuleEmitter
         return false;
     }
 
-    private static List<(string Name, bool ByRef)> CollectCustomValidationMethods(INamedTypeSymbol classSymbol)
+    private static List<(string Name, bool ByRef)> CollectCustomValidationMethods(INamedTypeSymbol classSymbol, Compilation compilation)
     {
         var result = new List<(string, bool)>();
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
@@ -248,6 +248,8 @@ internal static class RuleEmitter
             // the generated validator knows how to walk.
             if (method.Parameters.Length != 0) continue;
             if (!IsCustomValidationReturnType(method.ReturnType, out var byRef)) continue;
+            // A static method, or one the validator cannot access, is reported as ZV0028.
+            if (MethodReachability.Classify(compilation, classSymbol, method) != MethodReach.Callable) continue;
             result.Add((method.Name, byRef));
         }
         return result;
@@ -762,42 +764,78 @@ internal static class RuleEmitter
     }
 
     /// <summary>
-    /// Names of <c>When</c>/<c>Unless</c> methods referenced by <paramref name="prop"/>'s rules
-    /// that the generated validator for <paramref name="classSymbol"/> cannot reach. Each one
-    /// means a dropped rule, reported as ZV0017.
+    /// The model methods <paramref name="prop"/>'s rules call that the generated validator for
+    /// <paramref name="classSymbol"/> cannot: a <c>When</c> or <c>Unless</c> condition, or a
+    /// <c>[Must]</c> predicate, that is static or inaccessible. Each one means a dropped rule,
+    /// reported as ZV0028, or as ZV0017 when the method is inaccessible on a base type.
     /// </summary>
-    public static IEnumerable<string> GetUnreachableConditionMethods(INamedTypeSymbol classSymbol, IPropertySymbol prop)
+    public static IEnumerable<UnreachableMethodCall> GetUnreachableMethodCalls(
+        Compilation compilation, INamedTypeSymbol classSymbol, IPropertySymbol prop)
     {
         foreach (var attr in prop.GetAttributes())
         {
             if (!IsRuleAttribute(attr)) continue;
 
-            var when = GetWhen(attr);
-            if (when is not null && !MemberWalker.IsConditionMethodAccessible(classSymbol, when))
-                yield return when;
-
-            var unless = GetUnless(attr);
-            if (unless is not null && !MemberWalker.IsConditionMethodAccessible(classSymbol, unless))
-                yield return unless;
+            foreach (var (usage, name, argumentType) in MethodCallsOf(attr, prop))
+            {
+                var reach = MethodReachability.Resolve(compilation, classSymbol, name, argumentType, out var method);
+                if (reach is MethodReach.Callable or MethodReach.NotFound) continue;
+                yield return new UnreachableMethodCall(attr, usage, name, reach, method);
+            }
         }
     }
 
     /// <summary>
-    /// Whether both the <c>When</c> and <c>Unless</c> methods a rule names can be called from the
-    /// generated validator. A rule guarded by an unreachable base-type helper is dropped here and
-    /// surfaced as ZV0017, rather than emitted as a call that would not compile.
+    /// Whether every model method <paramref name="attr"/> calls can be called from the generated
+    /// validator. A rule that calls a static or inaccessible method is dropped here and reported
+    /// through <see cref="GetUnreachableMethodCalls"/>, rather than emitted as a call that would
+    /// not compile.
     /// </summary>
-    public static bool HasReachableCondition(INamedTypeSymbol classSymbol, AttributeData attr)
+    private static bool CallsOnlyReachableMethods(
+        Compilation compilation, INamedTypeSymbol classSymbol, IPropertySymbol prop, AttributeData attr)
     {
+        foreach (var (_, name, argumentType) in MethodCallsOf(attr, prop))
+        {
+            var reach = MethodReachability.Resolve(compilation, classSymbol, name, argumentType, out _);
+            if (reach is not (MethodReach.Callable or MethodReach.NotFound))
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// The model methods one rule calls, each with how the diagnostic names its usage and the
+    /// type of the argument it passes: none for a <c>When</c>/<c>Unless</c> condition, the
+    /// property value for a <c>[Must]</c> predicate.
+    /// </summary>
+    private static IEnumerable<(string Usage, string Name, ITypeSymbol? ArgumentType)> MethodCallsOf(
+        AttributeData attr, IPropertySymbol prop)
+    {
+        var ruleName = ShortAttributeName(attr);
+
         var when = GetWhen(attr);
-        if (when is not null && !MemberWalker.IsConditionMethodAccessible(classSymbol, when))
-            return false;
+        if (when is not null)
+            yield return ($"When of [{ruleName}] on '{prop.Name}'", when, null);
 
         var unless = GetUnless(attr);
-        if (unless is not null && !MemberWalker.IsConditionMethodAccessible(classSymbol, unless))
-            return false;
+        if (unless is not null)
+            yield return ($"Unless of [{ruleName}] on '{prop.Name}'", unless, null);
 
-        return true;
+        if (string.Equals(attr.AttributeClass?.ToDisplayString(), MustFqn, StringComparison.Ordinal))
+        {
+            var predicate = GetStringArg(attr, 0);
+            if (predicate.Length > 0)
+                yield return ($"[{ruleName}] on '{prop.Name}'", predicate, prop.Type);
+        }
+    }
+
+    private static string ShortAttributeName(AttributeData attr)
+    {
+        const string suffix = "Attribute";
+        var name = attr.AttributeClass?.Name ?? "";
+        return name.EndsWith(suffix, StringComparison.Ordinal) && name.Length > suffix.Length
+            ? name.Substring(0, name.Length - suffix.Length)
+            : name;
     }
 
     private static string? GetWhen(AttributeData attr) =>

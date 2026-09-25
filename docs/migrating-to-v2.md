@@ -76,3 +76,25 @@ subclass that widens its own `[AttributeUsage]` can be applied to a field or a c
 parameter, such as a record's positional parameter written without the `property:` target.
 1.x ignored it there without a word; 2.0 fails the build, because the rule never runs. Move the
 attribute to a property, or write it as `[property: X]` on a positional parameter.
+
+## A validation method the validator cannot call now fails the build (ZV0028)
+
+The generated validator calls `[CustomValidation]`, `[Must]`, `When` and `Unless` methods as
+`instance.Method(...)`. A method that was static, or `private` or `protected` on the
+`[Validate]` type itself, was emitted anyway, so the build already failed, but with CS0122 or
+CS0176 inside generated code. 2.0 reports [ZV0028](diagnostics.md#zv0028) at the attribute
+instead and validates the rest of the model.
+
+One case compiled in 1.x: a static base-type method that was also `private` or `protected`,
+used as a `[CustomValidation]` method or named by `When` or `Unless`, was dropped with a
+[ZV0017](diagnostics.md#zv0017) warning. It is now ZV0028, an error, because the rule never
+runs and making the method public would not change that.
+
+A `[Must]` predicate that is `protected` or `private` on a base type failed with CS0122 in 1.x.
+It is now [ZV0017](diagnostics.md#zv0017), the warning a `When` or `Unless` method in the same
+position already gave: the rule is dropped, since the base type may not be yours to change.
+Treat the warning as you would that one.
+
+### What to do
+
+Make the method a `public` or `internal` instance method, or remove the rule.
