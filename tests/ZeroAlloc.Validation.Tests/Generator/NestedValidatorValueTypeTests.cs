@@ -1,15 +1,17 @@
 using System;
-using System.Linq;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
-using ZeroAlloc.Validation;
-using ZeroAlloc.Validation.Generator;
 
 namespace ZeroAlloc.Validation.Tests.Generator;
 
 public class NestedValidatorValueTypeTests
 {
+    private static GeneratorDriverRunResult RunGenerator(string source) =>
+        GeneratorTestHelper.RunGenerator(source);
+
+    private static string GetGeneratedSource(GeneratorDriverRunResult result, string hintNameSuffix) =>
+        GeneratorTestHelper.GetGeneratedSource(result, $"TestModels.{hintNameSuffix}");
+
     [Fact]
     public void Collection_Of_ReadonlyRecordStruct_Compiles_WithoutItemNullGuard()
     {
@@ -94,26 +96,5 @@ public class NestedValidatorValueTypeTests
         Assert.Empty(result.Diagnostics);
         var outerValidator = GetGeneratedSource(result, "OuterValidator.g.cs");
         Assert.Contains("instance.Inner is not null", outerValidator, StringComparison.Ordinal);
-    }
-
-    private static string GetGeneratedSource(GeneratorDriverRunResult result, string filenameSuffix) =>
-        result.GeneratedTrees
-            .First(t => t.FilePath.EndsWith(filenameSuffix, StringComparison.Ordinal))
-            .ToString();
-
-    private static GeneratorDriverRunResult RunGenerator(string source)
-    {
-        var compilation = CSharpCompilation.Create(
-            "TestAssembly",
-            [CSharpSyntaxTree.ParseText(source)],
-            [
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(ValidateAttribute).Assembly.Location),
-            ],
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-        var generator = new ValidatorGenerator();
-        var driver = CSharpGeneratorDriver.Create(generator).RunGenerators(compilation);
-        return driver.GetRunResult();
     }
 }

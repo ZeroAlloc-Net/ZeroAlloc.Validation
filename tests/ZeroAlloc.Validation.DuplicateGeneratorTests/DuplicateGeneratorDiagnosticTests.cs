@@ -125,12 +125,28 @@ public sealed class DuplicateGeneratorDiagnosticTests
             """);
     }
 
+    /// <summary>
+    /// Writes a NuGet.config that restores from <paramref name="feed"/> and, like PackSmoke's
+    /// <c>PackedFeed.WriteNuGetConfig</c>, uses a private <c>globalPackagesFolder</c> under
+    /// <paramref name="workDir"/> rather than the machine-wide cache.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="feed"/> is <c>artifacts/local</c>, packed with the repo's real,
+    /// non-unique version, not a per-run GUID version like PackedFeed's. Restoring through the
+    /// shared global cache would let an extract of an earlier pack at the same version answer
+    /// the restore instead of the nupkg just built, so the test would pass against stale bits.
+    /// See #224.
+    /// </remarks>
     private static void WriteNuGetConfig(string workDir, string feed)
     {
+        var packagesFolder = Path.Combine(workDir, "packages");
         File.WriteAllText(Path.Combine(workDir, "NuGet.config"),
             $"""
             <?xml version="1.0" encoding="utf-8"?>
             <configuration>
+              <config>
+                <add key="globalPackagesFolder" value="{packagesFolder}" />
+              </config>
               <packageSources>
                 <clear />
                 <add key="local" value="{feed}" />

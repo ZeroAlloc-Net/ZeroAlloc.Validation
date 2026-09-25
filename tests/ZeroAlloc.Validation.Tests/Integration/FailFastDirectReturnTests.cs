@@ -143,10 +143,17 @@ public class FailFastDirectReturnTests
     }
 
     /// <summary>The one failure in <paramref name="result"/>, asserting there is exactly one.</summary>
+    /// <remarks>
+    /// Neither <c>Assert.Single</c> (flagged by HLQ005, a false positive on the method name
+    /// rather than what it does — #212) nor <c>Assert.Equal(1, failures.Length)</c> (flagged by
+    /// xUnit2013, which wants <c>Assert.Single</c> instead) satisfies both analyzers here, since
+    /// this helper — unlike the other HLQ005 sites — must return the one failure to its callers.
+    /// <c>Assert.True</c> over the length check is what is left that neither one flags.
+    /// </remarks>
     private static ValidationFailure SingleFailure(ValidationResult result)
     {
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        return Assert.Single(result.Failures.ToArray());
-#pragma warning restore HLQ005
+        var failures = result.Failures.ToArray();
+        Assert.True(failures.Length == 1, $"Expected exactly one failure, got {failures.Length}.");
+        return failures[0];
     }
 }

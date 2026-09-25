@@ -1,15 +1,18 @@
 using System;
-using System.Linq;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
-using ZeroAlloc.Validation;
-using ZeroAlloc.Validation.Generator;
 
 namespace ZeroAlloc.Validation.Tests.Generator;
 
 public class ValueObjectPropertyDiagnosticTests
 {
+    private const string ValueObjectStub = """
+        namespace ZeroAlloc.ValueObjects
+        {
+            [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct)]
+            public sealed class ValueObjectAttribute : System.Attribute { }
+        }
+        """;
+
     [Fact]
     public void ValueObject_TypedId_Property_Rewrites_To_Unwrap_Member()
     {
@@ -30,10 +33,10 @@ public class ValueObjectPropertyDiagnosticTests
                 [property: GreaterThan(0)] CustomerId CustomerId);
             """;
 
-        var result = RunGenerator(source);
+        var result = GeneratorTestHelper.RunGenerator(source, extraSources: [ValueObjectStub]);
 
         Assert.Empty(result.Diagnostics);
-        var validatorSource = GetGeneratedSource(result, "PlaceOrderCommandValidator.g.cs");
+        var validatorSource = GeneratorTestHelper.GetGeneratedSource(result, "TestModels.PlaceOrderCommandValidator.g.cs");
         Assert.Contains("instance.CustomerId.Value", validatorSource, StringComparison.Ordinal);
     }
 
@@ -49,10 +52,10 @@ public class ValueObjectPropertyDiagnosticTests
                 [property: GreaterThan(0)] int CustomerId);
             """;
 
-        var result = RunGenerator(source);
+        var result = GeneratorTestHelper.RunGenerator(source, extraSources: [ValueObjectStub]);
 
         Assert.Empty(result.Diagnostics);
-        var validatorSource = GetGeneratedSource(result, "PlaceOrderCommandValidator.g.cs");
+        var validatorSource = GeneratorTestHelper.GetGeneratedSource(result, "TestModels.PlaceOrderCommandValidator.g.cs");
         Assert.Contains("instance.CustomerId", validatorSource, StringComparison.Ordinal);
         Assert.DoesNotContain("instance.CustomerId.Value", validatorSource, StringComparison.Ordinal);
     }
@@ -82,7 +85,7 @@ public class ValueObjectPropertyDiagnosticTests
                 [property: GreaterThan(0)] Money Total);
             """;
 
-        var result = RunGenerator(source);
+        var result = GeneratorTestHelper.RunGenerator(source, extraSources: [ValueObjectStub]);
 
         Assert.Contains(result.Diagnostics, d => string.Equals(d.Id, "ZV0016", StringComparison.Ordinal));
     }
@@ -107,7 +110,7 @@ public class ValueObjectPropertyDiagnosticTests
                 [property: GreaterThan(0)] CustomerId CustomerId);
             """;
 
-        var result = RunGenerator(source);
+        var result = GeneratorTestHelper.RunGenerator(source, extraSources: [ValueObjectStub]);
 
         Assert.DoesNotContain(result.Diagnostics, d => string.Equals(d.Id, "ZV0016", StringComparison.Ordinal));
     }
@@ -137,44 +140,13 @@ public class ValueObjectPropertyDiagnosticTests
             }
             """;
 
-        var result = RunGenerator(source);
+        var result = GeneratorTestHelper.RunGenerator(source, extraSources: [ValueObjectStub]);
 
         Assert.Empty(result.Diagnostics);
-        var validatorSource = GetGeneratedSource(result, "PlaceOrderCommandValidator.g.cs");
+        var validatorSource = GeneratorTestHelper.GetGeneratedSource(result, "TestModels.PlaceOrderCommandValidator.g.cs");
         // The Must predicate receives the wrapper, NOT instance.CustomerId.Value.
         Assert.Contains("instance.CustomerId", validatorSource, StringComparison.Ordinal);
         Assert.DoesNotContain("instance.CustomerId.Value", validatorSource, StringComparison.Ordinal);
     }
 
-    private static string GetGeneratedSource(GeneratorDriverRunResult result, string filenameSuffix) =>
-        result.GeneratedTrees
-            .First(t => t.FilePath.EndsWith(filenameSuffix, StringComparison.Ordinal))
-            .ToString();
-
-    private static GeneratorDriverRunResult RunGenerator(string source)
-    {
-        var valueObjectStub = """
-            namespace ZeroAlloc.ValueObjects
-            {
-                [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct)]
-                public sealed class ValueObjectAttribute : System.Attribute { }
-            }
-            """;
-
-        var systemRuntime = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
-        var compilation = CSharpCompilation.Create(
-            "TestAssembly",
-            [CSharpSyntaxTree.ParseText(source), CSharpSyntaxTree.ParseText(valueObjectStub)],
-            [
-                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(ValidateAttribute).Assembly.Location),
-                MetadataReference.CreateFromFile(System.IO.Path.Combine(systemRuntime, "System.Runtime.dll")),
-                MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
-            ],
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-        var generator = new ValidatorGenerator();
-        var driver = CSharpGeneratorDriver.Create(generator).RunGenerators(compilation);
-        return driver.GetRunResult();
-    }
 }

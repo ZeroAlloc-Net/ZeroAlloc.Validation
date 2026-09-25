@@ -101,9 +101,7 @@ public class InheritanceTests
         var result = new InheritanceShadowDerivedValidator()
             .Validate(new InheritanceShadowDerived { Code = "a" });
 
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        Assert.Single(result.Failures.ToArray());
-#pragma warning restore HLQ005
+        Assert.Collection(result.Failures.ToArray(), _ => { });
     }
 
     [Fact]

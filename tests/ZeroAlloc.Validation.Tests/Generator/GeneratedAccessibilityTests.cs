@@ -224,11 +224,11 @@ public class GeneratedAccessibilityTests
             if (string.Equals(d.Id, "ZV0019", StringComparison.Ordinal))
                 zv0019s.Add(d);
         }
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        var zv0019 = Assert.Single(zv0019s);
-#pragma warning restore HLQ005
-        Assert.Equal(DiagnosticSeverity.Error, zv0019.Severity);
-        Assert.Contains("Priv4te", zv0019.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Collection(zv0019s, d =>
+        {
+            Assert.Equal(DiagnosticSeverity.Error, d.Severity);
+            Assert.Contains("Priv4te", d.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        });
 
         // The rest of the build still reflects today's (Public) behavior despite the typo.
         Assert.Equal(Accessibility.Public, TypeAccessibility(output, "MyApp.JevOptionsValidator"));

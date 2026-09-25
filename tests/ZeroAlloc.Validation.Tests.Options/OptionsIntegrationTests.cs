@@ -61,9 +61,7 @@ public class OptionsIntegrationTests
         var sp = services.BuildServiceProvider();
 
         var validators = sp.GetServices<IValidateOptions<DatabaseOptions>>();
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        Assert.Single(validators);
-#pragma warning restore HLQ005
+        Assert.Collection(validators, _ => { });
     }
 
     [Fact]
@@ -78,9 +76,7 @@ public class OptionsIntegrationTests
         var sp         = services.BuildServiceProvider();
         var validators = sp.GetServices<ValidatorFor<DatabaseOptions>>();
 
-        #pragma warning disable HLQ005
-        Assert.Single(validators);
-        #pragma warning restore HLQ005
+        Assert.Collection(validators, _ => { });
     }
 
     [Fact]

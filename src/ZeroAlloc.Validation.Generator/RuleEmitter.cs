@@ -455,6 +455,20 @@ internal static class RuleEmitter
         sb.AppendLine();
     }
 
+    /// <summary>
+    /// Wraps a statement that reads a field of a <c>ref readonly ValidationFailure</c>. EPS06
+    /// (ErrorProne.NET.Structs) does not recognise that <c>init</c>-only auto-properties on a
+    /// <c>readonly struct</c> cannot mutate it, so it reports a defensive copy that the compiler
+    /// never actually emits for a readonly struct. Filed upstream at
+    /// https://github.com/SergeyTeplyakov/ErrorProne.NET/issues; tracked internally as #213.
+    /// Scoped to the one statement that trips it, so the pragma does not hide a real EPS06
+    /// finding anywhere else in the generated file.
+    /// </summary>
+    private static void AppendFailureCopyPragma(StringBuilder sb, bool disable) =>
+        sb.AppendLine(disable
+            ? "#pragma warning disable EPS06 // false positive: ValidationFailure is a readonly struct, see #213"
+            : "#pragma warning restore EPS06");
+
     private static void EmitNestedValidators(
         StringBuilder sb,
         List<IPropertySymbol> nestedProperties,
@@ -477,7 +491,9 @@ internal static class RuleEmitter
         }
         sb.AppendLine($"            var nestedResult = _{camelN}Validator.Validate({modelParamName}.{propName});");
         sb.AppendLine("            foreach (ref readonly var f in nestedResult.Failures)");
+        AppendFailureCopyPragma(sb, disable: true);
         sb.AppendLine($"                _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
+        AppendFailureCopyPragma(sb, disable: false);
         if (needsPropGuard)
         {
             sb.AppendLine("        }");
@@ -510,8 +526,11 @@ internal static class RuleEmitter
         {
             case CollectionIteration.ListSpan:
                 // A span over the backing array: no enumerator, and no interface dispatch per item.
+                // Span<T>.Enumerator.Current returns by ref, so the loop variable is bound `ref
+                // readonly` — HLQ004 (NetFabric.Hyperlinq.Analyzer) requires this to avoid a copy
+                // of each item on every iteration.
                 sb.AppendLine($"            int {varName}Idx = 0;");
-                sb.AppendLine($"            foreach (var {varName}Item in global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan({varName}Src))");
+                sb.AppendLine($"            foreach (ref readonly var {varName}Item in global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan({varName}Src))");
                 sb.AppendLine("            {");
                 break;
 
@@ -538,7 +557,9 @@ internal static class RuleEmitter
         }
         sb.AppendLine($"                    var {varName}Result = _{camelC}Validator.Validate({varName}Item);");
         sb.AppendLine($"                    foreach (ref readonly var f in {varName}Result.Failures)");
+        AppendFailureCopyPragma(sb, disable: true);
         sb.AppendLine($"                        _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
+        AppendFailureCopyPragma(sb, disable: false);
         if (needsItemGuard)
         {
             sb.AppendLine("                }");
