@@ -21,4 +21,5 @@ ZV0023 | ZeroAlloc.Validation | Error | Custom rule attribute not accessible fro
 ZV0024 | ZeroAlloc.Validation | Error | Validation attribute applied where the generator does not read it
 ZV0025 | ZeroAlloc.Validation | Error | [Validate] type not accessible from the generated validator
 ZV0026 | ZeroAlloc.Validation | Warning | [RuleMessage] on a class that is not a custom rule
+ZV0027 | ZeroAlloc.Validation | Error | Validation attribute applied to a property the generated validator cannot read
 ZV0028 | ZeroAlloc.Validation | Error | Validation method the generated validator cannot call
