@@ -10,9 +10,7 @@ public class AttributeDeclarationTests
     public void ValidateAttribute_CanBeAppliedToClass()
     {
         var attrs = typeof(SampleModel).GetCustomAttributes(typeof(ValidateAttribute), false);
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        Assert.Single(attrs);
-#pragma warning restore HLQ005
+        Assert.Collection(attrs, a => Assert.IsType<ValidateAttribute>(a));
     }
 
     [Fact]
@@ -296,6 +294,32 @@ public class AttributeDeclarationTests
     {
         var attr = new MustAttribute("MyMethod");
         Assert.Null(attr.Unless);
+    }
+
+    [Fact]
+    public void ValidationAttributeOfT_is_abstract_property_attribute_deriving_from_ValidationAttribute()
+    {
+        var t = typeof(ValidationAttribute<>);
+        Assert.True(t.IsAbstract);
+        Assert.Equal(typeof(ValidationAttribute), t.BaseType);
+        var usage = (AttributeUsageAttribute)Attribute.GetCustomAttribute(t, typeof(AttributeUsageAttribute))!;
+        Assert.Equal(AttributeTargets.Property, usage.ValidOn);
+        Assert.True(usage.AllowMultiple);
+        var declared = t.GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);
+        var methods = Array.FindAll(declared, m => m.MemberType == System.Reflection.MemberTypes.Method);
+        Assert.Collection(methods, m => Assert.Equal("IsValid", m.Name));
+    }
+
+    [Fact]
+    public void RuleMessageAttribute_targets_classes_and_carries_message_and_error_code()
+    {
+        var a = new RuleMessageAttribute("{PropertyName} bad.") { ErrorCode = "BAD" };
+        Assert.Equal("{PropertyName} bad.", a.Message);
+        Assert.Equal("BAD", a.ErrorCode);
+        var usage = (AttributeUsageAttribute)Attribute.GetCustomAttribute(typeof(RuleMessageAttribute), typeof(AttributeUsageAttribute))!;
+        Assert.Equal(AttributeTargets.Class, usage.ValidOn);
+        Assert.False(usage.AllowMultiple);
+        Assert.True(usage.Inherited);
     }
 
     [Validate]

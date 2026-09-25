@@ -93,6 +93,14 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor ZV0024 = new DiagnosticDescriptor(
+        id: "ZV0024",
+        title: "Validation attribute applied where the generator does not read it",
+        messageFormat: "'{0}' is applied to '{1}', which the generator does not validate; apply it to a property",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     // The exact MSBuild property name shared, unqualified, across every ZeroAlloc generator
     // package (issue #193). CompilerVisibleProperty in the package's build/buildTransitive
     // props makes it available here as build_property.<name>.
@@ -132,7 +140,12 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         var accessibility = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => ParseGeneratedAccessibility(provider));
 
-        var combinedWithMode = combined.Combine(accessibility.Select(static (result, _) => result.Mode));
+        // The Compilation reaches Emit for the custom-rule checks, ZV0021's implicit-conversion
+        // test and ZV0023's accessibility test. It adds no invalidation of its own: the behavior
+        // cache above is already rebuilt from every new compilation.
+        var combinedWithMode = combined
+            .Combine(accessibility.Select(static (result, _) => result.Mode))
+            .Combine(context.CompilationProvider);
 #pragma warning restore EPS06
 
         context.RegisterSourceOutput(accessibility, static (ctx, result) =>
@@ -141,7 +154,8 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 ctx.ReportDiagnostic(result.Diagnostic);
         });
 
-        context.RegisterSourceOutput(combinedWithMode, static (ctx, pair) => Emit(ctx, pair.Left.Left, pair.Left.Right, pair.Right));
+        context.RegisterSourceOutput(combinedWithMode, static (ctx, pair) =>
+            Emit(ctx, pair.Left.Left.Left, pair.Left.Left.Right, pair.Left.Right, pair.Right));
     }
 
     // ZV0019: "Public" and "Internal" are the only allowed values, compared case-insensitively;
@@ -162,7 +176,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         return new GeneratedAccessibilityResult(GeneratedAccessibilityMode.Public, diagnostic);
     }
 
-    private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymbol, BehaviorCache allBehaviors, GeneratedAccessibilityMode mode)
+    private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymbol, BehaviorCache allBehaviors, GeneratedAccessibilityMode mode, Compilation compilation)
     {
         // ZV0014 — surface mutability hazard on non-readonly structs. Generator
         // still proceeds to emit the validator; the warning is informational.
@@ -196,16 +210,17 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         var nestedFields = RuleEmitter.CollectNestedValidatorFields(classSymbol);
         EmitFieldsAndConstructor(sb, validatorName, nestedFields);
 
-        // 1.5.3: shared dictionary so both sync (Validate) and async (ValidateAsync)
-        // emission paths populate the same set of [Matches] regex methods.
-        // Emitting partial method declarations once after both paths run guarantees
-        // each property's __Regex_<Prop>() appears exactly once at class scope
-        // (no CS0111 duplicate-member errors when both paths reference the same prop).
-        var regexMethods = new System.Collections.Generic.Dictionary<string, string>(System.StringComparer.Ordinal);
-        EmitValidateMethod(ctx, sb, classSymbol, modelName, syncBehaviors, regexMethods);
-        EmitValidateAsyncOverride(sb, classSymbol, modelName, asyncBehaviors, regexMethods);
+        // 1.5.3: shared collector so both sync (Validate) and async (ValidateAsync)
+        // emission paths populate the same set of static fields ([Matches] regexes and
+        // user-defined rule instances). Emitting the declarations once after both paths
+        // run guarantees each field appears exactly once at class scope
+        // (no CS0102 duplicate-member errors when both paths reference the same prop).
+        var fields = new GeneratedFields();
+        EmitValidateMethod(ctx, sb, classSymbol, compilation, modelName, syncBehaviors, fields);
+        EmitValidateAsyncOverride(sb, classSymbol, compilation, modelName, asyncBehaviors, fields);
 
-        EmitMatchesRegexFields(sb, regexMethods);
+        EmitMatchesRegexFields(sb, fields);
+        EmitRuleInstanceFields(sb, fields);
 
         sb.AppendLine("}");
 
@@ -229,9 +244,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// </remarks>
     private static void EmitMatchesRegexFields(
         System.Text.StringBuilder sb,
-        System.Collections.Generic.Dictionary<string, string> regexMethods)
+        GeneratedFields fields)
     {
-        foreach (var kvp in regexMethods)
+        foreach (var kvp in fields.RegexPatterns)
         {
             var fieldName = kvp.Key;
             var pattern = kvp.Value;
@@ -241,20 +256,49 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         }
     }
 
+    /// <summary>
+    /// Emits one <c>private static readonly</c> field per user-defined rule usage, holding the
+    /// attribute rebuilt from its constructor and named arguments. The instance is created once,
+    /// when the validator type initialises, so each validation call only invokes <c>IsValid</c>.
+    /// A declaration that names an <c>[Obsolete]</c> symbol is wrapped in a pragma for CS0618 and
+    /// CS0612. The compiler already warns at the usage in user code, where the user can act on
+    /// it; the repeat inside generated code cannot be suppressed by the user and would break a
+    /// <c>TreatWarningsAsErrors</c> build. Every other declaration is emitted without a pragma.
+    /// </summary>
+    private static void EmitRuleInstanceFields(
+        System.Text.StringBuilder sb,
+        GeneratedFields fields)
+    {
+        foreach (var kvp in fields.RuleInstances)
+        {
+            sb.AppendLine();
+            if (kvp.Value.IsObsolete)
+            {
+                sb.AppendLine("    // The rule type is obsolete; the compiler already warns at the attribute usage in user code.");
+                sb.AppendLine("#pragma warning disable CS0618, CS0612");
+            }
+            sb.AppendLine($"    private static readonly {kvp.Value.TypeName} {kvp.Key}");
+            sb.AppendLine($"        = {kvp.Value.Initializer};");
+            if (kvp.Value.IsObsolete)
+                sb.AppendLine("#pragma warning restore CS0618, CS0612");
+        }
+    }
+
     private static void EmitValidateMethod(
         SourceProductionContext ctx,
         System.Text.StringBuilder sb,
         INamedTypeSymbol classSymbol,
+        Compilation compilation,
         string modelName,
         List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> syncBehaviors,
-        System.Collections.Generic.Dictionary<string, string> regexMethods)
+        GeneratedFields fields)
     {
         sb.AppendLine("    /// <inheritdoc/>");
         sb.AppendLine($"    public override global::ZeroAlloc.Validation.ValidationResult Validate({modelName} instance)");
         sb.AppendLine("    {");
         if (syncBehaviors.Count == 0)
         {
-            RuleEmitter.EmitValidateBody(sb, classSymbol, "instance", ctx, regexMethods);
+            RuleEmitter.EmitValidateBody(sb, classSymbol, compilation, "instance", ctx, fields);
         }
         else
         {
@@ -269,7 +313,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 {
                     var paramName = depth == 0 ? "instance" : $"r{depth}";
                     return "{\n"
-                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName, capturedCtx, regexMethods)
+                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, capturedCtx, fields)
                         + "        }";
                 }
             };
@@ -282,9 +326,10 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     private static void EmitValidateAsyncOverride(
         System.Text.StringBuilder sb,
         INamedTypeSymbol classSymbol,
+        Compilation compilation,
         string modelName,
         List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> asyncBehaviors,
-        System.Collections.Generic.Dictionary<string, string> regexMethods)
+        GeneratedFields fields)
     {
         if (asyncBehaviors.Count == 0)
             return;
@@ -305,7 +350,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 // wrapClose adds one extra closing paren for FromResult(...) and the semicolon.
                 // The closing paren for ValidationResult(...) is already included in the matched substring.
                 const string wrapClose    = ");";
-                var body = RuleEmitter.EmitValidateBodyAsString(classSymbol, paramName, regexMethods: regexMethods);
+                var body = RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, fields: fields);
                 var asyncBody = WrapReturnSites(body, returnPrefix, wrapOpen, wrapClose);
                 return "{\n" + asyncBody + "        }";
             }
@@ -510,6 +555,67 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         ReportCustomValidationDiagnostics(ctx, classSymbol);
         ReportInaccessibleBaseMemberDiagnostics(ctx, classSymbol);
         ReportDuplicateRuleAttributeDiagnostics(ctx, classSymbol);
+        ReportUnreadValidationAttributeDiagnostics(ctx, classSymbol);
+    }
+
+    /// <summary>
+    /// ZV0024: the generator reads rules from properties only. A <c>ValidationAttribute</c>
+    /// subclass can widen its own <c>[AttributeUsage]</c>, so a rule can compile on a field, or
+    /// on a constructor parameter such as a record's positional parameter written without the
+    /// <c>property:</c> target, and would then be dropped with nothing to say so. Fields and
+    /// constructor parameters are searched on <paramref name="classSymbol"/> and on each base
+    /// type whose properties it validates. The walk stops at a base type that is itself
+    /// <c>[Validate]</c>, whose own generation reports its members, so each usage reports once.
+    /// </summary>
+    private static void ReportUnreadValidationAttributeDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
+    {
+        var includeBase = MemberWalker.IncludesBaseProperties(classSymbol);
+        for (var type = classSymbol; type is not null && type.SpecialType != SpecialType.System_Object; type = type.BaseType)
+        {
+            if (!SymbolEqualityComparer.Default.Equals(type, classSymbol) && (!includeBase || HasValidateAttribute(type)))
+                break;
+
+            foreach (var member in type.GetMembers())
+            {
+                switch (member)
+                {
+                    case IFieldSymbol field:
+                        ReportUnreadValidationAttributes(ctx, field, field.Name);
+                        break;
+                    case IMethodSymbol { MethodKind: MethodKind.Constructor } constructor:
+                        foreach (var parameter in constructor.Parameters)
+                            ReportUnreadValidationAttributes(ctx, parameter, parameter.Name);
+                        break;
+                }
+            }
+        }
+    }
+
+    private static void ReportUnreadValidationAttributes(SourceProductionContext ctx, ISymbol target, string targetName)
+    {
+        foreach (var attr in target.GetAttributes())
+        {
+            if (attr.AttributeClass is not { } attrClass || !CustomRules.DerivesFromValidationAttribute(attrClass))
+                continue;
+
+            ctx.ReportDiagnostic(Diagnostic.Create(
+                ZV0024,
+                attr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
+                    ?? target.Locations.FirstOrDefault(l => l.IsInSource)
+                    ?? Location.None,
+                attrClass.Name,
+                targetName));
+        }
+    }
+
+    private static bool HasValidateAttribute(INamedTypeSymbol type)
+    {
+        foreach (var attr in type.GetAttributes())
+        {
+            if (string.Equals(attr.AttributeClass?.ToDisplayString(), ValidateAttributeFqn, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -528,7 +634,8 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             foreach (var attr in prop.GetAttributes())
             {
                 var ns = attr.AttributeClass?.ContainingNamespace?.ToDisplayString();
-                if (!string.Equals(ns, "ZeroAlloc.Validation", StringComparison.Ordinal)) continue;
+                if (!string.Equals(ns, "ZeroAlloc.Validation", StringComparison.Ordinal)
+                    && !CustomRules.IsCustomRule(attr)) continue;
 
                 if (seen.Add(DescribeAttribute(attr))) continue;
 
