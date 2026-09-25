@@ -291,6 +291,10 @@ Your method constructs and yields `ValidationFailure` values directly, giving yo
 
 Multiple `[CustomValidation]` methods are allowed on the same class. They run in declaration order, after all property rules.
 
+### Overriding a [CustomValidation] method
+
+A `[CustomValidation]` method may be `virtual` or `abstract`. An `override` inherits the attribute whether or not it repeats it, so the generated validator calls the method once, and virtual dispatch runs the most-derived override. Earlier versions skipped an override that did not repeat the attribute, without a diagnostic.
+
 ### Important: [CustomValidation] does not extend ValidationAttribute
 
 `[CustomValidation]` extends `System.Attribute` directly, **not** `ValidationAttribute`. It therefore does **not** support `Message`, `When`, `Unless`, `ErrorCode`, or `Severity` properties on the attribute itself. Your method is responsible for constructing the `ValidationFailure` values it yields.

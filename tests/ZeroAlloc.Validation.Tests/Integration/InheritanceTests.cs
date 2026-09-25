@@ -115,4 +115,53 @@ public class InheritanceTests
         Assert.Contains(result.Failures.ToArray(),
             f => string.Equals(f.PropertyName, "Budget", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void OverrideWithoutCustomValidationAttribute_IsInvokedOnce()
+    {
+        // The override inherits [CustomValidation] from the method it overrides, issue #240.
+        var result = new InheritanceOverrideWithoutAttributeValidator()
+            .Validate(new InheritanceOverrideWithoutAttribute { Budget = -1 });
+
+        Assert.Equal(["override"], Messages(result));
+    }
+
+    [Fact]
+    public void OverrideWithCustomValidationAttribute_IsInvokedOnce()
+    {
+        var result = new InheritanceOverrideWithAttributeValidator()
+            .Validate(new InheritanceOverrideWithAttribute { Budget = -1 });
+
+        Assert.Equal(["override"], Messages(result));
+    }
+
+    [Fact]
+    public void OverrideOfAbstractCustomValidationMethod_IsInvokedOnce()
+    {
+        var result = new InheritanceChainMiddleValidator()
+            .Validate(new InheritanceChainMiddle { Budget = -1 });
+
+        Assert.Equal(["middle"], Messages(result));
+    }
+
+    [Fact]
+    public void SealedOverrideAtTheEndOfAChain_IsInvokedOnce()
+    {
+        var result = new InheritanceChainLeafValidator()
+            .Validate(new InheritanceChainLeaf { Budget = -1 });
+
+        Assert.Equal(["leaf"], Messages(result));
+    }
+
+    [Fact]
+    public void OverriddenCustomValidationMethod_Passing_IsValid()
+    {
+        var result = new InheritanceChainLeafValidator()
+            .Validate(new InheritanceChainLeaf { Budget = 1 });
+
+        Assert.True(result.IsValid);
+    }
+
+    private static string[] Messages(ValidationResult result) =>
+        result.Failures.ToArray().Select(f => f.ErrorMessage).ToArray();
 }
