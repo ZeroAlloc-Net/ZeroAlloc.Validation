@@ -1,4 +1,5 @@
 using Microsoft.CodeAnalysis;
+using ZeroAlloc.Validation.Generator.Shared;
 
 namespace ZeroAlloc.Validation.Generator;
 
@@ -111,7 +112,10 @@ internal static class MethodReachability
     /// includes base properties. A base type with <c>IncludeBaseProperties = false</c> does not
     /// see the types above it, so their usages stay <paramref name="model"/>'s to report. That base
     /// type's validator runs the same checks from the same assembly, so each usage is reported
-    /// once, by one validator.
+    /// once, by one validator. That holds for base types that have a validator. A generic
+    /// <c>[Validate]</c> base type gets none, ZV0029, so it reports nothing and leaves its usages
+    /// to <paramref name="model"/>, issue #219: its members are then reported by each model that
+    /// derives from it, unless a non-generic <c>[Validate]</c> type in between reports them.
     /// </summary>
     public static bool IsReportedByBaseValidator(Compilation compilation, INamedTypeSymbol model, INamedTypeSymbol? declaringType)
     {
@@ -121,7 +125,8 @@ internal static class MethodReachability
         for (var type = model.BaseType; type is not null; type = type.BaseType)
         {
             bool isValidated = SymbolEqualityComparer.Default.Equals(type.ContainingAssembly, compilation.Assembly)
-                && HasValidateAttribute(type);
+                && HasValidateAttribute(type)
+                && GeneratedValidatorReach.HasGeneratedValidator(type, compilation);
 
             if (SymbolEqualityComparer.Default.Equals(type.OriginalDefinition, declaringType.OriginalDefinition))
                 return coveredFromBelow || isValidated;

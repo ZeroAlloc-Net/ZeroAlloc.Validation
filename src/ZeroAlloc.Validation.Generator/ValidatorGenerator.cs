@@ -138,6 +138,18 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             + "or protected, cannot be called that way, so the rule is skipped. Make the method a "
             + "public or internal instance method.");
 
+    private static readonly DiagnosticDescriptor ZV0029 = new DiagnosticDescriptor(
+        id: "ZV0029",
+        title: "[Validate] on a generic type",
+        messageFormat: "'{0}' is generic or declared inside a generic type, so no validator is generated for it; validate a non-generic type instead",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description:
+            "The generated validator is a non-generic class, so it cannot name a model that has "
+            + "type parameters, or one whose containing type has them. No validator is generated, "
+            + "and the Inject, Options and ASP.NET Core glue leave the type out.");
+
     /// <summary>
     /// ZV0026's model: a <c>[RuleMessage]</c> usage on a class that is not a custom rule. Plain
     /// strings and spans only, so the step compares by value and stays cached across edits that
@@ -297,7 +309,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
     private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymbol, BehaviorCache allBehaviors, GeneratedAccessibilityMode mode, Compilation compilation)
     {
-        if (ReportUnreachableModel(ctx, classSymbol, compilation))
+        if (ReportModelWithoutValidator(ctx, classSymbol, compilation))
             return;
 
         // ZV0014 — surface mutability hazard on non-readonly structs. Generator
@@ -672,7 +684,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             var validateWithAttr = FindValidateWithAttribute(prop);
             if (validateWithAttr is null) continue;
 
-            ReportZV0011IfApplicable(ctx, prop, member, validateWithAttr);
+            ReportZV0011IfApplicable(ctx, prop, member, validateWithAttr, compilation);
             ReportZV0012IfApplicable(ctx, prop, member, validateWithAttr);
         }
         ReportCustomValidationDiagnostics(ctx, classSymbol, compilation);
@@ -695,6 +707,8 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// cannot change and which has no location to report at, and a base type whose usages the
     /// generation of a <c>[Validate]</c> base reports, as
     /// <see cref="MethodReachability.IsReportedByBaseValidator"/> decides for ZV0017 and ZV0028.
+    /// A generic <c>[Validate]</c> base type gets no validator, ZV0029, so it reports nothing and
+    /// neither walk stops there.
     /// </summary>
     private static void ReportUnreadValidationAttributeDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
@@ -708,7 +722,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 break;
 
             // ZV0024 stops at the first [Validate] base type, as it always has; see #229.
-            if (isBase && HasValidateAttribute(type))
+            if (isBase && HasValidateAttribute(type) && GeneratedValidatorReach.HasGeneratedValidator(type, compilation))
                 reportUnread = false;
 
             bool reportUnreadable = type.Locations.Any(l => l.IsInSource)
@@ -758,23 +772,39 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// ZV0025: the validator is a top-level class in its own file, so it cannot name a private,
-    /// protected or private protected nested type, a type inside one, or a file-local type.
-    /// Every other diagnostic describes how that validator would treat the type's rules; with no
-    /// validator they are moot, and they run as usual once the type is reachable. The companion
-    /// generators leave the type out through the same check, so this error is the only one the
-    /// user sees. Returns <see langword="true"/> when the model is unreachable and was reported.
+    /// Reports a model that gets no validator. ZV0025: the validator is a top-level class in its
+    /// own file, so it cannot name a private, protected or private protected nested type, a type
+    /// inside one, or a file-local type. ZV0029: the validator is not generic, so it cannot name a
+    /// model that is generic or declared inside a generic type, issue #219. A model can hit both,
+    /// and each names a change it needs, so both are reported rather than one hiding the other.
+    /// Every other diagnostic describes how the validator would treat the type's rules; with no
+    /// validator they are moot, and they run as usual once the type gets one. The companion
+    /// generators leave the type out through the same checks, so these errors are the only ones
+    /// the user sees for it.
     /// </summary>
-    private static bool ReportUnreachableModel(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    /// <returns>Whether the model was reported, in which case nothing is generated for it.</returns>
+    private static bool ReportModelWithoutValidator(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
-        if (GeneratedValidatorReach.CanReach(classSymbol, compilation))
-            return false;
+        var reported = false;
+        if (!GeneratedValidatorReach.CanReach(classSymbol, compilation))
+        {
+            ctx.ReportDiagnostic(Diagnostic.Create(
+                ZV0025,
+                FindValidateAttributeLocation(classSymbol),
+                classSymbol.ToDisplayString()));
+            reported = true;
+        }
 
-        ctx.ReportDiagnostic(Diagnostic.Create(
-            ZV0025,
-            FindValidateAttributeLocation(classSymbol),
-            classSymbol.ToDisplayString()));
-        return true;
+        if (GeneratedValidatorReach.IsGeneric(classSymbol))
+        {
+            ctx.ReportDiagnostic(Diagnostic.Create(
+                ZV0029,
+                FindValidateAttributeLocation(classSymbol),
+                classSymbol.ToDisplayString()));
+            reported = true;
+        }
+
+        return reported;
     }
 
     private static Location FindValidateAttributeLocation(INamedTypeSymbol type)
@@ -1059,13 +1089,20 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         return null;
     }
 
+    /// <summary>
+    /// ZV0011: <c>[ValidateWith]</c> on a property whose type already gets a generated validator.
+    /// A <c>[Validate]</c> type that gets none, ZV0025 or ZV0029, is not reported: there is no
+    /// auto-generated validator to switch to, so <c>[ValidateWith]</c> is the way to validate it.
+    /// </summary>
     private static void ReportZV0011IfApplicable(
         SourceProductionContext ctx,
         IPropertySymbol prop,
         ISymbol member,
-        AttributeData validateWithAttr)
+        AttributeData validateWithAttr,
+        Compilation compilation)
     {
         if (prop.Type is not INamedTypeSymbol propNamed) return;
+        if (!GeneratedValidatorReach.HasGeneratedValidator(propNamed, compilation)) return;
 
         foreach (var a in propNamed.GetAttributes())
         {

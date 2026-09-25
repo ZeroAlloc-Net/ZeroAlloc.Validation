@@ -1254,13 +1254,14 @@ internal static class RuleEmitter
 
     /// <summary>
     /// Whether <paramref name="typeSymbol"/> has a generated validator this one can inject. A
-    /// <c>[Validate]</c> type the generated validator cannot reach gets none, ZV0025, so a
-    /// property of that type is not wired to a validator that does not exist.
+    /// <c>[Validate]</c> type the generated validator cannot reach gets none, ZV0025, and neither
+    /// does a generic one, ZV0029, so a property of that type is not wired to a validator that
+    /// does not exist.
     /// </summary>
     private static bool HasValidateAttribute(INamedTypeSymbol typeSymbol, Compilation compilation) =>
         typeSymbol.GetAttributes()
             .Any(a => string.Equals(a.AttributeClass?.ToDisplayString(), ValidateAttributeFqn, StringComparison.Ordinal))
-        && GeneratedValidatorReach.CanReach(typeSymbol, compilation);
+        && GeneratedValidatorReach.HasGeneratedValidator(typeSymbol, compilation);
 
     private static ITypeSymbol? GetCollectionElementType(IPropertySymbol prop)
     {

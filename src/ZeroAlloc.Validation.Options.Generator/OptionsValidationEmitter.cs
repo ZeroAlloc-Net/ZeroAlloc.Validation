@@ -27,11 +27,12 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
                 // value type would not compile.
                 predicate: static (node, _) => node is ClassDeclarationSyntax
                                                || node.IsKind(SyntaxKind.RecordDeclaration),
-                // A model the generated validator cannot reach gets no validator, ZV0025, so it is
-                // left out here too; naming it would only add CS0122 in generated code, #216.
+                // A model that gets no validator is left out here too: one the generated validator
+                // cannot reach, ZV0025 and #216, or a generic one, ZV0029 and #219. Naming it would
+                // only add compiler errors in generated code.
                 // Null marks it; Emit drops it, so the provider chain needs no extra step.
                 transform: static (ctx, _) =>
-                    GeneratedValidatorReach.CanReach((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
+                    GeneratedValidatorReach.HasGeneratedValidator((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
                         ? (INamedTypeSymbol)ctx.TargetSymbol
                         : null);
 
@@ -46,7 +47,7 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
 
     private static void Emit(SourceProductionContext ctx, ImmutableArray<INamedTypeSymbol?> candidates, bool isInternalMode)
     {
-        var models = GeneratedValidatorReach.WithoutUnreachable(candidates);
+        var models = GeneratedValidatorReach.WithGeneratedValidator(candidates);
         if (models.IsDefaultOrEmpty) return;
 
         // An extension method cannot be more visible than the model in its signature, so
