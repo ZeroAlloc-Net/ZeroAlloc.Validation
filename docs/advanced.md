@@ -13,7 +13,7 @@ sidebar_position: 10
 `[SkipWhen(nameof(MethodName))]` goes on the **class** (not a property). When the named method returns `true`, the entire `Validate()` call returns an empty (valid) `ValidationResult` immediately — no rules are checked.
 
 - `[AttributeUsage(AttributeTargets.Class)]`
-- Method: instance method, no parameters, returns `bool`
+- Method: a `public` or `internal` instance method, no parameters, returning `bool`
 - If method returns `true` → skip all validation, return valid result
 - If method returns `false` → proceed with normal validation
 
@@ -32,11 +32,13 @@ public class Order
     [GreaterThan(0)]
     public decimal Amount { get; set; }
 
-    private bool ShouldSkipValidation() => IsDraft;
+    public bool ShouldSkipValidation() => IsDraft;
 }
 ```
 
 When `IsDraft` is `true`, `validator.Validate(order)` returns `IsValid = true` with zero failures.
+
+The generated validator calls the method as `instance.ShouldSkipValidation()`. The generator compiles that call first. If it would not compile, because the method is static, `private` or `protected` ([ZV0028](diagnostics.md#zv0028)) or for any other reason the compiler gives ([ZV0030](diagnostics.md#zv0030)), the generator reports it at the attribute and leaves the skip check out. The model is then always validated: a skip condition that does not work fails the build rather than letting an invalid model through as valid. That includes a method that is only inaccessible on a base type, which is ZV0028 here rather than the [ZV0017](diagnostics.md#zv0017) warning a `When` method would get, because `[SkipWhen]` is always declared on the model itself.
 
 ---
 
@@ -219,19 +221,17 @@ public class Shipment
 {
     public bool IsInternational { get; set; }
 
-    [NotEmpty(When = nameof(IsInternational))]
+    [NotEmpty(When = nameof(ShipsAbroad))]
     public string? CustomsCode { get; set; }
 
-    [MaxLength(10, Unless = nameof(IsInternational))]
+    [MaxLength(10, Unless = nameof(ShipsAbroad))]
     public string? PostalCode { get; set; }
+
+    public bool ShipsAbroad() => IsInternational;
 }
 ```
 
-The method referenced by `When`/`Unless` must be a no-parameter instance method returning `bool`. Tip: wrap boolean properties in a method:
-
-```csharp
-private bool IsInternational() => IsInternational;
-```
+The method referenced by `When`/`Unless` is called as `instance.Method()`, so it must be a `public` or `internal` instance method that takes no arguments and returns `bool`. A `bool` property cannot be named directly, since `instance.IsInternational()` does not compile, so wrap it in a method, as `ShipsAbroad` does above. The generator compiles each call before emitting it; one that would not compile is reported as [ZV0028](diagnostics.md#zv0028) or [ZV0030](diagnostics.md#zv0030) with the compiler's reason, and the rule is left out.
 
 `When` and `Unless` work on all attributes that inherit from `ValidationAttribute` (i.e., all built-in rule attributes). They are NOT available on `[CustomValidation]` (which inherits from `System.Attribute` directly).
 

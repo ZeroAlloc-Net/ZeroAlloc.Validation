@@ -127,11 +127,12 @@ nothing is reported for it.
 
 ## A validation method the validator cannot call now fails the build (ZV0028)
 
-The generated validator calls `[CustomValidation]`, `[Must]`, `When` and `Unless` methods as
-`instance.Method(...)`. A method that was static, or `private` or `protected` on the
-`[Validate]` type itself, was emitted anyway, so the build already failed, but with CS0122 or
-CS0176 inside generated code. 2.0 reports [ZV0028](diagnostics.md#zv0028) at the attribute
-instead and validates the rest of the model.
+The generated validator calls `[CustomValidation]`, `[Must]`, `When`, `Unless` and
+`[SkipWhen]` methods as `instance.Method(...)`. A method that was static, or `private` or
+`protected` on the `[Validate]` type itself, was emitted anyway, so the build already failed, but
+with CS0122 or CS0176 inside generated code. 2.0 reports [ZV0028](diagnostics.md#zv0028) at the
+attribute instead and validates the rest of the model. For `[SkipWhen]` the skip check is left
+out, so the model is always validated.
 
 One case compiled in 1.x: a static base-type method that was also `private` or `protected`,
 used as a `[CustomValidation]` method or named by `When` or `Unless`, was dropped with a
@@ -141,8 +142,37 @@ runs and making the method public would not change that.
 A `[Must]` predicate that is `protected` or `private` on a base type failed with CS0122 in 1.x.
 It is now [ZV0017](diagnostics.md#zv0017), the warning a `When` or `Unless` method in the same
 position already gave: the rule is dropped, since the base type may not be yours to change.
-Treat the warning as you would that one.
+Treat the warning as you would that one. A `[SkipWhen]` method that is `protected` or `private`
+on a base type is ZV0028, an error, since `[SkipWhen]` is always declared on the model itself.
 
 ### What to do
 
 Make the method a `public` or `internal` instance method, or remove the rule.
+
+## A validation method call that does not compile is reported as ZV0030
+
+The method a `[Must]`, `When`, `Unless` or `[SkipWhen]` names was emitted as a call without
+being checked. The wrong number of parameters, a parameter type the property's value does not
+convert to, an ambiguous overload, a generic method whose type arguments cannot be inferred, or
+a result that is not a condition failed with CS1501, CS1503, CS0121, CS0411, CS0019, CS0023 or
+similar inside generated code. 2.0 compiles each call
+in the generated file's context first and reports [ZV0030](diagnostics.md#zv0030) at the
+attribute instead, quoting the compiler's error. It validates the rest of the model; for
+`[SkipWhen]` it always validates the model.
+
+Only calls that already failed to compile are reported, and not every one of them: a call whose
+member does not exist in the generator's input, CS1061 and the like, is still emitted, because
+another source generator may add that member. The final compilation then reports the missing
+member as it did in 1.x. Everything that compiled in 1.x, including extension methods,
+delegate-typed members and results that convert to `bool`, and members other generators add,
+keeps working unchanged.
+
+A generic `[CustomValidation]` method failed with CS0411 in 1.x and is now
+[ZV0013](diagnostics.md#zv0013). A `[CustomValidation]` method on a base type whose name the
+model reuses for another method failed to compile in 1.x. It now runs: the validator calls it
+through the type that declares it.
+
+### What to do
+
+Nothing for code that builds today. Where a build failed inside generated code, read the
+compiler error quoted in ZV0030 and fix the method or the name, or remove the rule.

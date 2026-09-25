@@ -9,10 +9,18 @@ internal enum MethodReach
     Callable,
 
     /// <summary>
-    /// No method of that name takes the arguments the validator passes. Left to the compiler,
-    /// which already reports a <c>nameof</c> that does not resolve.
+    /// The call the validator would contain does not compile, for a reason other than a static
+    /// or inaccessible method: no member of that name takes the arguments, the call is
+    /// ambiguous, or its result cannot be used as a condition. ZV0030.
     /// </summary>
     NotFound,
+
+    /// <summary>
+    /// The generator's input compilation has no member of that name for the call. Another
+    /// source generator may add one, which only the final compilation contains, so the call is
+    /// emitted and the final compilation decides. Not reported.
+    /// </summary>
+    MissingFromInput,
 
     /// <summary>The method is static, so <c>instance.Method()</c> is CS0176. ZV0028.</summary>
     Static,

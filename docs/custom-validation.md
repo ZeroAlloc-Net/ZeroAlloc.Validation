@@ -201,7 +201,7 @@ public class Product
     [Must(nameof(IsValidSku))]
     public string Sku { get; set; } = "";
 
-    private bool IsValidSku(string value) =>
+    public bool IsValidSku(string value) =>
         value.StartsWith("SKU-") && value.Length >= 7;
 }
 ```
