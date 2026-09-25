@@ -149,10 +149,9 @@ validation formats nothing.
   from the placeholder resolver's point of view.
 - A placeholder that matches nothing is left in the message literally and reported as
   [ZV0022](diagnostics.md#zv0022).
-- A placeholder token that appears *inside a substituted value* is expanded again, not treated
-  as literal text — tracked as
-  [#204](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/204). Avoid passing a
-  constructor or named argument whose value itself contains `{` and `}` until that is fixed.
+- Each placeholder is substituted exactly once, and a substituted value is never read again for
+  placeholders. `[Tagged(Tag = "{PropertyName}")]` with `[RuleMessage("{PropertyName}: {Tag}")]`
+  renders `Name: {PropertyName}`, and a `{PropertyValue}` inside an argument stays literal text.
 
 ### Limitations
 

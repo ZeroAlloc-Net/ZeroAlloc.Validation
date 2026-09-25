@@ -321,61 +321,35 @@ internal static class CustomRules
         && string.Equals(type.ContainingNamespace?.ToDisplayString(), ValidationNamespace, StringComparison.Ordinal);
 
     /// <summary>
-    /// Replaces each <c>{name}</c> in <paramref name="message"/> with the constant written on the
-    /// usage for the constructor parameter of that name, or else for the named argument of that
-    /// name. Matching is case-sensitive. The reserved <c>{PropertyName}</c> and
-    /// <c>{PropertyValue}</c> are left for the caller. A name that matches nothing is left as
-    /// written and returned in <paramref name="unknown"/>, once per name.
+    /// Resolves a custom rule's message template in one pass. <c>{PropertyName}</c> becomes
+    /// <paramref name="displayName"/>, and each other <c>{name}</c> becomes the constant written on
+    /// the usage for the constructor parameter of that name, or else for the named argument of that
+    /// name. Matching is case-sensitive. <c>{PropertyValue}</c> is left for validation time. A name
+    /// that matches nothing is kept as written and returned in <paramref name="unknown"/>, once per
+    /// name. Substituted text is never read again for placeholders.
     /// </summary>
-    public static string ResolveNamedPlaceholders(string message, AttributeData attr, out IReadOnlyList<string> unknown)
+    public static MessageTemplate ResolveMessage(
+        string template,
+        AttributeData attr,
+        string displayName,
+        out IReadOnlyList<string> unknown)
     {
         List<string>? unknownNames = null;
-        var sb = new StringBuilder(message.Length);
-        var pos = 0;
-        while (pos < message.Length)
+        var resolved = MessageTemplate.Resolve(template, name =>
         {
-            var open = message.IndexOf('{', pos);
-            if (open < 0) break;
-            var close = message.IndexOf('}', open + 1);
-            if (close < 0) break;
-
-            var name = message.Substring(open + 1, close - open - 1);
-            if (!IsPlaceholderName(name) || name is "PropertyName" or "PropertyValue")
-            {
-                // Copy up to the '{' only, so a '{' inside a non-placeholder span is scanned again.
-                sb.Append(message, pos, open + 1 - pos);
-                pos = open + 1;
-                continue;
-            }
-
-            sb.Append(message, pos, open - pos);
+            if (string.Equals(name, "PropertyName", StringComparison.Ordinal))
+                return displayName;
             if (TryFindArgument(attr, name, out var value))
-            {
-                sb.Append(FormatPlaceholderValue(value));
-            }
-            else
-            {
-                sb.Append(message, open, close + 1 - open);
-                unknownNames ??= new List<string>();
-                if (!unknownNames.Exists(n => string.Equals(n, name, StringComparison.Ordinal)))
-                    unknownNames.Add(name);
-            }
-            pos = close + 1;
-        }
-        sb.Append(message, pos, message.Length - pos);
+                return FormatPlaceholderValue(value);
+
+            unknownNames ??= new List<string>();
+            if (!unknownNames.Exists(n => string.Equals(n, name, StringComparison.Ordinal)))
+                unknownNames.Add(name);
+            return null;
+        });
 
         unknown = unknownNames ?? (IReadOnlyList<string>)Array.Empty<string>();
-        return sb.ToString();
-    }
-
-    private static bool IsPlaceholderName(string name)
-    {
-        if (name.Length == 0 || !(char.IsLetter(name[0]) || name[0] == '_')) return false;
-        foreach (var c in name)
-        {
-            if (!(char.IsLetterOrDigit(c) || c == '_')) return false;
-        }
-        return true;
+        return resolved;
     }
 
     private static bool TryFindArgument(AttributeData attr, string name, out TypedConstant value)

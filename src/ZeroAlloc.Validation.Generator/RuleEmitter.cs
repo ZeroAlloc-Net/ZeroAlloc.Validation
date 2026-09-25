@@ -382,7 +382,7 @@ internal static class RuleEmitter
             var message = ResolveRuleMessage(attr, fqn, displayName, prop, ruleMessage, ctx);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
             var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, ruleIndex: i, fields: fields);
-            var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
+            var propertyValueExpr = message.HasPropertyValue ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
             var whenGuard    = whenMethod   is null ? "" : $"{modelParamName}.{whenMethod}() && ";
@@ -611,7 +611,7 @@ internal static class RuleEmitter
             var message = ResolveRuleMessage(attr, fqn, displayName, prop, ruleMessage, ctx);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
             var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, ruleIndex: i, fields: fields);
-            var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
+            var propertyValueExpr = message.HasPropertyValue ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
             var whenGuard    = whenMethod   is null ? "" : $"{modelParamName}.{whenMethod}() && ";
@@ -651,7 +651,7 @@ internal static class RuleEmitter
     /// only the sync visit passes it, so each usage reports once. <paramref name="ruleMessage"/>
     /// is the usage's <see cref="FindCustomRuleMessage"/>, resolved once by the caller.
     /// </summary>
-    private static string ResolveRuleMessage(
+    private static MessageTemplate ResolveRuleMessage(
         AttributeData attr,
         string fqn,
         string displayName,
@@ -660,12 +660,13 @@ internal static class RuleEmitter
         SourceProductionContext? ctx)
     {
         if (!CustomRules.IsCustomRule(attr))
-            return ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
+            return ResolveMessage(attr, fqn, displayName)
+                ?? MessageTemplate.Literal(GetDefaultMessage(fqn, attr, displayName));
 
         var template = GetMessage(attr)
             ?? ruleMessage?.Message
             ?? InvalidFallbackMessage;
-        var resolved = CustomRules.ResolveNamedPlaceholders(template, attr, out var unknown);
+        var resolved = CustomRules.ResolveMessage(template, attr, displayName, out var unknown);
 
         if (ctx is not null)
         {
@@ -678,7 +679,7 @@ internal static class RuleEmitter
             }
         }
 
-        return resolved.Replace("{PropertyName}", displayName);
+        return resolved;
     }
 
     /// <summary>
@@ -689,44 +690,52 @@ internal static class RuleEmitter
     private static (string Message, string? ErrorCode)? FindCustomRuleMessage(AttributeData attr) =>
         CustomRules.IsCustomRule(attr) ? CustomRules.FindRuleMessage(attr.AttributeClass!) : null;
 
-    private static string? ResolveMessage(AttributeData attr, string fqn, string propName)
+    /// <summary>
+    /// A built-in rule's usage <c>Message</c>, resolved in one pass, or <see langword="null"/> when
+    /// the usage sets none. <c>{PropertyName}</c> becomes <paramref name="propName"/>, and the
+    /// rule's own placeholders become its arguments: <c>{ComparisonValue}</c> for the comparison
+    /// rules, <c>{MinLength}</c> and <c>{MaxLength}</c> for the length rules, and <c>{From}</c> and
+    /// <c>{To}</c> for the range rules. Any other name is kept as written.
+    /// </summary>
+    private static MessageTemplate? ResolveMessage(AttributeData attr, string fqn, string propName)
     {
         var raw = GetMessage(attr);
         if (raw is null) return null;
 
-        var result = raw.Replace("{PropertyName}", propName);
+        return MessageTemplate.Resolve(raw, name => ResolveBuiltInPlaceholder(attr, fqn, propName, name));
+    }
 
-        // {ComparisonValue} — single numeric arg used by comparison validators
-        if (fqn is GreaterThanFqn or LessThanFqn or GreaterThanOrEqualToFqn or LessThanOrEqualToFqn
-                 or EqualFqn or NotEqualFqn)
+    private static string? ResolveBuiltInPlaceholder(AttributeData attr, string fqn, string propName, string name)
+    {
+        switch (name)
         {
-            var val = fqn is (EqualFqn or NotEqualFqn) && IsStringArg(attr, 0)
-                ? GetStringArg(attr, 0)
-                : GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture);
-            result = result.Replace("{ComparisonValue}", val);
-        }
+            case "PropertyName":
+                return propName;
 
-        // {MinLength} / {MaxLength}
-        if (fqn is LengthFqn)
-        {
-            result = result
-                .Replace("{MinLength}", GetIntArg(attr, 0).ToString(CultureInfo.InvariantCulture))
-                .Replace("{MaxLength}", GetIntArg(attr, 1).ToString(CultureInfo.InvariantCulture));
-        }
-        if (fqn is MinLengthFqn)
-            result = result.Replace("{MinLength}", GetIntArg(attr, 0).ToString(CultureInfo.InvariantCulture));
-        if (fqn is MaxLengthFqn)
-            result = result.Replace("{MaxLength}", GetIntArg(attr, 0).ToString(CultureInfo.InvariantCulture));
+            case "ComparisonValue" when fqn is GreaterThanFqn or LessThanFqn or GreaterThanOrEqualToFqn
+                    or LessThanOrEqualToFqn or EqualFqn or NotEqualFqn:
+                return fqn is (EqualFqn or NotEqualFqn) && IsStringArg(attr, 0)
+                    ? GetStringArg(attr, 0)
+                    : GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture);
 
-        // {From} / {To}
-        if (fqn is ExclusiveBetweenFqn or InclusiveBetweenFqn)
-        {
-            result = result
-                .Replace("{From}", GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture))
-                .Replace("{To}",   GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture));
-        }
+            case "MinLength" when fqn is LengthFqn or MinLengthFqn:
+                return GetIntArg(attr, 0).ToString(CultureInfo.InvariantCulture);
 
-        return result;
+            case "MaxLength" when fqn is LengthFqn:
+                return GetIntArg(attr, 1).ToString(CultureInfo.InvariantCulture);
+
+            case "MaxLength" when fqn is MaxLengthFqn:
+                return GetIntArg(attr, 0).ToString(CultureInfo.InvariantCulture);
+
+            case "From" when fqn is ExclusiveBetweenFqn or InclusiveBetweenFqn:
+                return GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture);
+
+            case "To" when fqn is ExclusiveBetweenFqn or InclusiveBetweenFqn:
+                return GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture);
+
+            default:
+                return null;
+        }
     }
 
     private static string? GetMessage(AttributeData attr) =>
@@ -857,7 +866,7 @@ internal static class RuleEmitter
 
     private static string BuildFailureInitializer(
         string propName,
-        string message,
+        MessageTemplate message,
         AttributeData attr,
         (string Message, string? ErrorCode)? ruleMessage,
         string? propertyValueExpr)
@@ -868,13 +877,15 @@ internal static class RuleEmitter
         string errorMessageExpr;
         if (propertyValueExpr is not null)
         {
-            // Split on {PropertyValue}, escape static parts for interpolated string, join with the expression hole.
-            var parts = message.Split(new[] { "{PropertyValue}" }, System.StringSplitOptions.None);
+            // Escape the literal parts for an interpolated string and join them with the value hole.
+            // The parts were split at each {PropertyValue} of the template before any substitution,
+            // so a {PropertyValue} inside a substituted value stays literal text.
+            var parts = message.Parts;
             var msgSb = new StringBuilder("$\"");
-            for (int i = 0; i < parts.Length; i++)
+            for (int i = 0; i < parts.Count; i++)
             {
                 msgSb.Append(EscapeStringForInterpolation(parts[i]));
-                if (i < parts.Length - 1)
+                if (i < parts.Count - 1)
                 {
                     msgSb.Append('{');
                     msgSb.Append(propertyValueExpr);
@@ -886,7 +897,7 @@ internal static class RuleEmitter
         }
         else
         {
-            errorMessageExpr = $"\"{EscapeString(message)}\"";
+            errorMessageExpr = $"\"{EscapeString(message.Parts[0])}\"";
         }
 
         var sb = new StringBuilder();
@@ -1155,9 +1166,6 @@ internal static class RuleEmitter
 
     internal static string EscapeString(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"");
-
-    private static bool HasPropertyValuePlaceholder(string message) =>
-        message.IndexOf("{PropertyValue}", StringComparison.Ordinal) >= 0;
 
     private static string BuildPropertyValueExpr(IPropertySymbol prop, string modelParamName)
     {
