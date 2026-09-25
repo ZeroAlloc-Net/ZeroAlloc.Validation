@@ -52,4 +52,22 @@
     </ItemGroup>
   </Target>
 
+  <!--
+    build/ makes ZeroAllocGeneratedAccessibility CompilerVisible for a project that references
+    this package directly. buildTransitive/ does the same for a project that only gets it
+    transitively, through a project reference to another project that references this package —
+    this package is referenced normally, not with PrivateAssets, so the bundled generator's
+    analyzer, packed above, runs for those consumers too. See #193.
+  -->
+  <ItemGroup>
+    <None Include="build/ZeroAlloc.Validation.Options.props"
+          Pack="true"
+          PackagePath="build/ZeroAlloc.Validation.Options.props"
+          Visible="false" />
+    <None Include="buildTransitive/ZeroAlloc.Validation.Options.props"
+          Pack="true"
+          PackagePath="buildTransitive/ZeroAlloc.Validation.Options.props"
+          Visible="false" />
+  </ItemGroup>
+
 </Project>

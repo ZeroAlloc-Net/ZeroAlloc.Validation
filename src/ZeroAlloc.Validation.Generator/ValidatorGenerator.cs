@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Diagnostics;
+using ZeroAlloc.Validation.Generator.Shared;
 
 namespace ZeroAlloc.Validation.Generator;
 
@@ -83,6 +85,23 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor ZV0019 = new DiagnosticDescriptor(
+        id: "ZV0019",
+        title: "Invalid ZeroAllocGeneratedAccessibility value",
+        messageFormat: "MSBuild property 'ZeroAllocGeneratedAccessibility' has invalid value '{0}'; allowed values are 'Public' and 'Internal'",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    // The exact MSBuild property name shared, unqualified, across every ZeroAlloc generator
+    // package (issue #193). CompilerVisibleProperty in the package's build/buildTransitive
+    // props makes it available here as build_property.<name>.
+    private const string GeneratedAccessibilityProperty = "build_property.ZeroAllocGeneratedAccessibility";
+
+    private enum GeneratedAccessibilityMode { Public, Internal }
+
+    private readonly record struct GeneratedAccessibilityResult(GeneratedAccessibilityMode Mode, Diagnostic? Diagnostic);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var validateClasses = context.SyntaxProvider
@@ -107,11 +126,43 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 return new BehaviorCache(sync, async_);
             });
         var combined = validateClasses.Combine(behaviors);
+
+        // ZV0019: read once per compilation, independent of whether any [Validate] class is
+        // present, so an invalid value is reported even in a project with nothing to generate.
+        var accessibility = context.AnalyzerConfigOptionsProvider
+            .Select(static (provider, _) => ParseGeneratedAccessibility(provider));
+
+        var combinedWithMode = combined.Combine(accessibility.Select(static (result, _) => result.Mode));
 #pragma warning restore EPS06
-        context.RegisterSourceOutput(combined, static (ctx, pair) => Emit(ctx, pair.Left, pair.Right));
+
+        context.RegisterSourceOutput(accessibility, static (ctx, result) =>
+        {
+            if (result.Diagnostic is not null)
+                ctx.ReportDiagnostic(result.Diagnostic);
+        });
+
+        context.RegisterSourceOutput(combinedWithMode, static (ctx, pair) => Emit(ctx, pair.Left.Left, pair.Left.Right, pair.Right));
     }
 
-    private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymbol, BehaviorCache allBehaviors)
+    // ZV0019: "Public" and "Internal" are the only allowed values, compared case-insensitively;
+    // an unset or empty property defaults to Public, unchanged since before #193. Any other
+    // value is an error, and every validator in the compilation falls back to Public so the
+    // rest of the build still reflects today's behavior instead of silently going internal.
+    private static GeneratedAccessibilityResult ParseGeneratedAccessibility(AnalyzerConfigOptionsProvider provider)
+    {
+        if (!provider.GlobalOptions.TryGetValue(GeneratedAccessibilityProperty, out var raw) || raw.Length == 0)
+            return new GeneratedAccessibilityResult(GeneratedAccessibilityMode.Public, null);
+
+        if (string.Equals(raw, "Public", StringComparison.OrdinalIgnoreCase))
+            return new GeneratedAccessibilityResult(GeneratedAccessibilityMode.Public, null);
+        if (string.Equals(raw, "Internal", StringComparison.OrdinalIgnoreCase))
+            return new GeneratedAccessibilityResult(GeneratedAccessibilityMode.Internal, null);
+
+        var diagnostic = Diagnostic.Create(ZV0019, Location.None, raw);
+        return new GeneratedAccessibilityResult(GeneratedAccessibilityMode.Public, diagnostic);
+    }
+
+    private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymbol, BehaviorCache allBehaviors, GeneratedAccessibilityMode mode)
     {
         // ZV0014 — surface mutability hazard on non-readonly structs. Generator
         // still proceeds to emit the validator; the warning is informational.
@@ -140,7 +191,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         var modelName = classSymbol.Name;
 
         var sb = new System.Text.StringBuilder();
-        EmitFileHeader(sb, namespaceName, classSymbol, validatorName, modelName);
+        EmitFileHeader(sb, namespaceName, classSymbol, validatorName, modelName, mode);
 
         var nestedFields = RuleEmitter.CollectNestedValidatorFields(classSymbol);
         EmitFieldsAndConstructor(sb, validatorName, nestedFields);
@@ -313,7 +364,8 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         string? namespaceName,
         INamedTypeSymbol classSymbol,
         string validatorName,
-        string modelName)
+        string modelName,
+        GeneratedAccessibilityMode mode)
     {
         sb.AppendLine("// <auto-generated />");
         sb.AppendLine("#nullable enable");
@@ -342,25 +394,19 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // Documenting rather than suppressing also puts these members in the consumer's own
         // XML documentation file, which a #pragma would not.
         sb.AppendLine($"/// <summary>Validates <c>{modelName}</c> instances against the rules declared on the type.</summary>");
-        // The validator follows the model's effective accessibility. A public validator
-        // over an internal model fails with CS9338 and CS0051, issue #184.
-        var accessibility = IsEffectivelyPublic(classSymbol) ? "public" : "internal";
+        // The validator follows the model's effective accessibility. A public validator over an
+        // internal model fails with CS9338 and CS0051, issue #184. Extended for issue #193
+        // point 3: the validator is public only if the model itself is effectively public AND
+        // every nested [Validate] model it takes as a constructor-injected validator dependency
+        // would itself resolve to a public validator, computed transitively — otherwise the
+        // outer validator's public constructor would take a less-accessible parameter and fail
+        // with CS0051, exactly the case point 3 reported. With
+        // ZeroAllocGeneratedAccessibility=Internal, every validator is internal regardless.
+        var accessibility = mode == GeneratedAccessibilityMode.Public && NestedValidatorAccessibility.WouldBePublic(classSymbol)
+            ? "public"
+            : "internal";
         sb.AppendLine($"{accessibility} sealed partial class {validatorName} : ValidatorFor<{modelName}>");
         sb.AppendLine("{");
-    }
-
-    /// <summary>
-    /// True when <paramref name="type"/> and every type containing it are public, so the
-    /// type is visible outside its assembly.
-    /// </summary>
-    private static bool IsEffectivelyPublic(INamedTypeSymbol type)
-    {
-        for (INamedTypeSymbol? t = type; t is not null; t = t.ContainingType)
-        {
-            if (t.DeclaredAccessibility != Accessibility.Public)
-                return false;
-        }
-        return true;
     }
 
     private static void EmitFieldsAndConstructor(

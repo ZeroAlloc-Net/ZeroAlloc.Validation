@@ -67,11 +67,26 @@
     references this package. It fails the build with ZV9001 if the consumer also references
     ZeroAlloc.Validation.Generator directly, since this package now bundles it and a dual
     reference loads the generator twice, producing duplicate {Model}Validator types.
+
+    build/ZeroAlloc.Validation.props makes ZeroAllocGeneratedAccessibility CompilerVisible for a
+    project that references this package directly. buildTransitive/ZeroAlloc.Validation.props
+    does the same for a project that only gets it transitively, through a project reference to
+    another project that references this package — this package is referenced normally, not
+    with PrivateAssets, so the bundled generator's analyzer, packed above, runs for those
+    consumers too. See #193.
   -->
   <ItemGroup>
     <None Include="build/ZeroAlloc.Validation.targets"
           Pack="true"
           PackagePath="build/"
+          Visible="false" />
+    <None Include="build/ZeroAlloc.Validation.props"
+          Pack="true"
+          PackagePath="build/ZeroAlloc.Validation.props"
+          Visible="false" />
+    <None Include="buildTransitive/ZeroAlloc.Validation.props"
+          Pack="true"
+          PackagePath="buildTransitive/ZeroAlloc.Validation.props"
           Visible="false" />
   </ItemGroup>
 

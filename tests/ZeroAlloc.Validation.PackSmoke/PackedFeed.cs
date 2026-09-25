@@ -56,13 +56,21 @@ public sealed class PackedFeed : IDisposable
     /// Writes a consumer library that restores the given packages from the local feed and
     /// calls the method each of them generates, and returns its project path.
     /// </summary>
-    public string ScaffoldConsumer(string name, ConsumerPackages packages)
+    /// <param name="name">The consumer project's name.</param>
+    /// <param name="packages">Which optional packages, besides ZeroAlloc.Validation, to reference.</param>
+    /// <param name="generatedAccessibility">
+    /// When set, written into the consumer's own csproj as
+    /// <c>&lt;ZeroAllocGeneratedAccessibility&gt;</c>, exercising the exact
+    /// <c>build/*.props</c> files the packages ship (issue #193). Null leaves the property
+    /// unset, today's default behavior.
+    /// </param>
+    public string ScaffoldConsumer(string name, ConsumerPackages packages, string? generatedAccessibility = null)
     {
         var dir = Path.Combine(_workDir, name);
         Directory.CreateDirectory(dir);
 
         WriteNuGetConfig(dir);
-        WriteProject(dir, name, packages);
+        WriteProject(dir, name, packages, generatedAccessibility);
         WriteSource(dir, packages);
 
         return Path.Combine(dir, $"{name}.csproj");
@@ -87,24 +95,35 @@ public sealed class PackedFeed : IDisposable
             """);
     }
 
-    private void WriteProject(string dir, string name, ConsumerPackages packages)
+    private void WriteProject(string dir, string name, ConsumerPackages packages, string? generatedAccessibility)
     {
         var references = new StringBuilder();
         AppendReference(references, packages, ConsumerPackages.Options,    "ZeroAlloc.Validation.Options");
         AppendReference(references, packages, ConsumerPackages.Inject,     "ZeroAlloc.Validation.Inject");
         AppendReference(references, packages, ConsumerPackages.AspNetCore, "ZeroAlloc.Validation.AspNetCore");
 
+        var accessibilityProperty = generatedAccessibility is null
+            ? ""
+            : $"    <ZeroAllocGeneratedAccessibility>{generatedAccessibility}</ZeroAllocGeneratedAccessibility>{Environment.NewLine}";
+
         // ZeroAlloc.Validation bundles ZeroAlloc.Validation.Generator itself, issue #194.
         // Referencing the standalone Generator package here too would trip the ZV9001
         // duplicate-generator guard (build/ZeroAlloc.Validation.targets) and fail every
         // consumer scaffolded below, on purpose — see DuplicateGeneratorTests for that case.
+        //
+        // CopyLocalLockFileAssemblies: a plain class library does not copy its package
+        // dependencies to its output directory by default, so GeneratedAccessibilityPackTests,
+        // which loads the built consumer DLL and reflects over its generated types, would fail
+        // to resolve ZeroAlloc.Validation (and friends) at reflection time. Harmless for the
+        // consumers other PackSmoke tests only build and never load.
         File.WriteAllText(Path.Combine(dir, $"{name}.csproj"), $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
                 <TargetFramework>net10.0</TargetFramework>
                 <Nullable>enable</Nullable>
                 <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-              </PropertyGroup>
+                <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+            {accessibilityProperty}  </PropertyGroup>
               <ItemGroup>
                 <PackageReference Include="ZeroAlloc.Validation" Version="{Version}" />
             {references}  </ItemGroup>

@@ -1,0 +1,18 @@
+<Project>
+  <!--
+    Makes the org-wide ZeroAllocGeneratedAccessibility MSBuild property visible to the
+    ZeroAlloc.Validation.Inject source generator via AnalyzerConfigOptionsProvider.GlobalOptions,
+    as build_property.ZeroAllocGeneratedAccessibility. Without this, a project setting the
+    property would have no effect: the generator would never see the value.
+
+    No buildTransitive/ counterpart: this package is a development-only analyzer
+    (DevelopmentDependency=true, IncludeBuildOutput=false) meant to be referenced directly, with
+    PrivateAssets="all", by every project that wants AddZeroAllocValidators() for its own code —
+    the same convention as ZeroAlloc.Validation.Generator and ZeroAlloc.Inject.Generator. A
+    PrivateAssets="all" reference does not flow to a project that only depends on this one
+    transitively, so there is no consumer for a buildTransitive/ props to reach.
+  -->
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ZeroAllocGeneratedAccessibility" />
+  </ItemGroup>
+</Project>

@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0018 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0019 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -20,6 +20,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0016](#zv0016) | Warning | Multi-property value-object can't be auto-unwrapped |
 | [ZV0017](#zv0017) | Warning | Validation rules depending on an inaccessible base member are ignored |
 | [ZV0018](#zv0018) | Warning | Duplicate validation attribute |
+| [ZV0019](#zv0019) | Error | Invalid ZeroAllocGeneratedAccessibility value |
 
 ---
 
@@ -226,3 +227,34 @@ Named arguments are compared order-independently, so `[NotEmpty(ErrorCode = "A",
 **Fix:** Remove the repeated attribute. If both were meant to check different things, give them different arguments.
 
 **Suppressing:** `#pragma warning disable ZV0018` around the property, or `<NoWarn>$(NoWarn);ZV0018</NoWarn>`. Note that the duplicate failure is still reported at runtime.
+
+---
+
+## ZV0019
+
+**Severity:** Error
+
+**Title:** Invalid ZeroAllocGeneratedAccessibility value
+
+**When fired:** The `ZeroAllocGeneratedAccessibility` MSBuild property (see [Generated accessibility](advanced.md#generated-accessibility--keeping-validators-out-of-a-librarys-public-api)) is set to a value other than `Public` or `Internal`. Rather than silently fall back to a default, the generator reports ZV0019 for the whole compilation and treats the value as `Public` — today's behavior — so the rest of the build is not thrown off by a typo in this one property.
+
+The comparison is case-insensitive: `Internal`, `internal` and `INTERNAL` are all valid. Leaving the property unset, or setting it to an empty string, is also valid and means `Public`.
+
+This diagnostic is reported once per compilation, independent of whether the project has any `[Validate]` model the generator would otherwise emit a validator for.
+
+```xml
+<PropertyGroup>
+  <!-- ZV0019: ZeroAllocGeneratedAccessibility is set to 'Priv4te'. Allowed values are 'Public' and 'Internal'. -->
+  <ZeroAllocGeneratedAccessibility>Priv4te</ZeroAllocGeneratedAccessibility>
+</PropertyGroup>
+```
+
+**Fix:** Set the property to `Public` or `Internal`:
+
+```xml
+<PropertyGroup>
+  <ZeroAllocGeneratedAccessibility>Internal</ZeroAllocGeneratedAccessibility>
+</PropertyGroup>
+```
+
+Or remove the property entirely to keep the default (`Public`).
