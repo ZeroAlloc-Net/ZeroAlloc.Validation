@@ -18,3 +18,4 @@ ZV0028  | ZeroAlloc.Validation | Error    | Validation method the generated vali
 ZV0029  | ZeroAlloc.Validation | Error    | [Validate] on a generic type
 ZV0030  | ZeroAlloc.Validation | Error    | Validation method call that does not compile
 ZV0031  | ZeroAlloc.Validation | Error    | Two [Validate] models whose validators would have the same name
+ZV0032  | ZeroAlloc.Validation | Warning  | Validation call that raises a compiler warning in the generated validator

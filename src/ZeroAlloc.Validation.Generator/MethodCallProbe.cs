@@ -24,6 +24,17 @@ namespace ZeroAlloc.Validation.Generator;
 /// generators add. A call whose member is not found at all may be completed by one of them, so
 /// it is not reported: it is emitted, and the final compilation decides, as it always did.
 /// </para>
+/// <para>
+/// A call that compiles can still warn, and whether it does can depend on the code before it:
+/// a <c>[NotNull]</c> rule's null test leaves the property maybe-null for a later
+/// <c>[Must]</c> predicate, while an <c>else if</c> under <c>StopOnFirstFailure</c>, or a
+/// <c>When</c> guard with <c>[MemberNotNullWhen]</c>, makes it not-null. So warnings are read
+/// from the generated validator's own <c>Validate</c> body, emitted by
+/// <see cref="RuleEmitter.EmitValidateBody"/> exactly as the generated file has it, once the
+/// calls that do not compile are left out: <see cref="CallWarnings"/>. Only models with a call
+/// <see cref="CertainCall"/> cannot prove warning-free are compiled, all in one second probe
+/// file per compilation.
+/// </para>
 /// </summary>
 internal static class MethodCallProbe
 {
@@ -31,6 +42,7 @@ internal static class MethodCallProbe
     public const string Model = "instance";
 
     private const string ProbeClass = "__ZeroAllocValidationMethodCallProbe";
+    private const string WarningProbeClass = "__ZeroAllocValidationCallWarningProbe";
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
 
     /// <summary>
@@ -42,16 +54,37 @@ internal static class MethodCallProbe
         new(System.StringComparer.Ordinal) { "CS1061", "CS0117", "CS0103", "CS1929" };
 
     /// <summary>
-    /// Probe verdicts per compilation, keyed by model and statement. The generator runs every
-    /// model against each new compilation, and all of them share this one probe. It is safe
-    /// across runs: a <see cref="Compilation"/> is immutable, so a verdict computed for it never
-    /// goes stale; any edit produces a new compilation object and so a new entry; and the table
-    /// holds its keys weakly, so an entry goes away with its compilation. Models are keyed by
-    /// name, not symbol, so a model symbol carried over from an earlier run still finds its
-    /// verdicts.
+    /// Probe results per compilation: call verdicts keyed by model and statement, and call
+    /// warnings keyed by model. The generator runs every model against each new compilation,
+    /// and all of them share these probes. They are safe across runs: a
+    /// <see cref="Compilation"/> is immutable, so a result computed for it never goes stale;
+    /// any edit produces a new compilation object and so a new entry; and the table holds its
+    /// keys weakly, so an entry goes away with its compilation. Models are keyed by name, not
+    /// symbol, so a model symbol carried over from an earlier run still finds its results.
     /// </summary>
-    private static readonly ConditionalWeakTable<Compilation, Lazy<ConcurrentDictionary<string, MethodResolution>>> Verdicts =
-        new();
+    private static readonly ConditionalWeakTable<Compilation, ProbeResults> Results = new();
+
+    private sealed class ProbeResults
+    {
+        public ProbeResults(Compilation compilation)
+        {
+            Verdicts = new Lazy<ConcurrentDictionary<string, MethodResolution>>(
+                () => ProbeAll(compilation), LazyThreadSafetyMode.ExecutionAndPublication);
+            // Emitting the bodies resolves their calls, so this runs after Verdicts, never inside it.
+            Warnings = new Lazy<ConcurrentDictionary<string, ModelCallWarnings?>>(
+                () => new ConcurrentDictionary<string, ModelCallWarnings?>(
+                    ProbeWarnings(compilation, ValidatedTypes(compilation.Assembly.GlobalNamespace, compilation)),
+                    System.StringComparer.Ordinal),
+                LazyThreadSafetyMode.ExecutionAndPublication);
+        }
+
+        public Lazy<ConcurrentDictionary<string, MethodResolution>> Verdicts { get; }
+
+        public Lazy<ConcurrentDictionary<string, ModelCallWarnings?>> Warnings { get; }
+    }
+
+    private static ProbeResults ResultsFor(Compilation compilation) =>
+        Results.GetValue(compilation, static c => new ProbeResults(c));
 
     /// <summary>A statement that uses a <c>When</c> or <c>Unless</c> guard as the validator does.</summary>
     public static string GuardStatement(string guard) => $"if ({guard}true) {{ }}";
@@ -89,10 +122,7 @@ internal static class MethodCallProbe
                 name.Length == 0 ? "no method name is given" : $"'{name}' is not a method name");
         }
 
-        var verdicts = Verdicts
-            .GetValue(compilation, c => new Lazy<ConcurrentDictionary<string, MethodResolution>>(
-                () => ProbeAll(c), LazyThreadSafetyMode.ExecutionAndPublication))
-            .Value;
+        var verdicts = ResultsFor(compilation).Verdicts.Value;
 
         var key = Key(model, statement);
         if (verdicts.TryGetValue(key, out var verdict)) return verdict;
@@ -105,7 +135,144 @@ internal static class MethodCallProbe
     }
 
     private static string Key(INamedTypeSymbol model, string statement) =>
-        model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "\n" + statement;
+        ModelKey(model) + "\n" + statement;
+
+    private static string ModelKey(INamedTypeSymbol model) => model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+    /// <summary>
+    /// The compiler warnings on the calls in <paramref name="model"/>'s generated
+    /// <c>Validate</c> body, by line, or <see langword="null"/> when none of them warns.
+    /// </summary>
+    public static ModelCallWarnings? CallWarnings(Compilation compilation, INamedTypeSymbol model)
+    {
+        var warnings = ResultsFor(compilation).Warnings.Value;
+        var key = ModelKey(model);
+        if (warnings.TryGetValue(key, out var found)) return found;
+
+        // A model the whole-compilation probe did not find is probed on its own, once.
+        foreach (var entry in ProbeWarnings(compilation, new[] { model }))
+            warnings.TryAdd(entry.Key, entry.Value);
+        return warnings[key];
+    }
+
+    /// <summary>
+    /// Compiles, in one probe file and one copy of the compilation, the <c>Validate</c> body of
+    /// every model in <paramref name="models"/> that <see cref="RuleEmitter.HasCallThatMayWarn"/>
+    /// selects, and maps each warning the compiler reports inside a call back to that call. A
+    /// warning elsewhere in the body is not about a rule's call and is not mirrored.
+    /// </summary>
+    private static Dictionary<string, ModelCallWarnings?> ProbeWarnings(Compilation compilation, IEnumerable<INamedTypeSymbol> models)
+    {
+        var result = new Dictionary<string, ModelCallWarnings?>(System.StringComparer.Ordinal);
+        var probed = new List<(string Key, IReadOnlyList<List<(Microsoft.CodeAnalysis.Text.TextSpan Span, CallSite Site)>> Lines)>();
+        var text = new StringBuilder();
+        GeneratedCalls.AppendHeader(text);
+
+        foreach (var model in models)
+        {
+            var key = ModelKey(model);
+            if (result.ContainsKey(key)) continue;
+            result[key] = null;
+            if (!RuleEmitter.HasCallThatMayWarn(model, compilation)) continue;
+
+            var className = WarningProbeClass + probed.Count.ToString(CultureInfo.InvariantCulture);
+            probed.Add((key, RuleEmitter.EmitWarningProbe(text, model, compilation, className)));
+        }
+        if (probed.Count == 0) return result;
+
+        var perCall = WarningsByCall(compilation, text.ToString(), probed);
+        for (int m = 0; m < probed.Count; m++)
+            result[probed[m].Key] = Mirrored(probed[m].Lines, m, perCall);
+        return result;
+    }
+
+    /// <summary>
+    /// Compiles <paramref name="text"/>, the probe file, and returns the warnings the compiler
+    /// reports inside each recorded call, keyed by model, line and call index.
+    /// </summary>
+    private static Dictionary<(int Model, int Line, int Call), List<CallWarning>> WarningsByCall(
+        Compilation compilation,
+        string text,
+        List<(string Key, IReadOnlyList<List<(Microsoft.CodeAnalysis.Text.TextSpan Span, CallSite Site)>> Lines)> probed)
+    {
+        // Every call, in text order; calls never overlap, so the one containing a warning is the
+        // last that starts at or before it.
+        var sites = new List<(Microsoft.CodeAnalysis.Text.TextSpan Span, int Model, int Line, int Call)>();
+        for (int m = 0; m < probed.Count; m++)
+        {
+            for (int l = 0; l < probed[m].Lines.Count; l++)
+            {
+                var calls = probed[m].Lines[l];
+                for (int c = 0; c < calls.Count; c++)
+                    sites.Add((calls[c].Span, m, l, c));
+            }
+        }
+        sites.Sort((a, b) => a.Span.Start.CompareTo(b.Span.Start));
+
+        var perCall = new Dictionary<(int Model, int Line, int Call), List<CallWarning>>();
+        var tree = CSharpSyntaxTree.ParseText(text, FirstParseOptions(compilation));
+        var semanticModel = compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
+        foreach (var diagnostic in semanticModel.GetDiagnostics())
+        {
+            // A warning, including one the project raises to an error.
+            if (diagnostic.Severity != DiagnosticSeverity.Warning && !diagnostic.IsWarningAsError) continue;
+            if (FindSite(sites, diagnostic.Location.SourceSpan) is not { } site) continue;
+
+            var key = (site.Model, site.Line, site.Call);
+            if (!perCall.TryGetValue(key, out var list))
+            {
+                list = new List<CallWarning>();
+                perCall[key] = list;
+            }
+            var warning = new CallWarning(diagnostic.Id, diagnostic.GetMessage(CultureInfo.InvariantCulture));
+            if (!list.Contains(warning)) list.Add(warning);
+        }
+        return perCall;
+    }
+
+    /// <summary>One model's calls with their warnings, or <see langword="null"/> when none warns.</summary>
+    private static ModelCallWarnings? Mirrored(
+        IReadOnlyList<List<(Microsoft.CodeAnalysis.Text.TextSpan Span, CallSite Site)>> recorded,
+        int model,
+        Dictionary<(int Model, int Line, int Call), List<CallWarning>> perCall)
+    {
+        bool any = false;
+        var lines = new List<IReadOnlyList<MirroredCall>>(recorded.Count);
+        for (int l = 0; l < recorded.Count; l++)
+        {
+            var calls = recorded[l];
+            var mirrored = new List<MirroredCall>(calls.Count);
+            for (int c = 0; c < calls.Count; c++)
+            {
+                IReadOnlyList<CallWarning> found = perCall.TryGetValue((model, l, c), out var list) ? list : System.Array.Empty<CallWarning>();
+                any |= found.Count > 0;
+                mirrored.Add(new MirroredCall(calls[c].Site, found));
+            }
+            lines.Add(mirrored);
+        }
+        return any ? new ModelCallWarnings(lines) : null;
+    }
+
+    private static (Microsoft.CodeAnalysis.Text.TextSpan Span, int Model, int Line, int Call)? FindSite(
+        List<(Microsoft.CodeAnalysis.Text.TextSpan Span, int Model, int Line, int Call)> sites,
+        Microsoft.CodeAnalysis.Text.TextSpan span)
+    {
+        int lo = 0, hi = sites.Count - 1, at = -1;
+        while (lo <= hi)
+        {
+            int mid = (lo + hi) / 2;
+            if (sites[mid].Span.Start <= span.Start)
+            {
+                at = mid;
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid - 1;
+            }
+        }
+        return at >= 0 && sites[at].Span.Contains(span) ? sites[at] : null;
+    }
 
     private static ConcurrentDictionary<string, MethodResolution> ProbeAll(Compilation compilation) =>
         new(Probe(compilation, ValidatedTypes(compilation.Assembly.GlobalNamespace, compilation)), System.StringComparer.Ordinal);

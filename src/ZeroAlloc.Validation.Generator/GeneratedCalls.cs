@@ -62,21 +62,31 @@ internal static class GeneratedCalls
     /// <summary>The value a <c>[Must]</c> predicate receives: the property, not unwrapped.</summary>
     public static string RawPropertyAccess(string model, IPropertySymbol prop) => MemberAccess(model, prop.Name);
 
+    /// <summary>
+    /// <c>instance.Method(argument)</c>, or <c>instance.Method()</c> when
+    /// <paramref name="argument"/> is empty: the call itself, which is what
+    /// <see cref="CallSite.Text"/> records and a mirrored warning is located in.
+    /// </summary>
+    public static string MethodCall(string model, string method, string argument = "") => $"{MemberAccess(model, method)}({argument})";
+
     /// <summary>A <c>When</c> guard, followed by the rule's condition.</summary>
-    public static string WhenGuard(string model, string method) => $"{MemberAccess(model, method)}() && ";
+    public static string WhenGuard(string model, string method) => $"{MethodCall(model, method)} && ";
 
     /// <summary>An <c>Unless</c> guard, followed by the rule's condition.</summary>
-    public static string UnlessGuard(string model, string method) => $"!{MemberAccess(model, method)}() && ";
+    public static string UnlessGuard(string model, string method) => $"!{MethodCall(model, method)} && ";
 
     /// <summary>A <c>[Must]</c> rule's failure condition.</summary>
-    public static string MustCondition(string model, string method, string argument) => $"!{MemberAccess(model, method)}({argument})";
+    public static string MustCondition(string model, string method, string argument) => $"!{MethodCall(model, method, argument)}";
 
     /// <summary>The <c>[SkipWhen]</c> condition.</summary>
-    public static string SkipWhenCondition(string model, string method) => $"{MemberAccess(model, method)}()";
+    public static string SkipWhenCondition(string model, string method) => MethodCall(model, method);
 
     /// <summary>A <c>[CustomValidation]</c> call, on the model or through <paramref name="receiverType"/>.</summary>
     public static string CustomValidationCall(string model, string method, string? receiverType) =>
-        receiverType is null ? $"{MemberAccess(model, method)}()" : $"{MemberAccess($"(({receiverType}){model})", method)}()";
+        receiverType is null ? MethodCall(model, method) : MethodCall($"(({receiverType}){model})", method);
+
+    /// <summary>A custom rule's call, on the static field holding the rule instance.</summary>
+    public static string RuleCall(string field, string argument) => $"{field}.IsValid({argument})";
 
     /// <summary>
     /// Whether <paramref name="name"/> can follow <c>instance.</c> in generated code at all, once

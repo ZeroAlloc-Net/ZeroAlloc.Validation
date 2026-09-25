@@ -19,7 +19,17 @@ namespace ZeroAlloc.Validation.Generator;
 /// resolution has nothing to choose between. Extension methods cannot interfere: C# looks for
 /// them only when no applicable instance method is found. Attributes are excluded because some,
 /// such as <c>[Obsolete(error: true)]</c>, <c>[Experimental]</c> or
-/// <c>[UnmanagedCallersOnly]</c>, make a well-formed call an error.
+/// <c>[UnmanagedCallersOnly]</c>, make a well-formed call an error. The same attributes on a
+/// type containing the method are excluded as well.
+/// </para>
+/// <para>
+/// A call that compiles can still warn, and a warning in the generated validator is mirrored
+/// as ZV0032, so <see cref="MethodCallProbe.CallWarnings"/> compiles the validator's body
+/// unless every call in it certainly cannot warn. <see cref="ConditionCannotWarn"/>,
+/// <see cref="RuleCallCannotWarn"/> and <see cref="CustomValidation"/> decide that for each
+/// call, on top of the checks above: a nullability attribute on the parameter or the property,
+/// a parameter whose nullability differs from the property's, or an earlier rule that tests
+/// the property for null, which leaves it maybe-null, each sends the call to the probe.
 /// </para>
 /// </summary>
 internal static class CertainCall
@@ -46,6 +56,44 @@ internal static class CertainCall
     }
 
     /// <summary>
+    /// Whether the call <see cref="Condition"/> accepts certainly raises no warning in the
+    /// generated validator either. <paramref name="argument"/> is the property whose value the
+    /// call receives, or <see langword="null"/> when it takes none; then nothing can warn, as
+    /// the method carries no attribute. With an argument, the parameter must carry no
+    /// attribute, such as <c>[DisallowNull]</c>, the property no nullability attribute, such as
+    /// <c>[MaybeNull]</c>, and no earlier rule may test the property for null:
+    /// <paramref name="argumentNullTested"/>.
+    /// </summary>
+    public static bool ConditionCannotWarn(
+        Compilation compilation, INamedTypeSymbol model, string name, IPropertySymbol? argument, bool argumentNullTested)
+    {
+        if (Condition(compilation, model, name, argument?.Type) is not { } method) return false;
+        if (argument is null) return true;
+        return !argumentNullTested
+            && method.Parameters[0].GetAttributes().Length == 0
+            && !HasNullabilityAttribute(argument);
+    }
+
+    /// <summary>
+    /// Whether a custom rule's call, <c>__Rule.IsValid(instance.Property)</c>, certainly raises
+    /// no warning: <c>ValidationAttribute&lt;T&gt;.IsValid(T value)</c> takes
+    /// <paramref name="valueType"/>, the <c>T</c> of <paramref name="ruleClass"/>, which must be
+    /// the property's type exactly, nullability included. The rule and its base types must not
+    /// be obsolete or experimental, the property must carry no nullability attribute, and no
+    /// earlier rule may test it for null.
+    /// </summary>
+    public static bool RuleCallCannotWarn(INamedTypeSymbol ruleClass, ITypeSymbol valueType, IPropertySymbol property, bool nullTested)
+    {
+        if (nullTested || HasNullabilityAttribute(property)) return false;
+        if (!SymbolEqualityComparer.IncludeNullability.Equals(valueType, property.Type)) return false;
+        for (var type = ruleClass; type is not null; type = type.BaseType)
+        {
+            if (IsInDeprecatedType(type)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
     /// Whether <c>instance.Check()</c> certainly binds to <paramref name="method"/>, a
     /// <c>[CustomValidation]</c> method whose signature ZV0013 accepts: it is the only member of
     /// that name, and carries no attribute but <c>[CustomValidation]</c>.
@@ -64,7 +112,47 @@ internal static class CertainCall
         && !method.IsGenericMethod
         && !method.ReturnsByRef
         && !method.ReturnsByRefReadonly
+        && !IsInDeprecatedType(method.ContainingType)
         && compilation.IsSymbolAccessibleWithin(method, compilation.Assembly);
+
+    /// <summary>
+    /// Whether <paramref name="type"/> or a type containing it is <c>[Obsolete]</c> or
+    /// <c>[Experimental]</c>, either of which can make a use of its members warn or fail.
+    /// </summary>
+    private static bool IsInDeprecatedType(INamedTypeSymbol? type)
+    {
+        for (; type is not null; type = type.ContainingType)
+        {
+            foreach (var attr in type.GetAttributes())
+            {
+                var name = attr.AttributeClass?.ToDisplayString();
+                if (string.Equals(name, "System.ObsoleteAttribute", System.StringComparison.Ordinal)
+                    || string.Equals(name, "System.Diagnostics.CodeAnalysis.ExperimentalAttribute", System.StringComparison.Ordinal))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the property, or its getter's return value, carries an attribute from
+    /// <c>System.Diagnostics.CodeAnalysis</c>, such as <c>[MaybeNull]</c>, that changes the
+    /// null state of the value the validator reads from it.
+    /// </summary>
+    private static bool HasNullabilityAttribute(IPropertySymbol property) =>
+        HasCodeAnalysisAttribute(property.GetAttributes())
+        || (property.GetMethod is { } getter
+            && (HasCodeAnalysisAttribute(getter.GetAttributes()) || HasCodeAnalysisAttribute(getter.GetReturnTypeAttributes())));
+
+    private static bool HasCodeAnalysisAttribute(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        {
+            if (string.Equals(attr.AttributeClass?.ContainingNamespace?.ToDisplayString(), "System.Diagnostics.CodeAnalysis", System.StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
 
     private static bool ContainsPointer(ITypeSymbol type) => type switch
     {

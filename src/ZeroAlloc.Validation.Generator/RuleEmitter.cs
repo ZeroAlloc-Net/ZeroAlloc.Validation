@@ -75,13 +75,23 @@ internal static class RuleEmitter
         symbol.GetAttributes().Any(a =>
             string.Equals(a.AttributeClass?.ToDisplayString(), StopOnFirstFailureFqn, StringComparison.Ordinal));
 
-    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName = "instance", SourceProductionContext? ctx = null, GeneratedFields? fields = null)
+    /// <summary>
+    /// Emits the body of the generated <c>Validate</c> method. <paramref name="calls"/> writes the
+    /// lines that hold rule calls; by default it wraps each one the compiler warned on, as
+    /// <see cref="MethodCallProbe.CallWarnings"/> reports, in a pragma for that warning, which
+    /// ZV0032 mirrors at the attribute. <see cref="MethodCallProbe"/> passes a recording one to
+    /// compile this same body.
+    /// </summary>
+    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName = "instance", SourceProductionContext? ctx = null, GeneratedFields? fields = null, CallLineWriter? calls = null)
     {
+        calls ??= CallLineWriter.Emitting(MethodCallProbe.CallWarnings(compilation, classSymbol));
+
         // A [SkipWhen] method the validator cannot call is reported, as ZV0017, ZV0028 or ZV0030,
         // and left out, so the model is validated.
         if (ResolveSkipWhen(compilation, classSymbol) is { Resolution.IsEmitted: true } skipWhen)
         {
-            sb.AppendLine($"        if ({GeneratedCalls.SkipWhenCondition(modelParamName, skipWhen.MethodName)})");
+            calls.AppendLine(sb, $"        if ({GeneratedCalls.SkipWhenCondition(modelParamName, skipWhen.MethodName)})",
+                new[] { SkipWhenSite(classSymbol, in skipWhen, modelParamName) });
             sb.AppendLine($"            return new global::ZeroAlloc.Validation.ValidationResult(global::System.Array.Empty<global::ZeroAlloc.Validation.ValidationFailure>());");
             sb.AppendLine();
         }
@@ -99,9 +109,9 @@ internal static class RuleEmitter
         bool validatorStop = GetBoolNamedArg(validateAttr, "StopOnFirstFailure");
 
         if (hasNested)
-            EmitNestedPath(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, customMethods, modelParamName, validatorStop, totalDirectRules, ctx, fields);
+            EmitNestedPath(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, customMethods, modelParamName, validatorStop, totalDirectRules, ctx, calls, fields);
         else
-            EmitFlatPath(sb, classSymbol, byProperty, totalDirectRules, modelParamName, validatorStop, ctx, fields);
+            EmitFlatPath(sb, classSymbol, byProperty, totalDirectRules, modelParamName, validatorStop, ctx, calls, fields);
     }
 
     /// <summary>
@@ -157,6 +167,7 @@ internal static class RuleEmitter
         bool validatorStop,
         int totalDirectRules,
         SourceProductionContext? ctx,
+        CallLineWriter calls,
         GeneratedFields? fields = null)
     {
         sb.AppendLine($"        var _buf = new global::ZeroAlloc.Validation.Internal.FailureBuffer({totalDirectRules});");
@@ -164,40 +175,41 @@ internal static class RuleEmitter
 
         if (!validatorStop)
         {
-            EmitPropertyRulesWithAdd(sb, byProperty, classSymbol, modelParamName, ctx, fields);
+            EmitPropertyRulesWithAdd(sb, byProperty, classSymbol, modelParamName, ctx, calls, fields);
             EmitNestedValidators(sb, nestedProperties, validatorFields, modelParamName);
             EmitCollectionValidators(sb, collectionProperties, validatorFields, modelParamName);
         }
         else
         {
-            EmitNestedPathStop(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, modelParamName, ctx, fields);
+            EmitNestedPathStop(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, modelParamName, ctx, calls, fields);
         }
 
         // [CustomValidation] methods always run last.
         // With validatorStop=true: EmitNestedPathStop above emits early returns for each failing property group,
         // so custom methods are only reached if all property groups pass.
-        EmitCustomValidationCalls(sb, customMethods, modelParamName);
+        EmitCustomValidationCalls(sb, customMethods, modelParamName, calls);
 
         sb.AppendLine("        return _buf.ToResult();");
     }
 
-    private static void EmitCustomValidationCalls(StringBuilder sb, List<CustomValidationCall> customMethods, string modelParamName)
+    private static void EmitCustomValidationCalls(StringBuilder sb, List<CustomValidationCall> customMethods, string modelParamName, CallLineWriter calls)
     {
         for (int i = 0; i < customMethods.Count; i++)
         {
-            var call = GeneratedCalls.CustomValidationCall(modelParamName, customMethods[i].Name, customMethods[i].Receiver);
+            var call = GeneratedCalls.CustomValidationCall(modelParamName, customMethods[i].Method.Name, customMethods[i].Receiver);
+            var site = new[] { CustomValidationSite(customMethods[i], call) };
             if (customMethods[i].ByRef)
             {
                 // A span is walked by reference to avoid copying each failure. The call is hoisted
                 // into a local because `ref readonly` iteration needs an addressable variable
                 // rather than a call expression. Arrays cannot be iterated this way — their foreach
                 // lowers to indexing — but they allocate nothing either way.
-                sb.AppendLine($"        var _cv{i} = {call};");
+                calls.AppendLine(sb, $"        var _cv{i} = {call};", site);
                 sb.AppendLine($"        foreach (ref readonly var _cf in _cv{i})");
             }
             else
             {
-                sb.AppendLine($"        foreach (var _cf in {call})");
+                calls.AppendLine(sb, $"        foreach (var _cf in {call})", site);
             }
             sb.AppendLine("            _buf.Add(_cf);");
             sb.AppendLine();
@@ -236,7 +248,7 @@ internal static class RuleEmitter
     {
         var result = new List<CustomValidationCall>();
         foreach (var (method, byRef) in CustomValidationMethods(classSymbol, compilation))
-            result.Add(new CustomValidationCall(method.Name, byRef, CustomValidationReceiver(compilation, classSymbol, method)));
+            result.Add(new CustomValidationCall(method, byRef, CustomValidationReceiver(compilation, classSymbol, method)));
         return result;
     }
 
@@ -323,6 +335,7 @@ internal static class RuleEmitter
         Dictionary<IPropertySymbol, string> validatorFields,
         string modelParamName,
         SourceProductionContext? ctx,
+        CallLineWriter calls,
         GeneratedFields? fields = null)
     {
         int groupIdx = 0;
@@ -344,7 +357,7 @@ internal static class RuleEmitter
             sb.AppendLine($"        int _b{groupIdx} = _buf.Count;");
 
             if (directProp is not null && directRules is not null)
-                EmitPropertyRulesForProp(sb, directProp, directRules, classSymbol, modelParamName, ctx, fields);
+                EmitPropertyRulesForProp(sb, directProp, directRules, classSymbol, modelParamName, ctx, calls, fields);
 
             if (nestedProp is not null)
                 EmitNestedValidatorForProp(sb, nestedProp, ValidatorField(validatorFields, nestedProp), modelParamName);
@@ -410,12 +423,13 @@ internal static class RuleEmitter
         INamedTypeSymbol? classSymbol,
         string modelParamName,
         SourceProductionContext? ctx,
+        CallLineWriter calls,
         GeneratedFields? fields = null)
     {
         for (int pi = 0; pi < byProperty.Count; pi++)
         {
             var (prop, rules) = byProperty[pi];
-            EmitPropertyRulesForProp(sb, prop, rules, classSymbol, modelParamName, ctx, fields);
+            EmitPropertyRulesForProp(sb, prop, rules, classSymbol, modelParamName, ctx, calls, fields);
         }
     }
 
@@ -426,6 +440,7 @@ internal static class RuleEmitter
         INamedTypeSymbol? classSymbol,
         string modelParamName,
         SourceProductionContext? ctx,
+        CallLineWriter calls,
         GeneratedFields? fields = null)
     {
         var propName = prop.Name;
@@ -451,7 +466,8 @@ internal static class RuleEmitter
             var whenGuard    = whenMethod   is null ? "" : GeneratedCalls.WhenGuard(modelParamName, whenMethod);
             var unlessGuard  = unlessMethod is null ? "" : GeneratedCalls.UnlessGuard(modelParamName, unlessMethod);
 
-            sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
+            calls.AppendLine(sb, $"{prefix} ({whenGuard}{unlessGuard}{condition})",
+                RuleCallSites(attr, prop, modelParamName, rawPropAccess, ruleIndex: i));
             sb.AppendLine($"            _buf.Add({BuildFailureInitializer(propName, message, attr, ruleMessage, propertyValueExpr)});");
         }
         sb.AppendLine();
@@ -621,6 +637,7 @@ internal static class RuleEmitter
         string modelParamName,
         bool validatorStop,
         SourceProductionContext? ctx,
+        CallLineWriter calls,
         GeneratedFields? fields = null)
     {
         // Under model-level fail-fast, a group that can only ever produce one failure returns
@@ -648,7 +665,7 @@ internal static class RuleEmitter
             if (validatorStop && !direct[pi])
                 sb.AppendLine($"        int _b{pi} = _buf.Count;");
 
-            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx, fields, direct[pi], classSymbol);
+            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx, calls, fields, direct[pi], classSymbol);
 
             if (validatorStop && !direct[pi])
                 EmitFlatPathStopOnFirstFailureReturn(sb, pi);
@@ -681,6 +698,7 @@ internal static class RuleEmitter
         int totalDirectRules,
         string modelParamName,
         SourceProductionContext? ctx,
+        CallLineWriter calls,
         GeneratedFields? fields = null,
         bool directReturn = false,
         INamedTypeSymbol? classSymbol = null)
@@ -708,7 +726,8 @@ internal static class RuleEmitter
             var whenGuard    = whenMethod   is null ? "" : GeneratedCalls.WhenGuard(modelParamName, whenMethod);
             var unlessGuard  = unlessMethod is null ? "" : GeneratedCalls.UnlessGuard(modelParamName, unlessMethod);
 
-            sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
+            calls.AppendLine(sb, $"{prefix} ({whenGuard}{unlessGuard}{condition})",
+                RuleCallSites(attr, prop, modelParamName, rawPropAccess, ruleIndex: i));
             sb.AppendLine("        {");
             if (directReturn)
             {
@@ -912,7 +931,7 @@ internal static class RuleEmitter
             yield return ($"Unless of [{ruleName}] on '{prop.Name}'", unless,
                 MethodCallProbe.GuardStatement(GeneratedCalls.UnlessGuard(model, unless)), null);
 
-        if (string.Equals(attr.AttributeClass?.ToDisplayString(), MustFqn, StringComparison.Ordinal))
+        if (IsMust(attr))
         {
             // An empty or null name is reported like any other that does not compile. An argument
             // that is not a constant at all is already a compile error in the model's own source.
@@ -952,6 +971,119 @@ internal static class RuleEmitter
         foreach (var (method, _) in CustomValidationMethods(classSymbol, compilation))
             yield return (method.Name, CustomValidationStatement(method), CertainCall.CustomValidation(compilation, classSymbol, method));
     }
+
+    /// <summary>
+    /// Whether any call the validator for <paramref name="classSymbol"/> makes might raise a
+    /// compiler warning, so <see cref="MethodCallProbe.CallWarnings"/> compiles its body.
+    /// <see cref="CertainCall"/> clears the calls that cannot warn: a plain <c>[Must]</c>
+    /// predicate or custom rule whose parameter takes the property's type exactly, a guard or
+    /// <c>[SkipWhen]</c> method without attributes, and a plain <c>[CustomValidation]</c>
+    /// method. A predicate or custom rule after a rule that tests the same property for null,
+    /// such as <c>[NotNull]</c>, is not cleared: that test leaves the property maybe-null.
+    /// </summary>
+    public static bool HasCallThatMayWarn(INamedTypeSymbol classSymbol, Compilation compilation)
+    {
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
+        {
+            if (member is not IPropertySymbol prop) continue;
+
+            // Only [Must] and custom rules emit no null test of their own; every other rule may.
+            bool nullTested = false;
+            foreach (var attr in prop.GetAttributes())
+            {
+                if (!IsRuleAttribute(attr)) continue;
+                foreach (var (_, name, _, argumentType) in MethodCallsOf(attr, prop))
+                {
+                    var argument = argumentType is null ? null : prop;
+                    if (!CertainCall.ConditionCannotWarn(compilation, classSymbol, name, argument, nullTested))
+                        return true;
+                }
+
+                bool isCustomRule = CustomRules.TryGetRuleValueType(attr.AttributeClass!, out var valueType);
+                if (isCustomRule && !CertainCall.RuleCallCannotWarn(attr.AttributeClass!, valueType, prop, nullTested))
+                    return true;
+                if (!isCustomRule && !IsMust(attr))
+                    nullTested = true;
+            }
+        }
+
+        if (SkipWhenName(classSymbol) is { } skipWhen
+            && !CertainCall.ConditionCannotWarn(compilation, classSymbol, skipWhen.Name, argument: null, argumentNullTested: false))
+            return true;
+
+        foreach (var (method, _) in CustomValidationMethods(classSymbol, compilation))
+        {
+            if (!CertainCall.CustomValidation(compilation, classSymbol, method)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Writes a probe class for <paramref name="classSymbol"/> into <paramref name="sb"/>: the
+    /// generated validator's <c>Validate</c> body, emitted by <see cref="EmitValidateBody"/> as
+    /// the generated file has it, with the fields that body reads. Returns where each call is in
+    /// <paramref name="sb"/>, by line, as <see cref="CallLineWriter"/> numbers them.
+    /// </summary>
+    public static IReadOnlyList<List<(Microsoft.CodeAnalysis.Text.TextSpan Span, CallSite Site)>> EmitWarningProbe(
+        StringBuilder sb, INamedTypeSymbol classSymbol, Compilation compilation, string className)
+    {
+        var ns = GeneratedCalls.NamespaceOf(classSymbol);
+        if (ns is not null) sb.AppendLine($"namespace {ns}").AppendLine("{");
+        sb.AppendLine($"internal sealed class {className}");
+        sb.AppendLine("{");
+        AppendNestedValidatorFields(sb, CollectNestedValidatorFields(classSymbol, compilation));
+        sb.AppendLine($"    private global::ZeroAlloc.Validation.ValidationResult Validate({classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} {MethodCallProbe.Model})");
+        sb.AppendLine("    {");
+        var fields = new GeneratedFields();
+        var calls = CallLineWriter.Recording();
+        EmitValidateBody(sb, classSymbol, compilation, MethodCallProbe.Model, ctx: null, fields, calls);
+        sb.AppendLine("    }");
+        fields.AppendDeclarations(sb);
+        sb.AppendLine("}");
+        if (ns is not null) sb.AppendLine("}");
+        return calls.Recorded;
+    }
+
+    /// <summary>
+    /// The calls on one rule's condition line, in the order they appear on it: its <c>When</c>
+    /// and <c>Unless</c> guards, then its <c>[Must]</c> predicate or custom rule call. The
+    /// usages read as <see cref="MethodCallsOf"/> writes them.
+    /// </summary>
+    private static List<CallSite> RuleCallSites(AttributeData attr, IPropertySymbol prop, string modelParamName, string rawAccess, int ruleIndex)
+    {
+        var rule = ShortAttributeName(attr);
+        var declaringType = prop.ContainingType;
+        var sites = new List<CallSite>(1);
+
+        if (GetWhen(attr) is { } when)
+            sites.Add(new CallSite(GeneratedCalls.MethodCall(modelParamName, when), attr, prop, declaringType, $"When of [{rule}] on '{prop.Name}'"));
+        if (GetUnless(attr) is { } unless)
+            sites.Add(new CallSite(GeneratedCalls.MethodCall(modelParamName, unless), attr, prop, declaringType, $"Unless of [{rule}] on '{prop.Name}'"));
+
+        if (CustomRules.TryGetRuleValueType(attr.AttributeClass!, out _))
+        {
+            sites.Add(new CallSite(GeneratedCalls.RuleCall(CustomRules.FieldName(prop.Name, ruleIndex), rawAccess),
+                attr, prop, declaringType, $"[{rule}] on '{prop.Name}'"));
+        }
+        else if (IsMust(attr))
+        {
+            sites.Add(new CallSite(GeneratedCalls.MethodCall(modelParamName, GetStringArg(attr, 0), rawAccess),
+                attr, prop, declaringType, $"[{rule}] on '{prop.Name}'"));
+        }
+        return sites;
+    }
+
+    private static CallSite SkipWhenSite(INamedTypeSymbol classSymbol, in ResolvedMethodCall skipWhen, string modelParamName) =>
+        new(GeneratedCalls.SkipWhenCondition(modelParamName, skipWhen.MethodName), skipWhen.Attribute, classSymbol, null, skipWhen.Usage);
+
+    private static CallSite CustomValidationSite(in CustomValidationCall call, string text)
+    {
+        var attr = FindCustomValidationAttribute(call.Method, out var declaration)!;
+        return new CallSite(text, attr, call.Method, declaration.ContainingType, $"[CustomValidation] on '{call.Method.Name}'");
+    }
+
+    private static bool IsMust(AttributeData attr) =>
+        string.Equals(attr.AttributeClass?.ToDisplayString(), MustFqn, StringComparison.Ordinal);
 
     private static string ShortAttributeName(AttributeData attr)
     {
@@ -1146,7 +1278,7 @@ internal static class RuleEmitter
                     CustomRules.BuildInitializer(attr),
                     CustomRules.NamesObsoleteSymbol(attr));
             }
-            return $"!{field}.IsValid({rawForPredicate})";
+            return "!" + GeneratedCalls.RuleCall(field, rawForPredicate);
         }
 
         return fqn switch
@@ -1522,6 +1654,20 @@ internal static class RuleEmitter
             result.Add((prop, $"_{name}Validator", $"{name}Validator", qualifiedType, description));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Declares the generated validator's nested and collection validator fields, as
+    /// <see cref="CollectNestedValidatorFields"/> lists them. The generated validator and
+    /// <see cref="EmitWarningProbe"/> both declare them here, so the probe compiles its body
+    /// against exactly the fields the validator has.
+    /// </summary>
+    public static void AppendNestedValidatorFields(
+        StringBuilder sb,
+        List<(string FieldName, string ParamName, string QualifiedValidatorType, string MemberDescription)> nestedFields)
+    {
+        foreach (var (fieldName, _, qualifiedType, _) in nestedFields)
+            sb.AppendLine($"    private readonly {qualifiedType} {fieldName};");
     }
 
     private static string CamelCase(string name) =>

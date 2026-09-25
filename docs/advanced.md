@@ -231,7 +231,7 @@ public class Shipment
 }
 ```
 
-The method referenced by `When`/`Unless` is called as `instance.Method()`, so it must be a `public` or `internal` instance method that takes no arguments and returns `bool`. A `bool` property cannot be named directly, since `instance.IsInternational()` does not compile, so wrap it in a method, as `ShipsAbroad` does above. The generator compiles each call before emitting it; one that would not compile is reported as [ZV0028](diagnostics.md#zv0028) or [ZV0030](diagnostics.md#zv0030) with the compiler's reason, and the rule is left out.
+The method referenced by `When`/`Unless` is called as `instance.Method()`, so it must be a `public` or `internal` instance method that takes no arguments and returns `bool`. A `bool` property cannot be named directly, since `instance.IsInternational()` does not compile, so wrap it in a method, as `ShipsAbroad` does above. The generator compiles each call before emitting it; one that would not compile is reported as [ZV0028](diagnostics.md#zv0028) or [ZV0030](diagnostics.md#zv0030) with the compiler's reason, and the rule is left out. One that compiles but makes the compiler warn, such as an `[Obsolete]` method, is emitted, and the warning is reported at the attribute as [ZV0032](diagnostics.md#zv0032) instead of in the generated file.
 
 `When` and `Unless` work on all attributes that inherit from `ValidationAttribute` (i.e., all built-in rule attributes). They are NOT available on `[CustomValidation]` (which inherits from `System.Attribute` directly).
 
