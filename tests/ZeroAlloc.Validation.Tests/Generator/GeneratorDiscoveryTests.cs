@@ -63,7 +63,8 @@ public class GeneratorDiscoveryTests
 
         Assert.Contains("namespace TestModels", generated, System.StringComparison.Ordinal);
         Assert.Contains("class PersonValidator", generated, System.StringComparison.Ordinal);
-        Assert.Contains("ValidatorFor<Person>", generated, System.StringComparison.Ordinal);
+        // Fully qualified since issue #207, so a model nested in another type resolves too.
+        Assert.Contains("ValidatorFor<global::TestModels.Person>", generated, System.StringComparison.Ordinal);
     }
 
     private static GeneratorDriverRunResult RunGenerator(string source)

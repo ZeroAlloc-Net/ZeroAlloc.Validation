@@ -62,6 +62,24 @@ public class RegisterUserRequest
 
 The generator emits `RegisterUserRequestValidator` in the same namespace as your model. For flat models like this one (no nested validated properties), the generated validator has a parameterless constructor.
 
+> **Models declared inside another type.** The validator is always a top-level class in the
+> model's namespace. For a model nested in other types, its name starts with the containing
+> types, outermost first, joined with underscores:
+>
+> ```csharp
+> public static class Orders
+> {
+>     [Validate] public class Request { [NotEmpty] public string Name { get; set; } = ""; }
+> }
+> // Generated: Orders_RequestValidator : ValidatorFor<Orders.Request>
+> ```
+>
+> A model in `A.B` gets `A_B_RequestValidator`. So `Orders.Request`, `Returns.Request` and a
+> top-level `Request` in the same namespace each get their own validator. Plain concatenation,
+> `OrdersRequestValidator`, would clash with the validator of a top-level `OrdersRequest`
+> model; the underscore can only clash with a type name that itself contains an underscore.
+> A `private` nested model is not generated.
+
 > **Target types.** `[Validate]` works on `class`, `record`, `readonly struct`, and
 > `readonly record struct`. Decorating a non-readonly `struct` or `record struct`
 > emits `ZV0014` (Warning) — a caller can mutate the instance between the
