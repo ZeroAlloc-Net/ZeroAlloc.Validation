@@ -82,12 +82,27 @@ Every attribute that inherits from `ValidationAttribute` exposes a `Message` pro
 public string Email { get; set; } = "";
 ```
 
-### {value} placeholder
+### Placeholders
 
-Custom `Message` strings may contain the `{value}` placeholder. The generator replaces it with the actual property value at runtime:
+A custom `Message` may contain these placeholders:
+
+| Placeholder | Replaced by | Rules |
+|---|---|---|
+| `{PropertyName}` | The display name, or the property name | All |
+| `{PropertyValue}` | The property value, formatted at validation time | All |
+| `{ComparisonValue}` | The compared value | `[GreaterThan]`, `[LessThan]`, `[GreaterThanOrEqualTo]`, `[LessThanOrEqualTo]`, `[Equal]`, `[NotEqual]` |
+| `{MinLength}`, `{MaxLength}` | The length bounds | `[Length]`, `[MinLength]`, `[MaxLength]` |
+| `{From}`, `{To}` | The range bounds | `[InclusiveBetween]`, `[ExclusiveBetween]` |
+
+Custom rules also take `{name}` for their own arguments; see
+[Custom validation](custom-validation.md#placeholders). Any other `{name}` stays in the message
+as written.
+
+Every placeholder except `{PropertyValue}` is resolved at compile time. `{PropertyValue}` is
+formatted only when the rule fails, invariant-culture, with `null` rendered as `null`:
 
 ```csharp
-[MaxLength(10, Message = "'{value}' is too long — maximum 10 characters.")]
+[MaxLength(10, Message = "'{PropertyValue}' is too long — maximum {MaxLength} characters.")]
 public string Code { get; set; } = "";
 ```
 
@@ -96,6 +111,10 @@ When `Code` is `"TOOLONGVALUE"`, the failure message will read:
 ```
 'TOOLONGVALUE' is too long — maximum 10 characters.
 ```
+
+The message is read once and each placeholder is substituted exactly once. A substituted value
+is never read again for placeholders, so a display name, comparison value or rule argument that
+itself contains `{PropertyName}`, `{PropertyValue}` or another token appears exactly as written.
 
 ## [DisplayName] — overriding the property label
 
