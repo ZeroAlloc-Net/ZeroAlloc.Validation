@@ -399,6 +399,59 @@ public class UnreadablePropertyDiagnosticTests
         Assert.Equal(new[] { "Other" }, FailedProperties(output, library.Image));
     }
 
+    [Fact]
+    public void Rule_on_unreadable_property_of_a_nested_model_reports_ZV0027_and_validates_the_rest()
+    {
+        // A model nested in another type gets the validator Outer_RequestValidator; the unreadable
+        // rule is reported and left out the same way, and the nested [Validate] Address composed
+        // through a readable property still runs.
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            public static class Outer
+            {
+                [Validate]
+                public sealed class Address
+                {
+                    [NotEmpty] public string? Street { get; set; }
+                }
+
+                [Validate]
+                public class Request
+                {
+                    [NotEmpty] public static string? Code { get; set; }
+
+                    public static Address? DefaultHome { get; set; }
+
+                    public Address Home { get; set; } = new();
+
+                    [NotEmpty] public string? Other { get; set; }
+                }
+            }
+
+            public static class Probe
+            {
+                public static string[] FailedProperties()
+                {
+                    var result = new Outer_RequestValidator(new Outer_AddressValidator()).Validate(new Outer.Request());
+                    var names = new string[result.Failures.Length];
+                    for (int i = 0; i < names.Length; i++)
+                        names[i] = result.Failures[i].PropertyName;
+                    return names;
+                }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        var zv0027 = SingleZV0027(result);
+        Assert.Equal(
+            "'NotEmptyAttribute' is applied to 'Code', which the generated validator cannot read because the property is static",
+            zv0027.GetMessage(System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(new[] { "Other", "Home.Street" }, FailedProperties(output));
+    }
+
     private static Diagnostic SingleZV0027(GeneratorDriverRunResult result)
     {
         var matches = result.Diagnostics
