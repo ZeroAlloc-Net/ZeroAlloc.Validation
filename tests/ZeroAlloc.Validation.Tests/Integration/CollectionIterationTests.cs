@@ -137,11 +137,8 @@ public class CollectionIterationTests
 
     private static void AssertSingleIndexedFailure(ValidationResult result)
     {
-        var failures = result.Failures.ToArray();
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        var failure = Assert.Single(failures);
-#pragma warning restore HLQ005
-        Assert.Equal("Items[1].Code", failure.PropertyName);
+        Assert.Collection(result.Failures.ToArray(),
+            failure => Assert.Equal("Items[1].Code", failure.PropertyName));
     }
 
     private static long MeasureAllocation(Func<bool> action)

@@ -54,8 +54,6 @@ public class InjectIntegrationTests
         var sp         = services.BuildServiceProvider();
         var validators = sp.GetServices<ValidatorFor<ApiKeyOptions>>();
 
-        #pragma warning disable HLQ005
-        Assert.Single(validators);
-        #pragma warning restore HLQ005
+        Assert.Collection(validators, _ => { });
     }
 }

@@ -244,14 +244,12 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                          or StructDeclarationSyntax,
                 transform: static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol);
 
-#pragma warning disable EPS06 // IncrementalValuesProvider<T> is a struct; Combine is the standard Roslyn API
         var behaviors = context.CompilationProvider
             .Select(static (compilation, _) =>
             {
                 var (sync, async_) = BehaviorDiscoverer.DiscoverAll(compilation);
                 return new BehaviorCache(sync, async_);
             });
-        var combined = validateClasses.Combine(behaviors);
 
         // ZV0019: read once per compilation, independent of whether any [Validate] class is
         // present, so an invalid value is reported even in a project with nothing to generate.
@@ -261,7 +259,15 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // The Compilation reaches Emit for the custom-rule checks, ZV0021's implicit-conversion
         // test and ZV0023's accessibility test. It adds no invalidation of its own: the behavior
         // cache above is already rebuilt from every new compilation.
-        var combinedWithMode = combined
+        //
+        // EPS06 false positive: `validateClasses` comes from SyntaxProvider.ForAttributeWithMetadataName,
+        // a method call rather than a plain provider property, so ErrorProne.NET treats every further
+        // chained call on it as a hidden copy of the IncrementalValuesProvider<T> struct, even though
+        // that struct is immutable and designed to be chained this way (tracked in #213; the pragma
+        // scope below is the narrowest that still compiles — every line inside it fails without it).
+#pragma warning disable EPS06
+        var combinedWithMode = validateClasses
+            .Combine(behaviors)
             .Combine(accessibility.Select(static (result, _) => result.Mode))
             .Combine(context.CompilationProvider);
 #pragma warning restore EPS06
@@ -282,19 +288,23 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     // misplaced one is reported even in a project with nothing to generate.
     private static void RegisterMisplacedRuleMessage(IncrementalGeneratorInitializationContext context)
     {
-#pragma warning disable EPS06 // IncrementalValuesProvider<T> is a struct; Where, Select and Combine are the standard Roslyn API
-        var misplacedRuleMessages = context.SyntaxProvider
+        // EPS06 false positive, same cause as the Initialize pipeline above: every call chained
+        // onto SyntaxProvider.ForAttributeWithMetadataName's result is flagged as a hidden struct
+        // copy, because that provider comes from a method call rather than a plain property
+        // (tracked in #213). The whole chain needs the pragma — each step fails without it.
+        //
+        // Joined with the Compilation only after the tracked step, which therefore stays cached;
+        // the Compilation serves just to turn the model back into a source location.
+#pragma warning disable EPS06
+        var misplacedWithCompilation = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 RuleMessageFqn,
                 predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
                 transform: static (ctx, ct) => FindMisplacedRuleMessage(ctx, ct))
             .Where(static m => m is not null)
             .Select(static (m, _) => m!.Value)
-            .WithTrackingName(MisplacedRuleMessageTrackingName);
-
-        // Joined with the Compilation only after the tracked step, which therefore stays cached;
-        // the Compilation serves just to turn the model back into a source location.
-        var misplacedWithCompilation = misplacedRuleMessages.Combine(context.CompilationProvider);
+            .WithTrackingName(MisplacedRuleMessageTrackingName)
+            .Combine(context.CompilationProvider);
 #pragma warning restore EPS06
 
         context.RegisterSourceOutput(misplacedWithCompilation, static (ctx, pair) =>

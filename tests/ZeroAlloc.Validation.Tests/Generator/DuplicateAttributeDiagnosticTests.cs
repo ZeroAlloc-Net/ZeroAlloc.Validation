@@ -172,10 +172,8 @@ public class DuplicateAttributeDiagnosticTests
                 zv0018.Add(d);
         }
 
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        var diagnostic = Assert.Single(zv0018);
-#pragma warning restore HLQ005
-        Assert.Contains("Tenant", diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Collection(zv0018,
+            d => Assert.Contains("Tenant", d.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal));
     }
 
     private static System.Collections.Immutable.ImmutableArray<Diagnostic> RunGenerator(string source)

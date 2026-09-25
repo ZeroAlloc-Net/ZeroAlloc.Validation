@@ -1,6 +1,5 @@
 using System.Linq;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Xunit;
 using ZeroAlloc.Validation.Generator;
 
@@ -8,6 +7,15 @@ namespace ZeroAlloc.Validation.Tests.Generator;
 
 public class BehaviorDiscoveryTests
 {
+    private static readonly MetadataReference[] PipelineReference =
+        [MetadataReference.CreateFromFile(typeof(ZeroAlloc.Pipeline.IPipelineBehavior).Assembly.Location)];
+
+    private static Compilation CreateCompilation(string source) =>
+        GeneratorTestHelper.CreateCompilation(source, extraReferences: PipelineReference);
+
+    private static GeneratorDriverRunResult RunGenerator(string source) =>
+        GeneratorTestHelper.RunGenerator(source, extraReferences: PipelineReference);
+
     [Fact]
     public void DiscoverAll_FindsSyncBehavior()
     {
@@ -28,11 +36,9 @@ public class BehaviorDiscoveryTests
         var compilation = CreateCompilation(source);
         var (sync, async_) = BehaviorDiscoverer.DiscoverAll(compilation);
 
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        Assert.Single(sync);
-#pragma warning restore HLQ005
+        Assert.Collection(sync,
+            b => Assert.Contains("LoggingBehavior", b.BehaviorTypeName, System.StringComparison.Ordinal));
         Assert.Empty(async_);
-        Assert.Contains("LoggingBehavior", sync[0].BehaviorTypeName, System.StringComparison.Ordinal);
     }
 
     [Fact]
@@ -59,10 +65,8 @@ public class BehaviorDiscoveryTests
         var (sync, async_) = BehaviorDiscoverer.DiscoverAll(compilation);
 
         Assert.Empty(sync);
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        Assert.Single(async_);
-#pragma warning restore HLQ005
-        Assert.Contains("CachingBehavior", async_[0].BehaviorTypeName, System.StringComparison.Ordinal);
+        Assert.Collection(async_,
+            b => Assert.Contains("CachingBehavior", b.BehaviorTypeName, System.StringComparison.Ordinal));
     }
 
     [Fact]
@@ -235,44 +239,5 @@ public class BehaviorDiscoveryTests
         Assert.NotNull(customerValidator);
         Assert.Contains("ValidateAsync", customerValidator, System.StringComparison.Ordinal);
         Assert.Contains("ValueTask.FromResult", customerValidator, System.StringComparison.Ordinal);
-    }
-
-    private static GeneratorDriverRunResult RunGenerator(string source)
-    {
-        // Ensure ZeroAlloc.Pipeline is loaded into the AppDomain.
-        _ = typeof(ZeroAlloc.Pipeline.IPipelineBehavior).Assembly;
-
-        var compilation = CSharpCompilation.Create(
-            "TestAssembly",
-            new[] { CSharpSyntaxTree.ParseText(source) },
-            System.AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>()
-                .ToArray(),
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-        var generator = new ValidatorGenerator();
-        var driver = CSharpGeneratorDriver.Create(generator)
-            .RunGenerators(compilation);
-
-        return driver.GetRunResult();
-    }
-
-    private static Compilation CreateCompilation(string source)
-    {
-        // Ensure ZeroAlloc.Pipeline is loaded into the AppDomain so that
-        // AppDomain.CurrentDomain.GetAssemblies() includes it as a metadata reference.
-        _ = typeof(ZeroAlloc.Pipeline.IPipelineBehavior).Assembly;
-
-        return CSharpCompilation.Create(
-            "TestAssembly",
-            new[] { CSharpSyntaxTree.ParseText(source) },
-            System.AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>()
-                .ToArray(),
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
 }

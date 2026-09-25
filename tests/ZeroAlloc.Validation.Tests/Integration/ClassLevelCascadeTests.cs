@@ -18,11 +18,11 @@ public class ClassLevelCascadeTests
         var result = new ClassCascadeModelValidator()
             .Validate(new ClassCascadeModel { Tenant = "", User = "" });
 
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        var failure = Assert.Single(result.Failures.ToArray());
-#pragma warning restore HLQ005
-        Assert.Equal("Tenant", failure.PropertyName);
-        Assert.Equal("Tenant must not be empty.", failure.ErrorMessage);
+        Assert.Collection(result.Failures.ToArray(), failure =>
+        {
+            Assert.Equal("Tenant", failure.PropertyName);
+            Assert.Equal("Tenant must not be empty.", failure.ErrorMessage);
+        });
     }
 
     [Fact]
@@ -32,10 +32,8 @@ public class ClassLevelCascadeTests
         var result = new ClassCascadeModelValidator()
             .Validate(new ClassCascadeModel { Tenant = "ab", User = "ok" });
 
-#pragma warning disable HLQ005
-        var failure = Assert.Single(result.Failures.ToArray());
-#pragma warning restore HLQ005
-        Assert.Equal("Tenant must be at least 3 characters.", failure.ErrorMessage);
+        Assert.Collection(result.Failures.ToArray(),
+            failure => Assert.Equal("Tenant must be at least 3 characters.", failure.ErrorMessage));
     }
 
     [Fact]

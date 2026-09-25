@@ -18,9 +18,7 @@ public class CascadeTests
         var stopFailures = result.Failures.ToArray()
             .Where(f => string.Equals(f.PropertyName, "StopName", StringComparison.Ordinal))
             .ToArray();
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        Assert.Single(stopFailures);
-#pragma warning restore HLQ005
+        Assert.Collection(stopFailures, _ => { });
     }
 
     [Fact]
@@ -69,8 +67,6 @@ public class CascadeTests
         var conditionalFailures = result.Failures.ToArray()
             .Where(f => string.Equals(f.PropertyName, "ConditionalStop", StringComparison.Ordinal))
             .ToArray();
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        Assert.Single(conditionalFailures); // stop mode: only NotEmpty fires
-#pragma warning restore HLQ005
+        Assert.Collection(conditionalFailures, _ => { }); // stop mode: only NotEmpty fires
     }
 }

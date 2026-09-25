@@ -1574,7 +1574,11 @@ public class CustomRuleAttributeTests
             }
             """;
 
-        AssertZV0023AndNoField(source, "GuardAttribute", "TestModels.GuardAttribute.GuardAttribute()", "Guard", requireCleanCompile: false);
+        // Request is nested inside GuardAttribute, so its validator's hint name carries the
+        // container prefix (GeneratedValidatorNames.HintName) rather than plain "RequestValidator.g.cs".
+        AssertZV0023AndNoField(
+            source, "GuardAttribute", "TestModels.GuardAttribute.GuardAttribute()", "Guard",
+            requireCleanCompile: false, validatorHintName: "GuardAttribute_RequestValidator.g.cs");
     }
 
     [Fact]
@@ -2184,7 +2188,7 @@ public class CustomRuleAttributeTests
         var (result, output) = RunGenerator(source);
 
         Assert.Empty(CompileErrors(output));
-        var generatedTree = result.GeneratedTrees.First(t => t.FilePath.EndsWith("RequestValidator.g.cs", StringComparison.Ordinal));
+        var generatedTree = GeneratorTestHelper.GetGeneratedTree(result, "TestModels.RequestValidator.g.cs");
         Assert.DoesNotContain(
             output.GetDiagnostics(),
             d => d.Location.SourceTree == generatedTree && d.Id is "CS0618" or "CS0612");
@@ -2243,7 +2247,8 @@ public class CustomRuleAttributeTests
         string attributeName,
         string inaccessibleSymbol,
         string spanText,
-        bool requireCleanCompile = true)
+        bool requireCleanCompile = true,
+        string validatorHintName = "RequestValidator.g.cs")
     {
         var (result, output) = RunGenerator(source);
 
@@ -2257,7 +2262,7 @@ public class CustomRuleAttributeTests
         Assert.DoesNotContain(output.GetDiagnostics(), d => string.Equals(d.Id, "CS0122", StringComparison.Ordinal));
         if (requireCleanCompile)
             Assert.Empty(CompileErrors(output));
-        var src = GetGeneratedSource(result, "RequestValidator.g.cs");
+        var src = GetGeneratedSource(result, validatorHintName);
         Assert.DoesNotContain("__Rule_", src, StringComparison.Ordinal);
     }
 
@@ -2327,39 +2332,33 @@ public class CustomRuleAttributeTests
         return errors;
     }
 
-    private static string GetGeneratedSource(GeneratorDriverRunResult result, string filenameSuffix) =>
-        result.GeneratedTrees
-            .First(t => t.FilePath.EndsWith(filenameSuffix, StringComparison.Ordinal))
-            .ToString();
+    private const string ValueObjectStub = """
+        namespace ZeroAlloc.ValueObjects
+        {
+            [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct)]
+            public sealed class ValueObjectAttribute : System.Attribute { }
+        }
+        """;
 
-    private static (GeneratorDriverRunResult Result, Compilation Output) RunGenerator(string source)
-    {
-        var driver = CSharpGeneratorDriver.Create(new ValidatorGenerator())
-            .RunGeneratorsAndUpdateCompilation(CreateCompilation(source), out var output, out _);
-        return (driver.GetRunResult(), output);
-    }
+    private static readonly MetadataReference[] PipelineReference =
+        [MetadataReference.CreateFromFile(typeof(ZeroAlloc.Pipeline.IPipelineBehavior).Assembly.Location)];
 
-    private static CSharpCompilation CreateCompilation(string source)
-    {
-        var valueObjectStub = """
-            namespace ZeroAlloc.ValueObjects
-            {
-                [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct)]
-                public sealed class ValueObjectAttribute : System.Attribute { }
-            }
-            """;
+    /// <summary>The generated source whose hint name is <c>TestModels.{hintNameSuffix}</c>.</summary>
+    /// <remarks>Every model in this file's test sources is declared in `namespace TestModels;`.</remarks>
+    private static string GetGeneratedSource(GeneratorDriverRunResult result, string hintNameSuffix) =>
+        GeneratorTestHelper.GetGeneratedSource(result, $"TestModels.{hintNameSuffix}");
 
-        // Ensure ZeroAlloc.Pipeline is loaded so its assembly is referenced for behavior models.
-        _ = typeof(ZeroAlloc.Pipeline.IPipelineBehavior).Assembly;
+    private static (GeneratorDriverRunResult Result, Compilation Output) RunGenerator(string source) =>
+        GeneratorTestHelper.RunGeneratorAndUpdateCompilation(
+            source,
+            extraSources: [ValueObjectStub],
+            extraReferences: PipelineReference,
+            nullableContextOptions: NullableContextOptions.Enable);
 
-        return CSharpCompilation.Create(
-            "TestAssembly",
-            [CSharpSyntaxTree.ParseText(source), CSharpSyntaxTree.ParseText(valueObjectStub)],
-            AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-                .Select(a => MetadataReference.CreateFromFile(a.Location))
-                .Cast<MetadataReference>()
-                .ToArray(),
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
-    }
+    private static CSharpCompilation CreateCompilation(string source) =>
+        GeneratorTestHelper.CreateCompilation(
+            source,
+            extraSources: [ValueObjectStub],
+            extraReferences: PipelineReference,
+            nullableContextOptions: NullableContextOptions.Enable);
 }

@@ -40,11 +40,11 @@ public class NullableLengthRuleTests
         var result = new NullableLengthNotNullModelValidator()
             .Validate(new NullableLengthNotNullModel { Tenant = null });
 
-#pragma warning disable HLQ005 // xUnit Assert.Single is not LINQ Single
-        var failure = Assert.Single(result.Failures.ToArray());
-#pragma warning restore HLQ005
-        Assert.Equal("Tenant", failure.PropertyName);
-        Assert.Equal("Tenant must not be null.", failure.ErrorMessage);
+        Assert.Collection(result.Failures.ToArray(), failure =>
+        {
+            Assert.Equal("Tenant", failure.PropertyName);
+            Assert.Equal("Tenant must not be null.", failure.ErrorMessage);
+        });
     }
 
     [Fact]
