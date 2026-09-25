@@ -58,15 +58,20 @@ public class MirroredCallWarningTests
     [InlineData("", "[NotEmpty(When = nameof(Ok))] public string? Code { get; set; }", "[Obsolete] public bool Ok() => true;", "NotEmpty(When = nameof(Ok))", "instance.Ok()", "When of [NotEmpty] on 'Code'", "CS0612")]
     [InlineData("", "[NotEmpty(Unless = nameof(Ok))] public string? Code { get; set; }", "[Obsolete(\"use another\")] public bool Ok() => false;", "NotEmpty(Unless = nameof(Ok))", "instance.Ok()", "Unless of [NotEmpty] on 'Code'", "CS0618")]
     [InlineData("", "[Must(nameof(Ok))] public string? Code { get; set; }", "[Obsolete] public bool Ok(string? value) => false;", "Must(nameof(Ok))", "instance.Ok(instance.Code)", "[Must] on 'Code'", "CS0612")]
+    // An obsolete property read for a predicate or a custom rule, and an override of one.
+    [InlineData("", "[Obsolete][Must(nameof(Ok))] public string Code { get; set; } = \"\";", "public bool Ok(string value) => true;", "Must(nameof(Ok))", "instance.Ok(instance.Code)", "[Must] on 'Code'", "CS0612")]
+    [InlineData("", "[Obsolete][NotBlank] public string Code { get; set; } = \"\";", "", "NotBlank", "__Rule_Code_0.IsValid(instance.Code)", "[NotBlank] on 'Code'", "CS0612")]
+    [InlineData("", "[Must(nameof(Ok))] public override string Code { get; set; } = \"\";", "public bool Ok(string value) => true;", "Must(nameof(Ok))", "instance.Ok(instance.Code)", "[Must] on 'Code'", "CS0612", "[Obsolete] public virtual string Code { get; set; } = \"\";")]
     // A custom rule whose T is string, after a null test; ZV0021 already rejects it on a string?.
     [InlineData("", "[NotNull][NotBlank] public string Code { get; set; } = \"\";", "", "NotBlank", "__Rule_Code_1.IsValid(instance.Code)", "[NotBlank] on 'Code'", "CS8604")]
     // [SkipWhen] and [CustomValidation].
     [InlineData("[SkipWhen(nameof(Skip))]", "[NotEmpty] public string? Code { get; set; }", "[Obsolete] public bool Skip() => false;", "SkipWhen(nameof(Skip))", "instance.Skip()", "[SkipWhen] on 'Request'", "CS0612")]
     [InlineData("", "[NotEmpty] public string? Code { get; set; }", "[Obsolete][CustomValidation] public ValidationFailure[] Check() => Array.Empty<ValidationFailure>();", "CustomValidation", "instance.Check()", "[CustomValidation] on 'Check'", "CS0612")]
     public void Warning_on_a_generated_call_is_mirrored_as_ZV0032_at_the_attribute(
-        string classAttributes, string property, string members, string attribute, string call, string usage, string warningId)
+        string classAttributes, string property, string members, string attribute, string call, string usage, string warningId,
+        string baseMembers = "")
     {
-        var source = Model(classAttributes, property, members);
+        var source = Model(classAttributes, property, members, baseMembers);
 
         var (result, output) = RunGenerator(source);
 
@@ -230,6 +235,130 @@ public class MirroredCallWarningTests
     }
 
     [Fact]
+    public void Severity_set_in_editorconfig_is_honoured()
+    {
+        // .editorconfig and global analyzer configs apply by file path, and the probe file has
+        // none: the model's own file stands in for the generated file beside it.
+        var source = Model("", "[Must(nameof(Ok))] public string? Code { get; set; }", "public bool Ok(string value) => true;");
+        var options = Options()
+            .WithGeneralDiagnosticOption(ReportDiagnostic.Error)
+            .WithSyntaxTreeOptionsProvider(new ConfiguredSeverities(perTreeId: "CS8604", perTree: ReportDiagnostic.Suppress));
+
+        var (result, output) = RunGenerator(source, options);
+
+        Assert.Empty(WithId(result, "ZV0032"));
+        Assert.DoesNotContain("#pragma warning disable CS", GeneratedValidator(result), StringComparison.Ordinal);
+        Assert.Empty(Errors(output));
+    }
+
+    [Fact]
+    public void Severity_set_in_a_global_config_is_honoured()
+    {
+        var source = Model("", "[Must(nameof(Ok))] public string? Code { get; set; }", "public bool Ok(string value) => true;");
+        var options = Options()
+            .WithSyntaxTreeOptionsProvider(new ConfiguredSeverities(globalId: "CS8604", global: ReportDiagnostic.Suppress));
+
+        var (result, _) = RunGenerator(source, options);
+
+        Assert.Empty(WithId(result, "ZV0032"));
+        Assert.DoesNotContain("#pragma warning disable CS", GeneratedValidator(result), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Warning_raised_to_an_error_in_editorconfig_is_mirrored_as_an_error()
+    {
+        var source = Model("", "[Must(nameof(Ok))] public string? Code { get; set; }", "public bool Ok(string value) => true;");
+        var options = Options()
+            .WithSyntaxTreeOptionsProvider(new ConfiguredSeverities(perTreeId: "CS8604", perTree: ReportDiagnostic.Error));
+
+        var (result, output) = RunGenerator(source, options);
+
+        Assert.Equal(DiagnosticSeverity.Error, SingleZV0032(result).Severity);
+        Assert.Empty(GeneratedWarnings(result, output));
+    }
+
+    [Fact]
+    public void Experimental_api_is_mirrored_as_an_error()
+    {
+        // An [Experimental] API's diagnostic is an error unless the user opts in. Mirrored as a
+        // warning, the pragma around the generated call would let the build through.
+        var source = Model("", "[Must(nameof(Ok))] public string? Code { get; set; }",
+            "[System.Diagnostics.CodeAnalysis.Experimental(\"ZX001\")] public bool Ok(string? value) => true;");
+
+        var (result, output) = RunGenerator(source);
+
+        var zv0032 = SingleZV0032(result);
+        Assert.Equal(DiagnosticSeverity.Error, zv0032.Severity);
+        Assert.Contains("raises ZX001: ", zv0032.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Empty(GeneratedWarnings(result, output));
+    }
+
+    [Fact]
+    public void Suppressing_ZV0032_opts_in_to_an_experimental_api()
+    {
+        var source = Model("", """
+            #pragma warning disable ZV0032 // opted in to ZX001
+                [Must(nameof(Ok))] public string? Code { get; set; }
+            #pragma warning restore ZV0032
+            """, "[System.Diagnostics.CodeAnalysis.Experimental(\"ZX001\")] public bool Ok(string? value) => true;");
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.DoesNotContain(WithId(result, "ZV0032"), d => !d.IsSuppressed);
+        EmitSucceeds(output);
+    }
+
+    [Theory]
+    // A model with a nested [Validate] property and a validated collection takes the nested
+    // emit path, with and without model-level StopOnFirstFailure. The null test still precedes
+    // the predicate in the same property group.
+    [InlineData("", "[NotNull][Must(nameof(Ok))] public string Code { get; set; } = \"\";", true)]
+    [InlineData("StopOnFirstFailure = true", "[NotNull][Must(nameof(Ok))] public string Code { get; set; } = \"\";", true)]
+    // Property-level StopOnFirstFailure chains the rules with else if, so the predicate only
+    // runs once the null test has passed.
+    [InlineData("", "[StopOnFirstFailure][NotNull][Must(nameof(Ok))] public string? Code { get; set; }", false)]
+    [InlineData("StopOnFirstFailure = true", "[StopOnFirstFailure][NotNull][Must(nameof(Ok))] public string? Code { get; set; }", false)]
+    public void Nested_and_collection_model_is_probed_as_generated(string validateArguments, string property, bool warns)
+    {
+        var source = Prelude.Replace("public static class Probe", "internal static class Unused", StringComparison.Ordinal)
+            .Replace("new RequestValidator()", "new ItemValidator()", StringComparison.Ordinal)
+            .Replace("new Request()", "new Item()", StringComparison.Ordinal) + $$"""
+            [Validate]
+            public class Address
+            {
+                [NotEmpty] public string? Street { get; set; }
+            }
+
+            [Validate]
+            public class Item
+            {
+                [NotEmpty] public string? Sku { get; set; }
+            }
+
+            [Validate({{validateArguments}})]
+            public class Request
+            {
+                {{property}}
+
+                public Address? Home { get; set; }
+
+                public List<Item> Items { get; set; } = new();
+
+                public bool Ok(string value) => true;
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Equal(warns ? 1 : 0, WithId(result, "ZV0032").Length);
+        Assert.Equal(warns, GeneratedValidator(result).Contains("#pragma warning disable CS8604", StringComparison.Ordinal));
+        Assert.Contains("_homeValidator", GeneratedValidator(result), StringComparison.Ordinal);
+        Assert.Contains("_itemsValidator", GeneratedValidator(result), StringComparison.Ordinal);
+        Assert.Empty(GeneratedWarnings(result, output));
+        EmitSucceeds(output);
+    }
+
+    [Fact]
     public void Base_usage_is_reported_once_by_the_base_validator()
     {
         var source = Prelude + """
@@ -253,10 +382,15 @@ public class MirroredCallWarningTests
         Assert.Empty(GeneratedWarnings(result, output));
     }
 
-    private static string Model(string classAttributes, string property, string members) => Prelude + $$"""
+    private static string Model(string classAttributes, string property, string members, string baseMembers = "") => Prelude + $$"""
+        public class RequestBase
+        {
+            {{baseMembers}}
+        }
+
         {{classAttributes}}
         [Validate]
-        public class Request
+        public class Request : RequestBase
         {
             {{property}}
 
@@ -300,6 +434,43 @@ public class MirroredCallWarningTests
         return errors;
     }
 
+    /// <summary>
+    /// Severities as <c>.editorconfig</c> (per tree) or a global analyzer config would set them.
+    /// </summary>
+    private sealed class ConfiguredSeverities : SyntaxTreeOptionsProvider
+    {
+        private readonly string? _perTreeId;
+        private readonly ReportDiagnostic _perTree;
+        private readonly string? _globalId;
+        private readonly ReportDiagnostic _global;
+
+        public ConfiguredSeverities(string? perTreeId = null, ReportDiagnostic perTree = ReportDiagnostic.Default,
+            string? globalId = null, ReportDiagnostic global = ReportDiagnostic.Default)
+        {
+            _perTreeId = perTreeId;
+            _perTree = perTree;
+            _globalId = globalId;
+            _global = global;
+        }
+
+        public override GeneratedKind IsGenerated(SyntaxTree tree, System.Threading.CancellationToken cancellationToken) =>
+            GeneratedKind.Unknown;
+
+        // Like .editorconfig, per-tree severities match files by path, so a tree without one,
+        // such as the generator's probe, gets none.
+        public override bool TryGetDiagnosticValue(SyntaxTree tree, string diagnosticId, System.Threading.CancellationToken cancellationToken, out ReportDiagnostic severity)
+        {
+            severity = _perTree;
+            return tree.FilePath.Length > 0 && string.Equals(_perTreeId, diagnosticId, StringComparison.Ordinal);
+        }
+
+        public override bool TryGetGlobalDiagnosticValue(string diagnosticId, System.Threading.CancellationToken cancellationToken, out ReportDiagnostic severity)
+        {
+            severity = _global;
+            return string.Equals(_globalId, diagnosticId, StringComparison.Ordinal);
+        }
+    }
+
     private static string SpanText(Diagnostic diagnostic) =>
         diagnostic.Location.SourceTree!.GetText().ToString(diagnostic.Location.SourceSpan);
 
@@ -338,7 +509,7 @@ public class MirroredCallWarningTests
     {
         var compilation = CSharpCompilation.Create(
             "MirroredCallWarningTests_" + Guid.NewGuid().ToString("N"),
-            [CSharpSyntaxTree.ParseText(source)],
+            [CSharpSyntaxTree.ParseText(source, path: "Request.cs")],
             TrustedPlatformReferences(),
             options ?? Options());
 

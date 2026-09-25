@@ -1195,9 +1195,13 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             {
                 if (reportingBase is not null && IsMirroredBy(compilation, reportingBase, call.Site, warning.Id)) continue;
 
+                // An error the generated call would raise stays an error, so the build still fails.
                 ctx.ReportDiagnostic(Diagnostic.Create(
                     ZV0032,
                     AttributeLocation(call.Site.Attribute, call.Site.Target, classSymbol),
+                    warning.IsError ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning,
+                    additionalLocations: null,
+                    properties: null,
                     call.Site.Text,
                     call.Site.Usage,
                     warning.Id,

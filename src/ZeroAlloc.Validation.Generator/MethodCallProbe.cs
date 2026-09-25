@@ -218,16 +218,47 @@ internal static class MethodCallProbe
             if (diagnostic.Severity != DiagnosticSeverity.Warning && !diagnostic.IsWarningAsError) continue;
             if (FindSite(sites, diagnostic.Location.SourceSpan) is not { } site) continue;
 
+            var configured = ConfiguredSeverity(compilation, diagnostic.Id, probed[site.Model].Lines[site.Line][site.Call].Site);
+            // Turned off, or below a warning, for the project: the generated call does not warn.
+            if (configured is ReportDiagnostic.Suppress or ReportDiagnostic.Hidden or ReportDiagnostic.Info) continue;
+            bool isError = configured == ReportDiagnostic.Error || diagnostic.Severity == DiagnosticSeverity.Error;
+
             var key = (site.Model, site.Line, site.Call);
             if (!perCall.TryGetValue(key, out var list))
             {
                 list = new List<CallWarning>();
                 perCall[key] = list;
             }
-            var warning = new CallWarning(diagnostic.Id, diagnostic.GetMessage(CultureInfo.InvariantCulture));
+            var warning = new CallWarning(diagnostic.Id, diagnostic.GetMessage(CultureInfo.InvariantCulture), isError);
             if (!list.Contains(warning)) list.Add(warning);
         }
         return perCall;
+    }
+
+    /// <summary>
+    /// The severity <c>.editorconfig</c> or a global analyzer config gives <paramref name="id"/>,
+    /// or <see langword="null"/> when neither sets one. The probe file has no path, so these
+    /// options, which apply by path, are not applied to it by the compiler. The file declaring
+    /// the attribute the call is made for stands in for the generated file, which sits beside it
+    /// in the same project. <c>NoWarn</c> and other compilation-wide options are already applied.
+    /// </summary>
+    private static ReportDiagnostic? ConfiguredSeverity(Compilation compilation, string id, CallSite site)
+    {
+        if (compilation.Options.SyntaxTreeOptionsProvider is not { } provider) return null;
+        var tree = site.Attribute.ApplicationSyntaxReference?.SyntaxTree
+            ?? FirstSourceTree(site.Target);
+        if (tree is not null && provider.TryGetDiagnosticValue(tree, id, CancellationToken.None, out var perTree))
+            return perTree;
+        return provider.TryGetGlobalDiagnosticValue(id, CancellationToken.None, out var global) ? global : null;
+    }
+
+    private static SyntaxTree? FirstSourceTree(ISymbol symbol)
+    {
+        foreach (var location in symbol.Locations)
+        {
+            if (location.IsInSource) return location.SourceTree;
+        }
+        return null;
     }
 
     /// <summary>One model's calls with their warnings, or <see langword="null"/> when none warns.</summary>

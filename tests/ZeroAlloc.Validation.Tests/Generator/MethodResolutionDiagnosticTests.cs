@@ -625,14 +625,29 @@ public class MethodResolutionDiagnosticTests
     // Nullability that differs, and an obsolete method.
     [InlineData("public bool Ok(string value) => false;", "", "string?", false, false)]
     [InlineData("[Obsolete] public bool Ok(string? value) => false;", "", "string?", false, false)]
+    // Reading an obsolete property warns, CS0612, as does reading an override of one.
+    [InlineData("public bool Ok(string value) => false;", "[Obsolete]", "string", false, false)]
+    [InlineData("public bool Ok(string value) => false;", "", "string", false, false,
+        "override", "[Obsolete] public virtual string Code { get; set; } = \"\";")]
+    [InlineData("public bool Ok(string value) => false;", "", "string", false, true,
+        "override", "public virtual string Code { get; set; } = \"\";")]
+    // A nullability attribute on the overridden property.
+    [InlineData("public bool Ok(string value) => false;", "", "string", false, false,
+        "override", "[System.Diagnostics.CodeAnalysis.MaybeNull] public virtual string Code { get; set; } = \"\";")]
     public void Fast_path_clears_only_calls_that_cannot_warn(
-        string members, string propertyAttributes, string codeType, bool nullTested, bool cleared)
+        string members, string propertyAttributes, string codeType, bool nullTested, bool cleared,
+        string modifier = "", string baseMembers = "")
     {
         var source = Prelude + $$"""
-            [Validate]
-            public class Request
+            public class RequestBase
             {
-                {{propertyAttributes}} public {{codeType}} Code { get; set; } = default!;
+                {{baseMembers}}
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                {{propertyAttributes}} public {{modifier}} {{codeType}} Code { get; set; } = default!;
 
                 {{members}}
             }
@@ -646,6 +661,43 @@ public class MethodResolutionDiagnosticTests
         var code = (IPropertySymbol)request.GetMembers("Code")[0];
 
         Assert.Equal(cleared, CertainCall.ConditionCannotWarn(compilation, request, "Ok", code, nullTested));
+    }
+
+    [Theory]
+    [InlineData("", "", true)]
+    [InlineData("[Obsolete]", "", false)]
+    [InlineData("[System.Diagnostics.CodeAnalysis.MaybeNull]", "", false)]
+    [InlineData("", "[Obsolete] public virtual string Code { get; set; } = \"\";", false)]
+    public void Fast_path_clears_a_custom_rule_call_only_when_it_cannot_warn(string propertyAttributes, string baseMembers, bool cleared)
+    {
+        var modifier = baseMembers.Length == 0 ? "" : "override";
+        var source = Prelude + $$"""
+            public sealed class NotBlankAttribute : ValidationAttribute<string>
+            {
+                public override bool IsValid(string value) => value.Trim().Length > 0;
+            }
+
+            public class RequestBase
+            {
+                {{baseMembers}}
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                {{propertyAttributes}} public {{modifier}} string Code { get; set; } = "";
+            }
+            """;
+        var compilation = CSharpCompilation.Create(
+            "FastPathRule_" + Guid.NewGuid().ToString("N"),
+            [CSharpSyntaxTree.ParseText(source)],
+            TrustedPlatformReferences(),
+            Options());
+        var rule = compilation.GetTypeByMetadataName("TestModels.NotBlankAttribute")!;
+        var code = (IPropertySymbol)compilation.GetTypeByMetadataName("TestModels.Request")!.GetMembers("Code")[0];
+        CustomRules.TryGetRuleValueType(rule, out var valueType);
+
+        Assert.Equal(cleared, CertainCall.RuleCallCannotWarn(rule, valueType, code, nullTested: false));
     }
 
     [Fact]

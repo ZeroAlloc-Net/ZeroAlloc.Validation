@@ -27,7 +27,8 @@ namespace ZeroAlloc.Validation.Generator;
 /// as ZV0032, so <see cref="MethodCallProbe.CallWarnings"/> compiles the validator's body
 /// unless every call in it certainly cannot warn. <see cref="ConditionCannotWarn"/>,
 /// <see cref="RuleCallCannotWarn"/> and <see cref="CustomValidation"/> decide that for each
-/// call, on top of the checks above: a nullability attribute on the parameter or the property,
+/// call, on top of the checks above: an attribute on the parameter, an obsolete, experimental
+/// or nullability attribute on the property or a property it overrides,
 /// a parameter whose nullability differs from the property's, or an earlier rule that tests
 /// the property for null, which leaves it maybe-null, each sends the call to the probe.
 /// </para>
@@ -71,7 +72,7 @@ internal static class CertainCall
         if (argument is null) return true;
         return !argumentNullTested
             && method.Parameters[0].GetAttributes().Length == 0
-            && !HasNullabilityAttribute(argument);
+            && !ReadMayWarn(argument);
     }
 
     /// <summary>
@@ -84,7 +85,7 @@ internal static class CertainCall
     /// </summary>
     public static bool RuleCallCannotWarn(INamedTypeSymbol ruleClass, ITypeSymbol valueType, IPropertySymbol property, bool nullTested)
     {
-        if (nullTested || HasNullabilityAttribute(property)) return false;
+        if (nullTested || ReadMayWarn(property)) return false;
         if (!SymbolEqualityComparer.IncludeNullability.Equals(valueType, property.Type)) return false;
         for (var type = ruleClass; type is not null; type = type.BaseType)
         {
@@ -125,34 +126,47 @@ internal static class CertainCall
         {
             foreach (var attr in type.GetAttributes())
             {
-                var name = attr.AttributeClass?.ToDisplayString();
-                if (string.Equals(name, "System.ObsoleteAttribute", System.StringComparison.Ordinal)
-                    || string.Equals(name, "System.Diagnostics.CodeAnalysis.ExperimentalAttribute", System.StringComparison.Ordinal))
-                    return true;
+                if (IsDeprecation(attr.AttributeClass?.ToDisplayString())) return true;
             }
         }
         return false;
     }
 
     /// <summary>
-    /// Whether the property, or its getter's return value, carries an attribute from
-    /// <c>System.Diagnostics.CodeAnalysis</c>, such as <c>[MaybeNull]</c>, that changes the
-    /// null state of the value the validator reads from it.
+    /// Whether reading <paramref name="property"/>, <c>instance.Property</c>, can itself warn or
+    /// change the null state of the value read. The property, a property it overrides, or one of
+    /// their getters carries <c>[Obsolete]</c> or <c>[Experimental]</c>, which the compiler
+    /// reports at the read, or an attribute from <c>System.Diagnostics.CodeAnalysis</c>, such as
+    /// <c>[MaybeNull]</c>. The containing type may not be obsolete or experimental either.
     /// </summary>
-    private static bool HasNullabilityAttribute(IPropertySymbol property) =>
-        HasCodeAnalysisAttribute(property.GetAttributes())
-        || (property.GetMethod is { } getter
-            && (HasCodeAnalysisAttribute(getter.GetAttributes()) || HasCodeAnalysisAttribute(getter.GetReturnTypeAttributes())));
-
-    private static bool HasCodeAnalysisAttribute(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    private static bool ReadMayWarn(IPropertySymbol property)
     {
-        foreach (var attr in attributes)
+        for (IPropertySymbol? current = property; current is not null; current = current.OverriddenProperty)
         {
-            if (string.Equals(attr.AttributeClass?.ContainingNamespace?.ToDisplayString(), "System.Diagnostics.CodeAnalysis", System.StringComparison.Ordinal))
+            if (IsInDeprecatedType(current.ContainingType)
+                || HasFlaggedAttribute(current.GetAttributes())
+                || (current.GetMethod is { } getter
+                    && (HasFlaggedAttribute(getter.GetAttributes()) || HasFlaggedAttribute(getter.GetReturnTypeAttributes()))))
                 return true;
         }
         return false;
     }
+
+    private static bool HasFlaggedAttribute(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
+    {
+        foreach (var attr in attributes)
+        {
+            if (attr.AttributeClass is not { } attrClass) continue;
+            if (IsDeprecation(attrClass.ToDisplayString())
+                || string.Equals(attrClass.ContainingNamespace?.ToDisplayString(), "System.Diagnostics.CodeAnalysis", System.StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool IsDeprecation(string? attributeName) =>
+        string.Equals(attributeName, "System.ObsoleteAttribute", System.StringComparison.Ordinal)
+        || string.Equals(attributeName, "System.Diagnostics.CodeAnalysis.ExperimentalAttribute", System.StringComparison.Ordinal);
 
     private static bool ContainsPointer(ITypeSymbol type) => type switch
     {
