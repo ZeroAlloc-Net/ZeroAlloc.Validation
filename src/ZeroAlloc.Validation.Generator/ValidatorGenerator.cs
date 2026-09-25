@@ -164,6 +164,20 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             + "type parameters, or one whose containing type has them. No validator is generated, "
             + "and the Inject, Options and ASP.NET Core glue leave the type out.");
 
+    private static readonly DiagnosticDescriptor ZV0031 = new DiagnosticDescriptor(
+        id: "ZV0031",
+        title: "Two [Validate] models whose validators would have the same name",
+        messageFormat: "The validator for '{0}' would be named '{1}', the same as the validator for {2}, so no validator is generated for these types; rename one of them",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description:
+            "A nested model's validator is named after its containing types and itself, joined with "
+            + "underscores: Outer.Request gets Outer_RequestValidator. A top-level Outer_Request in "
+            + "the same namespace would get the same name, as would A.B_Request and A_B.Request. "
+            + "No validator is generated for any of the models involved, and the Inject, Options and "
+            + "ASP.NET Core glue leave them out. Rename one of the types.");
+
     /// <summary>
     /// ZV0026's model: a <c>[RuleMessage]</c> usage on a class that is not a custom rule. Plain
     /// strings and spans only, so the step compares by value and stays cached across edits that
@@ -593,12 +607,12 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     private static void EmitFieldsAndConstructor(
         System.Text.StringBuilder sb,
         string validatorName,
-        List<(string FieldName, string ParamName, string QualifiedValidatorType)> nestedFields)
+        List<(string FieldName, string ParamName, string QualifiedValidatorType, string MemberDescription)> nestedFields)
     {
         if (nestedFields.Count == 0)
             return;
 
-        foreach (var (fieldName, _, qualifiedType) in nestedFields)
+        foreach (var (fieldName, _, qualifiedType, _) in nestedFields)
             sb.AppendLine($"    private readonly {qualifiedType} {fieldName};");
 
         sb.AppendLine();
@@ -606,45 +620,23 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         sb.AppendLine($"    /// <summary>Initialises a new <c>{validatorName}</c> with the validators for its nested members.</summary>");
         // Parameter types are not named in the text: a constructed generic such as
         // ValidatorFor<Foo> would put raw angle brackets in the XML and raise CS1570.
-        // The member name is recovered from the parameter name instead, which the caller
-        // built as <member>Validator.
-        foreach (var (_, paramName, _) in nestedFields)
-            sb.AppendLine($"    /// <param name=\"{paramName}\">The validator for the nested <c>{DescribeNestedMember(paramName)}</c> member.</param>");
+        // The member is named by RuleEmitter.CollectNestedValidatorFields instead.
+        foreach (var (_, paramName, _, memberDescription) in nestedFields)
+            sb.AppendLine($"    /// <param name=\"{paramName}\">The validator for the nested <c>{memberDescription}</c> member.</param>");
 
         sb.Append($"    public {validatorName}(");
         for (int fi = 0; fi < nestedFields.Count; fi++)
         {
-            var (_, paramName, qualifiedType) = nestedFields[fi];
+            var (_, paramName, qualifiedType, _) = nestedFields[fi];
             if (fi > 0) sb.Append(", ");
             sb.Append($"{qualifiedType} {paramName}");
         }
         sb.AppendLine(")");
         sb.AppendLine("    {");
-        foreach (var (fieldName, paramName, _) in nestedFields)
+        foreach (var (fieldName, paramName, _, _) in nestedFields)
             sb.AppendLine($"        {fieldName} = {paramName};");
         sb.AppendLine("    }");
         sb.AppendLine();
-    }
-
-    /// <summary>
-    /// Recovers the nested property's name from the constructor parameter name for use in
-    /// documentation. <c>CollectNestedValidatorFields</c> builds the parameter as the
-    /// camel-cased property name followed by <c>Validator</c>, so removing one such suffix
-    /// and restoring the leading capital yields the original property name.
-    /// </summary>
-    private static string DescribeNestedMember(string paramName)
-    {
-        const string suffix = "Validator";
-
-        var trimmed = paramName.EndsWith(suffix, StringComparison.Ordinal)
-            ? paramName.Substring(0, paramName.Length - suffix.Length)
-            : paramName;
-
-        // Defensive: a property named exactly "Validator" would trim to nothing.
-        if (trimmed.Length == 0)
-            return paramName;
-
-        return $"{char.ToUpperInvariant(trimmed[0])}{trimmed.Substring(1)}";
     }
 
     private static void ReportDuplicateOrderDiagnostics(
@@ -777,6 +769,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// inside one, or a file-local type. ZV0029: the validator is not generic, so it cannot name a
     /// model that is generic or declared inside a generic type, issue #219. A model can hit both,
     /// and each names a change it needs, so both are reported rather than one hiding the other.
+    /// ZV0031: another model's validator would take the same name, issue #220. It is checked only
+    /// for a model that would otherwise get a validator, since the others take no name. Each
+    /// model involved reports it, naming the others.
     /// Every other diagnostic describes how the validator would treat the type's rules; with no
     /// validator they are moot, and they run as usual once the type gets one. The companion
     /// generators leave the type out through the same checks, so these errors are the only ones
@@ -801,6 +796,17 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 ZV0029,
                 FindValidateAttributeLocation(classSymbol),
                 classSymbol.ToDisplayString()));
+            reported = true;
+        }
+
+        if (!reported && GeneratedValidatorReach.ValidatorNameClashes(classSymbol, compilation) is { Count: > 0 } clashes)
+        {
+            ctx.ReportDiagnostic(Diagnostic.Create(
+                ZV0031,
+                FindValidateAttributeLocation(classSymbol),
+                classSymbol.ToDisplayString(),
+                GeneratedValidatorNames.ValidatorName(classSymbol),
+                string.Join(", ", clashes.Select(c => $"'{c.ToDisplayString()}'"))));
             reported = true;
         }
 

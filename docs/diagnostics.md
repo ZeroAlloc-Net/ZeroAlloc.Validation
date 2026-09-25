@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0030 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0031 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -32,6 +32,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0028](#zv0028) | Error | Validation method the generated validator cannot call |
 | [ZV0029](#zv0029) | Error | [Validate] on a generic type |
 | [ZV0030](#zv0030) | Error | Validation method call that does not compile |
+| [ZV0031](#zv0031) | Error | Two [Validate] models whose validators would have the same name |
 
 ---
 
@@ -668,7 +669,7 @@ public class OrderPage : Page<Order> { }
 
 **When fired:** The generated validator calls the method a `[Must]` names as `instance.Method(instance.Property)`, and the method a `When`, `Unless` or `[SkipWhen]` names as `instance.Method()`, using the result as a condition. Before emitting a call, the generator compiles it in the generated file's own context: its `using` directives, the model's namespace and a class outside the model. ZV0030 is reported when the compiler rejects the call for any reason other than a static or inaccessible method, which is [ZV0028](#zv0028), or a member that does not exist at all, described below. Typical causes:
 
-- the name is empty, `null` or not an identifier;
+- the name is empty, `null` or not an identifier. A method declared with a keyword name, such as `@class`, is not reported: `nameof(@class)` gives `class`, and the call is written `instance.@class()`;
 - no overload takes the arguments (CS1501, CS7036, CS1503);
 - the call is ambiguous (CS0121), or a generic method's type arguments cannot be inferred (CS0411) or violate its constraints (CS0453 and similar);
 - the result cannot be used as a condition (CS0019, CS0023, CS0029, CS0266).
@@ -703,3 +704,34 @@ Because the compiler decides, anything it binds keeps working: an overload chose
 A `[CustomValidation]` method's signature is [ZV0013](#zv0013)'s to check, so it never reports ZV0030.
 
 **Fix:** Name a method the call can bind to: `public` or `internal`, taking no arguments for `When`, `Unless` and `[SkipWhen]` or the property's value for `[Must]`, and returning `bool`. The compiler's error in the message says what is wrong.
+
+---
+
+## ZV0031
+
+**Severity:** Error
+
+**Title:** Two [Validate] models whose validators would have the same name
+
+**When fired:** The validator for a model nested in other types is named after the containing types and the model, joined with underscores: `Outer.Request` gets `Outer_RequestValidator`. A type whose own name contains an underscore can therefore claim the same name in the same namespace:
+
+```csharp
+public class Outer
+{
+    [Validate]                        // ZV0031 — Outer_RequestValidator, like Outer_Request
+    public class Request { [NotEmpty] public string Name { get; set; } = ""; }
+}
+
+[Validate]                            // ZV0031 — Outer_RequestValidator, like Outer.Request
+public class Outer_Request { [NotEmpty] public string Name { get; set; } = ""; }
+```
+
+`A.B_Request` and `A_B.Request` collide the same way. ZV0031 is reported at the `[Validate]` attribute of each model involved, and names the others:
+
+> The validator for '{0}' would be named '{1}', the same as the validator for {2}, so no validator is generated for these types; rename one of them
+
+No validator is generated for any of them, so the build does not fail with a duplicate type or hint name inside generated code. `AddZeroAllocValidators()`, `ValidateWithZeroAlloc()` and the ASP.NET Core filter leave them out, and a property of one of those types is not validated as a nested model. A type that gets no validator anyway, because it is not `[Validate]`, is generic ([ZV0029](#zv0029)) or is out of the validator's reach ([ZV0025](#zv0025)), claims no name and does not collide. Neither does a type in another namespace.
+
+The generator does not pick another name for one of them: that would rename a validator existing code already refers to.
+
+**Fix:** Rename one of the types. The .NET naming guidelines rule out underscores in type names, so the type with the underscore is usually the one to rename.

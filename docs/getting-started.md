@@ -77,7 +77,9 @@ The generator emits `RegisterUserRequestValidator` in the same namespace as your
 > A model in `A.B` gets `A_B_RequestValidator`. So `Orders.Request`, `Returns.Request` and a
 > top-level `Request` in the same namespace each get their own validator. Plain concatenation,
 > `OrdersRequestValidator`, would clash with the validator of a top-level `OrdersRequest`
-> model; the underscore can only clash with a type name that itself contains an underscore.
+> model; the underscore can only clash with a type name that itself contains an underscore,
+> such as a top-level `Orders_Request`. Such a clash fails the build with
+> [ZV0031](diagnostics.md#zv0031), and neither model gets a validator.
 > The validator must be able to reach the model, so the model and every type containing it
 > must be `public`, `internal` or `protected internal`. A `private`, `protected` or
 > `private protected` nested model, a model inside such a type, or a `file`-local model or one

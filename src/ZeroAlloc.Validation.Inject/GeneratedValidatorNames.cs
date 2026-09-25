@@ -20,12 +20,36 @@ namespace ZeroAlloc.Validation.Generator.Shared;
 /// <c>Request</c> the same <c>RequestValidator</c>; plain concatenation, <c>OuterRequestValidator</c>,
 /// would collide with a top-level model named <c>OuterRequest</c>, a name that follows .NET
 /// conventions. The underscore can only collide with a type whose own name contains an
-/// underscore, which the .NET naming guidelines rule out.
+/// underscore, which the .NET naming guidelines rule out. Such a collision, for example a
+/// top-level <c>Outer_Request</c> next to <c>Outer.Request</c>, is reported as ZV0031 and neither
+/// model gets a validator, issue #220; <see cref="GeneratedValidatorReach"/> finds it.
 /// The validator cannot be nested inside the containing type instead: that would require every
 /// containing type to be declared <c>partial</c>.
+/// <para>
+/// A namespace is written into code with each keyword segment escaped, <c>@class.Models</c>, and
+/// into a hint name without the escape, which hint names do not allow, issue #242. Neither
+/// relies on the default display format escaping keywords.
+/// </para>
 /// </remarks>
 internal static class GeneratedValidatorNames
 {
+    private static readonly SymbolDisplayFormat CodeNamespaceFormat = new(
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+        miscellaneousOptions: SymbolDisplayMiscellaneousOptions.EscapeKeywordIdentifiers);
+
+    private static readonly SymbolDisplayFormat HintNamespaceFormat = new(
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces);
+
+    /// <summary>
+    /// The namespace the validator for <paramref name="model"/> is declared in, as C# code with
+    /// keyword segments escaped, or <see langword="null"/> for the global namespace.
+    /// </summary>
+    public static string? NamespaceName(INamedTypeSymbol model)
+    {
+        var ns = model.ContainingNamespace;
+        return ns is null || ns.IsGlobalNamespace ? null : ns.ToDisplayString(CodeNamespaceFormat);
+    }
+
     /// <summary>The validator's simple name, for example <c>Outer_RequestValidator</c>.</summary>
     public static string ValidatorName(INamedTypeSymbol model)
     {
@@ -38,13 +62,10 @@ internal static class GeneratedValidatorNames
     /// <summary>
     /// The validator's fully qualified name, for example <c>global::Ns.Outer_RequestValidator</c>.
     /// </summary>
-    public static string QualifiedValidatorName(INamedTypeSymbol model)
-    {
-        var ns = model.ContainingNamespace;
-        return ns is null || ns.IsGlobalNamespace
-            ? $"global::{ValidatorName(model)}"
-            : $"global::{ns.ToDisplayString()}.{ValidatorName(model)}";
-    }
+    public static string QualifiedValidatorName(INamedTypeSymbol model) =>
+        NamespaceName(model) is { } ns
+            ? $"global::{ns}.{ValidatorName(model)}"
+            : $"global::{ValidatorName(model)}";
 
     /// <summary>
     /// The hint name of the validator's generated file, for example
@@ -56,7 +77,7 @@ internal static class GeneratedValidatorNames
         var ns = model.ContainingNamespace;
         return ns is null || ns.IsGlobalNamespace
             ? $"{ValidatorName(model)}.g.cs"
-            : $"{ns.ToDisplayString()}.{ValidatorName(model)}.g.cs";
+            : $"{ns.ToDisplayString(HintNamespaceFormat)}.{ValidatorName(model)}.g.cs";
     }
 
     private static void AppendContainers(StringBuilder sb, INamedTypeSymbol? container)
