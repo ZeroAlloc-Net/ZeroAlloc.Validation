@@ -490,6 +490,79 @@ public class CustomRuleAttributeTests
     }
 
     [Fact]
+    public void Must_on_multi_property_value_object_does_not_report_ZV0016()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            using ZeroAlloc.ValueObjects;
+            namespace TestModels;
+
+            [ValueObject]
+            public readonly partial struct Money
+            {
+                public decimal Amount { get; }
+                public string Currency { get; }
+                public Money(decimal amount, string currency)
+                {
+                    Amount = amount;
+                    Currency = currency;
+                }
+            }
+
+            [Validate]
+            public partial class PriceCommand
+            {
+                [Must(nameof(IsPositive))]
+                public Money Total { get; set; }
+
+                public bool IsPositive(Money value) => value.Amount > 0;
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Empty(CompileErrors(output));
+        Assert.DoesNotContain(result.Diagnostics, d => string.Equals(d.Id, "ZV0016", StringComparison.Ordinal));
+        Assert.Contains("!instance.IsPositive(instance.Total)", GetGeneratedSource(result, "PriceCommandValidator.g.cs"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Must_plus_builtin_rule_on_multi_property_value_object_still_reports_ZV0016()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            using ZeroAlloc.ValueObjects;
+            namespace TestModels;
+
+            [ValueObject]
+            public readonly partial struct Money
+            {
+                public decimal Amount { get; }
+                public string Currency { get; }
+                public Money(decimal amount, string currency)
+                {
+                    Amount = amount;
+                    Currency = currency;
+                }
+            }
+
+            [Validate]
+            public partial class PriceCommand
+            {
+                [Must(nameof(IsPositive))]
+                [GreaterThan(0)]
+                public Money Total { get; set; }
+
+                public bool IsPositive(Money value) => value.Amount > 0;
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Contains(result.Diagnostics, d => string.Equals(d.Id, "ZV0016", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Direct_return_path_emits_custom_rule_with_all_base_members()
     {
         var source = $$"""
