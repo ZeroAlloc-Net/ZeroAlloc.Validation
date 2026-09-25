@@ -2,7 +2,7 @@
 id: advanced
 title: Advanced Features
 slug: /docs/advanced
-description: Conditional validation with [SkipWhen], per-property short-circuiting with [StopOnFirstFailure], inherited rules from base types, per-rule When/Unless guards, and Severity.
+description: Conditional validation with [SkipWhen], per-property short-circuiting with [StopOnFirstFailure], inherited rules from base types, per-rule When/Unless guards, Severity, and generated accessibility for library authors.
 sidebar_position: 10
 ---
 
@@ -261,3 +261,32 @@ foreach (ref readonly var f in result.Failures)
     }
 }
 ```
+
+---
+
+## Generated accessibility — Keeping validators out of a library's public API
+
+**For library authors.** A `[Validate]` model's generated `{Model}Validator` is `public` only if the model itself is effectively public **and** every nested `[Validate]` model it takes as a constructor-injected validator dependency — a scalar property or a collection element, but not an explicit `[ValidateWith]` override, whose target type's accessibility is your own choice — is itself public too, computed transitively over the whole model graph (see also [Inheritance — Accessibility](#inheritance--rules-declared-on-base-types)). Anywhere that chain reaches an internal model, the validator is `internal`, even for an otherwise-public model. This is the unconditional default: a public model with a property whose type is an internal `[Validate]` model would otherwise generate a `public` validator whose constructor takes a less-accessible parameter — `CS0051` — so the generator makes the outer validator `internal` instead of emitting code that cannot compile.
+
+That default keeps every model that *can* be public generated public, which is the right shape for an application. For a **library** it usually does not go far enough: even a model with no internal nested dependencies still gets a fully public validator, options extension class, and DI/ASP.NET Core registration glue — unintended public API surface `Microsoft.CodeAnalysis.PublicApiAnalyzers`-style tooling flags — even though nothing outside the library is meant to construct them directly.
+
+Set the `ZeroAllocGeneratedAccessibility` MSBuild property to make every generated entry point `internal` unconditionally, regardless of the model's own accessibility or its nested dependencies:
+
+```xml
+<PropertyGroup>
+  <ZeroAllocGeneratedAccessibility>Internal</ZeroAllocGeneratedAccessibility>
+</PropertyGroup>
+```
+
+This applies to every generated entry point in the project:
+
+- the generated `{Model}Validator` classes ([Getting Started](./getting-started.md)), for every `[Validate]` model — public or already-internal
+- `ZeroAllocOptionsValidationExtensions` ([Options Validation](./options.md)): with `Internal`, every model's `ValidateWithZeroAlloc()` overload is emitted into the existing internal `InternalZeroAllocOptionsValidationExtensions` class instead, and the public class is not emitted at all
+- `ZeroAllocValidatorRegistrationExtensions` and `AddZeroAllocValidators()` ([DI Registration](./inject.md))
+- `ZeroAllocValidationServiceCollectionExtensions` and `AddZeroAllocAspNetCoreValidation()` ([ASP.NET Core Integration](./aspnetcore.md)) — the generated `ZeroAllocValidationActionFilter` itself is already `internal` regardless of this property
+
+The options extension class and the DI/ASP.NET Core registration glue only ever reference a validator type from inside a method body — never from a public member's own signature — so a model that keeps its own public options/DI entry point works fine even when its validator is internal. `ValidateWithZeroAlloc()` and `AddZeroAllocValidators()` route by the *model's* accessibility, not the validator's, and that choice does not depend on whether the nested-dependency rule above happened to make the validator internal.
+
+The allowed values are `Public` (the default when the property is unset or empty) and `Internal`, compared case-insensitively. Any other value is generator error [ZV0019](./diagnostics.md#zv0019). With the property unset or `Public`, generated output is byte-identical to before this property existed, for every input that already compiled — the nested-dependency rule above only changes output for a model graph that previously failed to compile at all.
+
+The property name is shared, unqualified, across every ZeroAlloc generator package (ZeroAlloc.Validation, ZeroAlloc.Resilience, ZeroAlloc.Inject, …), so setting it once in a project — or in a shared `Directory.Build.props` — covers all of them.

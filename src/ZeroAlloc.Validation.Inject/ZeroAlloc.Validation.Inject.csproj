@@ -35,4 +35,16 @@
           Condition="Exists('$(OutputPath)\$(AssemblyName).pdb')" />
   </ItemGroup>
 
+  <!--
+    Makes the org-wide ZeroAllocGeneratedAccessibility MSBuild property CompilerVisible for a
+    project that references this package directly (see build/ZeroAlloc.Validation.Inject.props
+    for why there is no buildTransitive/ counterpart). Issue #193.
+  -->
+  <ItemGroup>
+    <None Include="build/ZeroAlloc.Validation.Inject.props"
+          Pack="true"
+          PackagePath="build/ZeroAlloc.Validation.Inject.props"
+          Visible="false" />
+  </ItemGroup>
+
 </Project>

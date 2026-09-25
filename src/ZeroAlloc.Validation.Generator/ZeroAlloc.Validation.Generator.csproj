@@ -31,6 +31,20 @@
   </ItemGroup>
 
   <!--
+    NestedValidatorAccessibility is compiled in from source rather than referenced from the
+    Inject assembly, the same reasoning ValidatorRegistrationEmitter.cs is shared into
+    Options.Generator and AspNetCore.Generator: a reference would load the whole Inject
+    assembly (and its own generator) into this one, and Roslyn would then also run
+    InjectGenerator from that copy. Shared so this generator's own accessibility decision
+    (issue #193 point 3) matches the one OptionsValidationEmitter, InjectGenerator and
+    AspNetCoreFilterEmitter each compute independently for the same model.
+  -->
+  <ItemGroup>
+    <Compile Include="..\ZeroAlloc.Validation.Inject\NestedValidatorAccessibility.cs"
+             Link="Shared\NestedValidatorAccessibility.cs" />
+  </ItemGroup>
+
+  <!--
     Source generators run in an isolated context: Roslyn loads the generator DLL but does NOT
     automatically load its package-reference dependencies. We work around this by emitting
     the dependency DLLs next to the generator DLL so dotnet pack can place them under
@@ -68,6 +82,18 @@
     <None Include="$(OutputPath)\ZeroAlloc.Pipeline.dll"
           Pack="true"
           PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
+  </ItemGroup>
+
+  <!--
+    Makes the org-wide ZeroAllocGeneratedAccessibility MSBuild property CompilerVisible for a
+    project that references this standalone package directly (see build/ZeroAlloc.Validation.Generator.props for
+    why there is no buildTransitive/ counterpart). Issue #193.
+  -->
+  <ItemGroup>
+    <None Include="build/ZeroAlloc.Validation.Generator.props"
+          Pack="true"
+          PackagePath="build/ZeroAlloc.Validation.Generator.props"
           Visible="false" />
   </ItemGroup>
 

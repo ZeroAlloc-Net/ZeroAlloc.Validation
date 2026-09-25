@@ -1,0 +1,19 @@
+<Project>
+  <!--
+    Makes the ZeroAllocGeneratedAccessibility MSBuild property visible to the bundled generator
+    as build_property.ZeroAllocGeneratedAccessibility (see issue #193). The same property name
+    is shared, unqualified, across every ZeroAlloc generator package:
+
+      <PropertyGroup>
+        <ZeroAllocGeneratedAccessibility>Internal</ZeroAllocGeneratedAccessibility>
+      </PropertyGroup>
+
+    Unset or "Public" (the default) leaves every generated entry point public, byte-identical to
+    before #193. "Internal" emits the generated {Model}Validator classes, the options extension
+    classes and the DI/ASP.NET Core glue internal for every annotated model, including a public
+    one. Any other value is generator error ZV0019. See docs/advanced.md.
+  -->
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ZeroAllocGeneratedAccessibility" />
+  </ItemGroup>
+</Project>

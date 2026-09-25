@@ -23,6 +23,10 @@
   <ItemGroup>
     <Compile Include="..\ZeroAlloc.Validation.Inject\ValidatorRegistrationEmitter.cs"
              Link="Shared\ValidatorRegistrationEmitter.cs" />
+    <!-- GeneratedAccessibilityOption reads the org-wide ZeroAllocGeneratedAccessibility MSBuild
+         property (issue #193). Shared the same way as ValidatorRegistrationEmitter above. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedAccessibilityOption.cs"
+             Link="Shared\GeneratedAccessibilityOption.cs" />
   </ItemGroup>
 
 </Project>

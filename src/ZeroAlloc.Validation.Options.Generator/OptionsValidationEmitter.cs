@@ -30,21 +30,27 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
 
 #pragma warning disable EPS06
         var collected = validateClasses.Collect();
+        var isInternalMode = context.AnalyzerConfigOptionsProvider
+            .Select(static (provider, _) => GeneratedAccessibilityOption.IsInternal(provider));
+        var combined = collected.Combine(isInternalMode);
 #pragma warning restore EPS06
-        context.RegisterSourceOutput(collected, Emit);
+        context.RegisterSourceOutput(combined, static (ctx, pair) => Emit(ctx, pair.Left, pair.Right));
     }
 
-    private static void Emit(SourceProductionContext ctx, ImmutableArray<INamedTypeSymbol> models)
+    private static void Emit(SourceProductionContext ctx, ImmutableArray<INamedTypeSymbol> models, bool isInternalMode)
     {
         if (models.IsDefaultOrEmpty) return;
 
         // An extension method cannot be more visible than the model in its signature, so
         // models that are not visible outside the assembly go in a separate internal class,
-        // issue #184. Public models keep the public class exactly as before.
+        // issue #184. Public models keep the public class exactly as before, unless
+        // ZeroAllocGeneratedAccessibility=Internal (issue #193) routes every model into the
+        // internal class regardless of the model's own accessibility, so the public class is
+        // never emitted at all — nothing generated becomes more visible than requested.
         var publicModels   = new List<INamedTypeSymbol>();
         var internalModels = new List<INamedTypeSymbol>();
         foreach (var model in models)
-            (IsEffectivelyPublic(model) ? publicModels : internalModels).Add(model);
+            (!isInternalMode && IsEffectivelyPublic(model) ? publicModels : internalModels).Add(model);
 
         if (publicModels.Count > 0)
         {
