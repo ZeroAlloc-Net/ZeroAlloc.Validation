@@ -699,50 +699,48 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// on a constructor parameter such as a record's positional parameter written without the
     /// <c>property:</c> target, and would then be dropped with nothing to say so. Fields and
     /// constructor parameters are searched on <paramref name="classSymbol"/> and on each base
-    /// type whose properties it validates. The walk stops at a base type that is itself
-    /// <c>[Validate]</c>, whose own generation reports its members, so each usage reports once.
-    /// The same walk reports ZV0027 for the properties the validator cannot read, on every type
-    /// whose rules <paramref name="classSymbol"/>'s validator inherits. It skips a property a
-    /// more-derived declaration hides, a base type that is not declared in source, which the user
-    /// cannot change and which has no location to report at, and a base type whose usages the
-    /// generation of a <c>[Validate]</c> base reports, as
-    /// <see cref="MethodReachability.IsReportedByBaseValidator"/> decides for ZV0017 and ZV0028.
+    /// type whose properties it validates. The same walk reports ZV0027 for the properties the
+    /// validator cannot read, on every type whose rules <paramref name="classSymbol"/>'s
+    /// validator inherits, and skips a property a more-derived declaration hides. Both skip a
+    /// base type that is not declared in source, which the user cannot change and which has no
+    /// location to report at, and a base type whose usages the generation of a <c>[Validate]</c>
+    /// base reports, as <see cref="MethodReachability.IsReportedByBaseValidator"/> decides. Each
+    /// usage is then reported once, including one above a <c>[Validate]</c> base type that sets
+    /// <c>IncludeBaseProperties = false</c> and so does not walk it.
     /// A generic <c>[Validate]</c> base type gets no validator, ZV0029, so it reports nothing and
-    /// neither walk stops there.
+    /// the walk does not defer to it.
     /// </summary>
     private static void ReportUnreadValidationAttributeDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         var includeBase = MemberWalker.IncludesBaseProperties(classSymbol);
         var hidden = new HashSet<string>(StringComparer.Ordinal);
-        bool reportUnread = true;
         for (var type = classSymbol; type is not null && type.SpecialType != SpecialType.System_Object; type = type.BaseType)
         {
             bool isBase = !SymbolEqualityComparer.Default.Equals(type, classSymbol);
             if (isBase && !includeBase)
                 break;
 
-            // ZV0024 stops at the first [Validate] base type, as it always has; see #229.
-            if (isBase && HasValidateAttribute(type) && GeneratedValidatorReach.HasGeneratedValidator(type, compilation))
-                reportUnread = false;
-
-            bool reportUnreadable = type.Locations.Any(l => l.IsInSource)
+            bool reportHere = type.Locations.Any(l => l.IsInSource)
                 && !(isBase && MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, type));
 
-            foreach (var member in type.GetMembers())
+            if (reportHere)
             {
-                switch (member)
+                foreach (var member in type.GetMembers())
                 {
-                    case IPropertySymbol property:
-                        if (reportUnreadable && !hidden.Contains(property.Name))
-                            ReportUnreadablePropertyAttributes(ctx, property, classSymbol, isBase);
-                        break;
-                    case IFieldSymbol field when reportUnread:
-                        ReportUnreadValidationAttributes(ctx, field, field.Name);
-                        break;
-                    case IMethodSymbol { MethodKind: MethodKind.Constructor } constructor when reportUnread:
-                        foreach (var parameter in constructor.Parameters)
-                            ReportUnreadValidationAttributes(ctx, parameter, parameter.Name);
-                        break;
+                    switch (member)
+                    {
+                        case IPropertySymbol property:
+                            if (!hidden.Contains(property.Name))
+                                ReportUnreadablePropertyAttributes(ctx, property, classSymbol, isBase);
+                            break;
+                        case IFieldSymbol field:
+                            ReportUnreadValidationAttributes(ctx, field, field.Name);
+                            break;
+                        case IMethodSymbol { MethodKind: MethodKind.Constructor } constructor:
+                            foreach (var parameter in constructor.Parameters)
+                                ReportUnreadValidationAttributes(ctx, parameter, parameter.Name);
+                            break;
+                    }
                 }
             }
 
@@ -1000,7 +998,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// otherwise ZV0028 when the method is static or, on the model itself, inaccessible. The
     /// signature is checked first, so a method gets one diagnostic. An inaccessible instance
     /// method on a base type is ZV0017's case, reported by
-    /// <see cref="ReportInaccessibleBaseMemberDiagnostics"/>.
+    /// <see cref="ReportInaccessibleBaseMemberDiagnostics"/>. A method declared on a base type is
+    /// left to the generation of a <c>[Validate]</c> base type that walks it, as
+    /// <see cref="MethodReachability.IsReportedByBaseValidator"/> decides, so it is reported once.
     /// </summary>
     private static void ReportCustomValidationDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
@@ -1026,6 +1026,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             }
             if (attrData is null) continue;
 
+            // A [Validate] base type that walks the method's declaring type reports it, as ZV0013
+            // or ZV0028.
+            if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, method.ContainingType))
+                continue;
+
             bool validSignature = method.Parameters.Length == 0
                 && IsSupportedCustomValidationReturnType(method.ReturnType);
 
@@ -1039,8 +1044,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             }
 
             var reach = MethodReachability.Classify(compilation, classSymbol, method);
-            if (reach is MethodReach.Static or MethodReach.Inaccessible
-                && !MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, method.ContainingType))
+            if (reach is MethodReach.Static or MethodReach.Inaccessible)
             {
                 ReportZV0028(ctx, attrData, method, method.Name, "[CustomValidation]", reach);
             }

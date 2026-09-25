@@ -66,7 +66,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 
 **When fired:** A method decorated with `[CustomValidation]` has parameters, or does not return `IEnumerable<ValidationFailure>`, `ValidationFailure[]` or `ReadOnlySpan<ValidationFailure>`.
 
-The signature is checked first. A method that is also static, or also inaccessible on the `[Validate]` type itself, reports ZV0013 only; once the signature is fixed, [ZV0028](#zv0028) reports the rest. An inaccessible instance method on a base type reports [ZV0017](#zv0017) only, whatever its signature.
+The signature is checked first. A method that is also static, or also inaccessible on the `[Validate]` type itself, reports ZV0013 only; once the signature is fixed, [ZV0028](#zv0028) reports the rest. An inaccessible instance method on a base type reports [ZV0017](#zv0017) only, whatever its signature. A method declared on a base type that is itself `[Validate]` is reported once, by that type. If that base type sets `IncludeBaseProperties = false`, it does not see the types above it, so the derived type reports their methods.
 
 **Fix:** Ensure the method has no parameters and returns `IEnumerable<ValidationFailure>`:
 
@@ -441,7 +441,7 @@ public record Customer([NotBlank] string? Name);   // ZV0024 — applies to the 
 public record Customer([property: NotBlank] string? Name);
 ```
 
-A field or parameter of a base type that is itself `[Validate]` is reported once, by that type.
+A field or parameter of a base type that is itself `[Validate]` is reported once, by that type. If that base type sets `IncludeBaseProperties = false`, it does not see the types above it, so the derived type, whose validator still inherits their rules, reports those. A base type from a referenced assembly is never reported, as for [ZV0027](#zv0027).
 
 ---
 

@@ -41,6 +41,9 @@ public class UnreachableMethodDiagnosticTests
     private const string FailingCheck =
         "IEnumerable<ValidationFailure> Check() { yield return new ValidationFailure { PropertyName = \"Check\", ErrorMessage = \"x\" }; }";
 
+    // A public instance method the validator can call, so ZV0013 is its only problem.
+    private const string InvalidCheck = "[CustomValidation] public string Check() => \"\";";
+
     [Theory]
     // [CustomValidation].
     [InlineData("[CustomValidation] private " + FailingCheck,
@@ -409,6 +412,67 @@ public class UnreachableMethodDiagnosticTests
 
         SingleDiagnostic(result, "ZV0013");
         Assert.DoesNotContain(result.Diagnostics, d => string.Equals(d.Id, "ZV0028", StringComparison.Ordinal));
+        Assert.Equal(new[] { "Other" }, FailedProperties(output));
+    }
+
+    [Theory]
+    // No [Validate] base: Request's generation is the only one that sees the method.
+    [InlineData("")]
+    // RequestBase's own generation reports it, so Request must not report it again.
+    [InlineData("[Validate]")]
+    public void Invalid_CustomValidation_signature_on_a_base_type_reports_ZV0013_once(string baseAttribute)
+    {
+        var source = Prelude + $$"""
+            {{baseAttribute}}
+            public class RequestBase
+            {
+                {{InvalidCheck}}
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Equal("CustomValidation", SpanText(SingleDiagnostic(result, "ZV0013")));
+        Assert.Equal(new[] { "Other" }, FailedProperties(output));
+    }
+
+    [Theory]
+    // B does not walk A, so Request reports A's method.
+    [InlineData("[Validate(IncludeBaseProperties = false)]", "")]
+    [InlineData("", "[Validate(IncludeBaseProperties = false)]")]
+    // C walks A through B, so C reports it and Request does not report it again.
+    [InlineData("[Validate(IncludeBaseProperties = false)]", "[Validate]")]
+    public void Invalid_CustomValidation_signature_above_a_Validate_base_that_does_not_walk_it_reports_ZV0013_once(
+        string bAttribute, string cAttribute)
+    {
+        var source = Prelude + $$"""
+            public class A
+            {
+                {{InvalidCheck}}
+            }
+
+            {{bAttribute}}
+            public class B : A { }
+
+            {{cAttribute}}
+            public class C : B { }
+
+            [Validate]
+            public class Request : C
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Equal("CustomValidation", SpanText(SingleDiagnostic(result, "ZV0013")));
         Assert.Equal(new[] { "Other" }, FailedProperties(output));
     }
 
