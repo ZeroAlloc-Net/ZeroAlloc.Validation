@@ -82,7 +82,8 @@ The generator emits `RegisterUserRequestValidator` in the same namespace as your
 > must be `public`, `internal` or `protected internal`. A `private`, `protected` or
 > `private protected` nested model, a model inside such a type, or a `file`-local model or one
 > nested inside it fails the build with [ZV0025](diagnostics.md#zv0025), and no validator is
-> generated for it.
+> generated for it. A generic model, or one declared inside a generic type, fails the build
+> with [ZV0029](diagnostics.md#zv0029): the validator is not generic, so it cannot name one.
 
 > **Target types.** `[Validate]` works on `class`, `record`, `readonly struct`, and
 > `readonly record struct`. Decorating a non-readonly `struct` or `record struct`

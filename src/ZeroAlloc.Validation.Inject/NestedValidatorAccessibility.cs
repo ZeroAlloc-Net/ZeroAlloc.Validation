@@ -97,10 +97,11 @@ public static class NestedValidatorAccessibility
         return true;
     }
 
-    // A [Validate] type the generated validator cannot reach gets no validator, ZV0025, so it is
-    // never a constructor dependency and must not make the outer validator internal, #216.
+    // A [Validate] type that gets no validator, one the generated validator cannot reach, ZV0025,
+    // or a generic one, ZV0029, is never a constructor dependency and must not make the outer
+    // validator internal, #216 and #219.
     private static bool IsValidatorDependency(INamedTypeSymbol type, Compilation compilation) =>
-        HasValidateAttribute(type) && GeneratedValidatorReach.CanReach(type, compilation);
+        HasValidateAttribute(type) && GeneratedValidatorReach.HasGeneratedValidator(type, compilation);
 
     private static bool HasValidateAttribute(INamedTypeSymbol type) =>
         type.GetAttributes().Any(a =>

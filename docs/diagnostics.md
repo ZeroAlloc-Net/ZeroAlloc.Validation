@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0028 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0029 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -30,6 +30,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0026](#zv0026) | Warning | [RuleMessage] on a class that is not a custom rule |
 | [ZV0027](#zv0027) | Error | Validation attribute applied to a property the generated validator cannot read |
 | [ZV0028](#zv0028) | Error | Validation method the generated validator cannot call |
+| [ZV0029](#zv0029) | Error | [Validate] on a generic type |
 
 ---
 
@@ -39,7 +40,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 
 **Title:** Redundant [ValidateWith] attribute
 
-**When fired:** `[ValidateWith]` is applied to a property whose type already carries `[Validate]`. The auto-generated validator is used by default — `[ValidateWith]` is only needed for types you do not control.
+**When fired:** `[ValidateWith]` is applied to a property whose type already carries `[Validate]`. The auto-generated validator is used by default — `[ValidateWith]` is only needed for types you do not control. A `[Validate]` type that gets no generated validator, [ZV0025](#zv0025) or [ZV0029](#zv0029), is not reported: `[ValidateWith]` is then the way to validate a property of that type.
 
 **Fix:** Remove `[ValidateWith]` from the property and rely on the auto-generated validator, or keep it only if you need to override the default with a custom implementation.
 
@@ -606,3 +607,49 @@ The generated validator lives in the model's assembly, so `internal` and `protec
 On a base type, a static method is reported the same way. A base method that is only inaccessible stays [ZV0017](#zv0017), a warning, because the base type may not be yours to change. A `[CustomValidation]` method with an invalid signature that is static, or inaccessible on the `[Validate]` type itself, is reported as [ZV0013](#zv0013) only; an inaccessible instance method on a base type is reported as ZV0017 only.
 
 **Fix:** Make the method a `public` or `internal` instance method.
+
+---
+
+## ZV0029
+
+**Severity:** Error
+
+**Title:** [Validate] on a generic type
+
+**When fired:** The generated `{Model}Validator` is a non-generic class, so it has no type parameters to name a generic model with. Support for generic models is tracked in [#238](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/238). ZV0029 is reported at the `[Validate]` attribute of a model that is generic, or that is declared inside a generic type:
+
+```csharp
+[Validate]                            // ZV0029 — Page<T> is generic
+public class Page<T>
+{
+    [NotEmpty] public string Title { get; set; } = "";
+}
+
+public class Envelope<T>
+{
+    [Validate]                        // ZV0029 — Header is inside Envelope<T>
+    public class Header
+    {
+        [NotEmpty] public string Id { get; set; } = "";
+    }
+}
+```
+
+> '{0}' is generic or declared inside a generic type, so no validator is generated for it; validate a non-generic type instead
+
+No validator is generated for the type, and a closed form such as `Page<Order>` has none either. `AddZeroAllocValidators()`, `ValidateWithZeroAlloc()` and the ASP.NET Core filter leave it out, and a property of that type is not validated as a nested model unless it names a hand-written validator with `[ValidateWith]`. The other diagnostics are not reported for the type's members, since there is no validator for them to describe. A non-generic `[Validate]` model that derives from the generic type, such as `class OrderPage : Page<Order>`, still gets a validator: it validates the inherited properties and reports their diagnostics itself.
+
+A type the generated validator also cannot reach reports [ZV0025](#zv0025) as well, since it needs both changes.
+
+**Fix:** Put `[Validate]` on a non-generic type, and move a model out of a generic containing type. To share rules across models, declare them on a generic base type and put `[Validate]` on each non-generic model that derives from it:
+
+```csharp
+public class Page<T>
+{
+    [NotEmpty] public string Title { get; set; } = "";
+}
+
+[Validate]
+public class OrderPage : Page<Order> { }
+// Generated: OrderPageValidator, which validates Title
+```
