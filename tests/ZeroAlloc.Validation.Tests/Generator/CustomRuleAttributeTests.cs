@@ -698,6 +698,139 @@ public class CustomRuleAttributeTests
     }
 
     [Fact]
+    public void RuleMessage_on_class_that_is_not_a_rule_reports_ZV0026()
+    {
+        // No [Validate] model: the warning does not depend on anything being generated.
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            [RuleMessage("{PropertyName} must not be blank.")]
+            public sealed class NotARule { }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Empty(CompileErrors(output));
+        Assert.Equal(1, CountDiagnostics(result, "ZV0026"));
+        var zv0026 = result.Diagnostics.First(d => string.Equals(d.Id, "ZV0026", StringComparison.Ordinal));
+        Assert.Equal(DiagnosticSeverity.Warning, zv0026.Severity);
+        Assert.Equal("RuleMessage(\"{PropertyName} must not be blank.\")", SpanText(zv0026));
+        Assert.Equal(
+            "'NotARule' has [RuleMessage] but does not derive from ValidationAttribute<T>, so the message is never used",
+            zv0026.GetMessage(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public void RuleMessage_on_non_generic_ValidationAttribute_subclass_reports_ZV0026()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            [RuleMessage("{PropertyName} legacy.")]
+            public sealed class LegacyAttribute : ValidationAttribute { }
+            """;
+
+        var (result, _) = RunGenerator(source);
+
+        Assert.Equal(1, CountDiagnostics(result, "ZV0026"));
+    }
+
+    [Fact]
+    public void RuleMessage_on_direct_rule_reports_no_ZV0026()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            [RuleMessage("{PropertyName} must not be blank.")]
+            public sealed class NotBlankAttribute : ValidationAttribute<string?>
+            {
+                public override bool IsValid(string? value) => !string.IsNullOrWhiteSpace(value);
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Empty(CompileErrors(output));
+        Assert.Equal(0, CountDiagnostics(result, "ZV0026"));
+    }
+
+    [Fact]
+    public void RuleMessage_on_indirect_rule_reports_no_ZV0026()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            public abstract class StringRule : ValidationAttribute<string?> { }
+
+            [RuleMessage("{PropertyName} must not be blank.")]
+            public sealed class NotBlankAttribute : StringRule
+            {
+                public override bool IsValid(string? value) => !string.IsNullOrWhiteSpace(value);
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Empty(CompileErrors(output));
+        Assert.Equal(0, CountDiagnostics(result, "ZV0026"));
+    }
+
+    [Fact]
+    public void RuleMessage_on_abstract_rule_base_reports_no_ZV0026()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            [RuleMessage("{PropertyName} base msg.")]
+            public abstract class StringRule : ValidationAttribute<string?> { }
+
+            [RuleMessage("{PropertyName} generic base msg.")]
+            public abstract class Rule<T> : ValidationAttribute<T> { }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Empty(CompileErrors(output));
+        Assert.Equal(0, CountDiagnostics(result, "ZV0026"));
+    }
+
+    [Fact]
+    public void ZV0026_check_is_cached_across_an_unrelated_edit()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            [RuleMessage("{PropertyName} must not be blank.")]
+            public sealed class NotARule { }
+            """;
+        var compilation = CreateCompilation(source);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            [new ValidatorGenerator().AsSourceGenerator()],
+            driverOptions: new GeneratorDriverOptions(IncrementalGeneratorOutputKind.None, trackIncrementalGeneratorSteps: true));
+        driver = driver.RunGenerators(compilation);
+
+        var edited = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText("namespace TestModels; public sealed class Unrelated { }"));
+        var result = driver.RunGenerators(edited).GetRunResult();
+
+        Assert.Equal(1, CountDiagnostics(result, "ZV0026"));
+        var outputs = result.Results[0].TrackedSteps[ValidatorGenerator.MisplacedRuleMessageTrackingName]
+            .SelectMany(s => s.Outputs)
+            .ToList();
+        Assert.NotEmpty(outputs);
+        Assert.All(
+            outputs,
+            o => Assert.True(
+                o.Reason is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged,
+                $"Expected a cached step, got {o.Reason}"));
+    }
+
+    [Fact]
     public void Named_placeholders_resolve_from_ctor_parameter_and_property()
     {
         var source = $$"""
@@ -1995,6 +2128,13 @@ public class CustomRuleAttributeTests
 
     private static (GeneratorDriverRunResult Result, Compilation Output) RunGenerator(string source)
     {
+        var driver = CSharpGeneratorDriver.Create(new ValidatorGenerator())
+            .RunGeneratorsAndUpdateCompilation(CreateCompilation(source), out var output, out _);
+        return (driver.GetRunResult(), output);
+    }
+
+    private static CSharpCompilation CreateCompilation(string source)
+    {
         var valueObjectStub = """
             namespace ZeroAlloc.ValueObjects
             {
@@ -2006,7 +2146,7 @@ public class CustomRuleAttributeTests
         // Ensure ZeroAlloc.Pipeline is loaded so its assembly is referenced for behavior models.
         _ = typeof(ZeroAlloc.Pipeline.IPipelineBehavior).Assembly;
 
-        var compilation = CSharpCompilation.Create(
+        return CSharpCompilation.Create(
             "TestAssembly",
             [CSharpSyntaxTree.ParseText(source), CSharpSyntaxTree.ParseText(valueObjectStub)],
             AppDomain.CurrentDomain.GetAssemblies()
@@ -2015,9 +2155,5 @@ public class CustomRuleAttributeTests
                 .Cast<MetadataReference>()
                 .ToArray(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
-
-        var driver = CSharpGeneratorDriver.Create(new ValidatorGenerator())
-            .RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
-        return (driver.GetRunResult(), output);
     }
 }
