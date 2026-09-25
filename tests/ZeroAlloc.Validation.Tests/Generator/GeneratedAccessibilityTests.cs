@@ -86,6 +86,7 @@ public class GeneratedAccessibilityTests
         var source = """
             using Microsoft.Extensions.DependencyInjection;
             using ZeroAlloc.Validation;
+            using ZeroAlloc.Validation.Options;
             namespace MyApp;
             [Validate] internal sealed class JevOptions { [NotEmpty] public string ApiKey { get; set; } = ""; }
 
@@ -99,11 +100,11 @@ public class GeneratedAccessibilityTests
         var compilation = RunAndCompile(source, new ValidatorGenerator(), new OptionsValidationEmitter());
 
         Assert.Empty(Errors(compilation));
-        Assert.Equal(Accessibility.Internal, TypeAccessibility(compilation, "InternalZeroAllocOptionsValidationExtensions"));
+        Assert.Equal(Accessibility.Internal, TypeAccessibility(compilation, "ZeroAlloc.Validation.Options.InternalZeroAllocOptionsValidationExtensions"));
 
         // With no public model there is nothing for a public extension class to hold, so it
         // must not appear in the consumer's API at all.
-        Assert.Null(compilation.GetTypeByMetadataName("ZeroAllocOptionsValidationExtensions"));
+        Assert.Null(compilation.GetTypeByMetadataName("ZeroAlloc.Validation.Options.ZeroAllocOptionsValidationExtensions"));
     }
 
     [Fact]
@@ -112,6 +113,7 @@ public class GeneratedAccessibilityTests
         var source = """
             using Microsoft.Extensions.DependencyInjection;
             using ZeroAlloc.Validation;
+            using ZeroAlloc.Validation.Options;
             namespace MyApp;
             [Validate] public class PublicOptions { [NotEmpty] public string Host { get; set; } = ""; }
             [Validate] internal record InternalOptions { [NotEmpty] public string Key { get; init; } = ""; }
@@ -130,12 +132,12 @@ public class GeneratedAccessibilityTests
 
         Assert.Empty(Errors(compilation));
 
-        var publicClass = compilation.GetTypeByMetadataName("ZeroAllocOptionsValidationExtensions");
+        var publicClass = compilation.GetTypeByMetadataName("ZeroAlloc.Validation.Options.ZeroAllocOptionsValidationExtensions");
         Assert.NotNull(publicClass);
         Assert.Equal(Accessibility.Public, publicClass.DeclaredAccessibility);
         Assert.Equal(["PublicOptions"], ExtendedModels(publicClass));
 
-        var internalClass = compilation.GetTypeByMetadataName("InternalZeroAllocOptionsValidationExtensions");
+        var internalClass = compilation.GetTypeByMetadataName("ZeroAlloc.Validation.Options.InternalZeroAllocOptionsValidationExtensions");
         Assert.NotNull(internalClass);
         Assert.Equal(Accessibility.Internal, internalClass.DeclaredAccessibility);
         Assert.Equal(["InternalOptions"], ExtendedModels(internalClass));

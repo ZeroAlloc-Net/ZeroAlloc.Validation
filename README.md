@@ -99,3 +99,4 @@ See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/mai
 - [Testing](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/testing.md)
 - [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/performance.md)
 - [Advanced Features](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/advanced.md)
+- [Migrating to v2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/migrating-to-v2.md)

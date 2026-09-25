@@ -132,6 +132,7 @@ public class OptionsGeneratorTests
         var source = """
             using Microsoft.Extensions.DependencyInjection;
             using ZeroAlloc.Validation;
+            using ZeroAlloc.Validation.Options;
             namespace MyApp;
             [Validate] public class DatabaseOptions { [NotEmpty] public string ConnectionString { get; set; } = ""; }
             [Validate] public record SmtpOptions { [NotEmpty] public string Host { get; init; } = ""; }
