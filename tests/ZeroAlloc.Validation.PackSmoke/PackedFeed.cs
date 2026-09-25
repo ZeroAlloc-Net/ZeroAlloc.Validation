@@ -49,6 +49,9 @@ public sealed class PackedFeed : IDisposable
 
     public string Version { get; }
 
+    /// <summary>The local feed directory every consumer restores from.</summary>
+    public string FeedDirectory => _feed;
+
     public string PackagePath(string packageId)
         => Path.Combine(_feed, $"{packageId}.{Version}.nupkg");
 
@@ -69,26 +72,31 @@ public sealed class PackedFeed : IDisposable
         var dir = Path.Combine(_workDir, name);
         Directory.CreateDirectory(dir);
 
-        WriteNuGetConfig(dir);
+        WriteNuGetConfig(dir, _feed, Path.Combine(_workDir, "packages"));
         WriteProject(dir, name, packages, generatedAccessibility);
         WriteSource(dir, packages);
 
         return Path.Combine(dir, $"{name}.csproj");
     }
 
-    private void WriteNuGetConfig(string dir)
+    /// <summary>
+    /// Writes a NuGet.config into <paramref name="projectDir"/> that restores from
+    /// <paramref name="feedDir"/> (falling back to nuget.org) and uses
+    /// <paramref name="packagesFolder"/> as its private global packages folder, so a scaffolded
+    /// consumer — this class's own, or any other PackSmoke test's — neither reads nor pollutes
+    /// the machine-wide cache.
+    /// </summary>
+    public static void WriteNuGetConfig(string projectDir, string feedDir, string packagesFolder)
     {
-        // A private global packages folder, so this run neither reads nor pollutes the
-        // machine-wide cache.
-        File.WriteAllText(Path.Combine(dir, "NuGet.config"), $"""
+        File.WriteAllText(Path.Combine(projectDir, "NuGet.config"), $"""
             <?xml version="1.0" encoding="utf-8"?>
             <configuration>
               <config>
-                <add key="globalPackagesFolder" value="{Path.Combine(_workDir, "packages")}" />
+                <add key="globalPackagesFolder" value="{packagesFolder}" />
               </config>
               <packageSources>
                 <clear />
-                <add key="local" value="{_feed}" />
+                <add key="local" value="{feedDir}" />
                 <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
               </packageSources>
             </configuration>
@@ -187,18 +195,27 @@ public sealed class PackedFeed : IDisposable
             """);
     }
 
-    public void Dispose()
+    public void Dispose() => TryDeleteDirectory(_workDir);
+
+    /// <summary>
+    /// Deletes a temporary directory, best effort. A file still held by a process that has not
+    /// released it yet, or a read-only file, leaves the directory behind instead of failing the
+    /// test run. Any other exception is a real defect and propagates.
+    /// </summary>
+    public static void TryDeleteDirectory(string path)
     {
         try
         {
-            Directory.Delete(_workDir, recursive: true);
+            Directory.Delete(path, recursive: true);
         }
-#pragma warning disable CA1031, ERP022, RCS1075 // best-effort cleanup of a temp directory
-        catch (Exception ex)
+        catch (IOException ex)
         {
-            Debug.WriteLine($"PackSmoke cleanup failed: {ex}");
+            Debug.WriteLine($"PackSmoke cleanup of {path} failed: {ex}");
         }
-#pragma warning restore CA1031, ERP022, RCS1075
+        catch (UnauthorizedAccessException ex)
+        {
+            Debug.WriteLine($"PackSmoke cleanup of {path} failed: {ex}");
+        }
     }
 
     private static readonly TimeSpan s_commandTimeout = TimeSpan.FromMinutes(10);

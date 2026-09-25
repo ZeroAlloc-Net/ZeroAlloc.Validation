@@ -31,3 +31,48 @@ using ZeroAlloc.Validation.Options;
 
 to any file that calls `ValidateWithZeroAlloc()`. Nothing else about the call changes — the
 method name, its signature, and its behavior are unchanged.
+
+## A ValidationAttribute subclass the generator cannot emit now fails the build (ZV0020)
+
+`ValidationAttribute` was always public and subclassable, but in 1.x the generator recognized
+only a fixed list of built-in rule attributes. A subclass that was not on that list was
+**silently ignored** — it compiled, sat on the property doing nothing, and the property went
+unvalidated with no diagnostic pointing at the gap.
+
+In 2.0.0 that subclass fails the build instead, with
+[ZV0020](diagnostics.md#zv0020) — `'{Attr}' derives from ValidationAttribute but the generator
+cannot emit it; derive from ValidationAttribute<T> and override IsValid`. This is deliberate:
+a property that was never actually validated should not compile silently.
+
+### What to do
+
+Pick one, per attribute:
+
+- **Turn it into a real rule.** Derive from the new `ValidationAttribute<T>` and override
+  `IsValid`, optionally adding `[RuleMessage]` for its default message and error code. See
+  [Custom rule attributes](custom-validation.md) for the full mechanism, including placeholders
+  and the accessibility and property-type rules the generator checks.
+
+  ```csharp
+  [RuleMessage("{PropertyName} must not be blank.")]
+  public sealed class NotBlankAttribute : ValidationAttribute<string?>
+  {
+      public override bool IsValid(string? value) => !string.IsNullOrWhiteSpace(value);
+  }
+  ```
+
+- **Remove the attribute** if it was dead weight — a leftover from a rule that was never
+  finished, or one superseded by a built-in or a `[Must]` predicate.
+
+Two related diagnostics are new for `ValidationAttribute<T>` rules specifically, and only
+fire once you adopt the new base class: [ZV0021](diagnostics.md#zv0021), when the property
+type does not convert implicitly to the rule's value type, and
+[ZV0023](diagnostics.md#zv0023), when the attribute type is not accessible from the generated
+validator (for example, a `private` nested attribute). Neither can fire on 1.x code, since
+1.x never emitted a check for a custom rule at all.
+
+[ZV0024](diagnostics.md#zv0024) is breaking in the same way as ZV0020. A `ValidationAttribute`
+subclass that widens its own `[AttributeUsage]` can be applied to a field or a constructor
+parameter, such as a record's positional parameter written without the `property:` target.
+1.x ignored it there without a word; 2.0 fails the build, because the rule never runs. Move the
+attribute to a property, or write it as `[property: X]` on a positional parameter.

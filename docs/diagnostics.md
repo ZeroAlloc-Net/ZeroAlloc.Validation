@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0019 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0024 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -21,6 +21,11 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0017](#zv0017) | Warning | Validation rules depending on an inaccessible base member are ignored |
 | [ZV0018](#zv0018) | Warning | Duplicate validation attribute |
 | [ZV0019](#zv0019) | Error | Invalid ZeroAllocGeneratedAccessibility value |
+| [ZV0020](#zv0020) | Error | ValidationAttribute subclass the generator cannot emit |
+| [ZV0021](#zv0021) | Error | Custom rule value type does not match the property type |
+| [ZV0022](#zv0022) | Warning | Unknown placeholder in a custom rule message |
+| [ZV0023](#zv0023) | Error | Custom rule attribute not accessible from the generated validator |
+| [ZV0024](#zv0024) | Error | Validation attribute applied where the generator does not read it |
 
 ---
 
@@ -258,3 +263,174 @@ This diagnostic is reported once per compilation, independent of whether the pro
 ```
 
 Or remove the property entirely to keep the default (`Public`).
+
+---
+
+## ZV0020
+
+**Severity:** Error
+
+**Title:** ValidationAttribute subclass the generator cannot emit
+
+**When fired:** A property on a `[Validate]` model carries an attribute that derives from `ValidationAttribute`, but the attribute is neither one of the built-in rule attributes nor a subclass of `ValidationAttribute<T>` (see [Custom rule attributes](custom-validation.md)). The generator has no way to evaluate it, so without this error the property would go unvalidated with nothing to say so:
+
+```csharp
+public sealed class LegacyRuleAttribute : ValidationAttribute
+{
+    // does not derive from ValidationAttribute<T>, so it has no IsValid to call
+}
+
+[Validate]
+public class Order
+{
+    [LegacyRule]                     // ZV0020
+    public string? Reference { get; set; }
+}
+```
+
+> '{Attr}' derives from ValidationAttribute but the generator cannot emit it; derive from ValidationAttribute\<T\> and override IsValid
+
+**Fix:** Derive the attribute from `ValidationAttribute<T>` and override `IsValid`, or remove the attribute if it was never meant to be a rule:
+
+```csharp
+[RuleMessage("{PropertyName} must not be blank.")]
+public sealed class NotBlankAttribute : ValidationAttribute<string?>
+{
+    public override bool IsValid(string? value) => !string.IsNullOrWhiteSpace(value);
+}
+```
+
+This is the breaking change described in [Migrating to v2](migrating-to-v2.md): in 1.x, a `ValidationAttribute` subclass the generator did not recognize was silently ignored, and the property it decorated was never validated.
+
+---
+
+## ZV0021
+
+**Severity:** Error
+
+**Title:** Custom rule value type does not match the property type
+
+**When fired:** A property is decorated with a `ValidationAttribute<T>` rule whose `T` the property's type has no implicit conversion to, checked with `Compilation.ClassifyCommonConversion(...).IsImplicit`. This includes a nullable-annotated reference property checked against a non-nullable reference `T`:
+
+```csharp
+public sealed class NotBlankAttribute : ValidationAttribute<string>   // non-nullable T
+{
+    public override bool IsValid(string value) => !string.IsNullOrWhiteSpace(value);
+}
+
+[Validate]
+public class Order
+{
+    [NotBlank]                        // ZV0021 — Reference is string?, the rule's T is string
+    public string? Reference { get; set; }
+}
+```
+
+> '{Attr}' validates '{T}' but property '{Prop}' is '{PropType}'
+
+When the mismatch is exactly a nullable-vs-non-nullable reference type, the message appends a hint naming the fix directly, for example:
+
+> ... Declare the rule as ValidationAttribute\<string?\> to accept null.
+
+**Fix:** Declare the rule against the property's own type, or against a wider type the property converts to implicitly — for a nullable reference property, declare the rule as `ValidationAttribute<T?>`. The rule is left out of the generated validator until the mismatch is fixed; the build already fails on this error, so nothing unvalidated ships.
+
+---
+
+## ZV0022
+
+**Severity:** Warning
+
+**Title:** Unknown placeholder in a custom rule message
+
+**When fired:** A message — the usage's `Message`, or the attribute class's `[RuleMessage]` — contains a `{name}` placeholder that matches neither `PropertyName`, `PropertyValue`, a constructor parameter name, nor a named argument written on the usage:
+
+```csharp
+[RuleMessage("{PropertyName} must have at least {MinWords} words.")]   // ZV0022 — {MinWords}
+public sealed class MinWordsAttribute(int minWords) : ValidationAttribute<string?>
+{
+    public int MinWords { get; } = minWords;
+    public override bool IsValid(string? value) => true;
+}
+
+[Validate]
+public class Article
+{
+    [MinWords(3)]                    // MinWords is not written as a named argument here
+    public string? Title { get; set; }
+}
+```
+
+`{minWords}` — the constructor parameter's own name — would have resolved. `{MinWords}` — the property — resolves only when the usage writes it as a named argument, and a get-only property such as this one cannot be written there: matching is case-sensitive, and the generator never reads a property's runtime value.
+
+The warning is reported at the attribute usage, `[MinWords(3)]`, so a property with several rules points at the one whose message has the unknown placeholder.
+
+> Placeholder '{0}' in the message for '{1}' on '{2}' does not match any argument; it is emitted literally
+
+**Fix:** Match the placeholder's spelling to a constructor parameter name or a named argument actually written on the usage, or remove the placeholder. The message still compiles and runs with the placeholder left in literally, so this is a warning rather than an error.
+
+---
+
+## ZV0023
+
+**Severity:** Error
+
+**Title:** Custom rule attribute not accessible from the generated validator
+
+**When fired:** The generated validator is a separate class in the model's own assembly, declared in its own generated file. A custom rule usage can compile while its attribute type, a type containing it, its constructor, a named member it sets, or a `typeof`/enum argument type is not reachable from that class — for example a `private` or `protected` attribute nested inside the model, which would otherwise surface as CS0122 in generated code. A `file`-local type is never reachable from the generated file, so any of those types declared `file` is reported too:
+
+```csharp
+[Validate]
+public class Order
+{
+    private sealed class InternalOnlyAttribute : ValidationAttribute<string?>
+    {
+        public override bool IsValid(string? value) => true;
+    }
+
+    [InternalOnly]                    // ZV0023 — InternalOnlyAttribute is private
+    public string? Reference { get; set; }
+}
+```
+
+> '{0}' cannot be emitted: '{1}' is not accessible from the generated validator; make it internal or public
+
+**Fix:** Make the attribute type — and anything it names, including its constructor, any named member set on the usage, and any `typeof`/enum argument type — `internal` (within the same assembly) or `public`, and not `file`-local. The rule is left out of the generated validator until it is reachable; the build already fails on this error, so nothing unvalidated ships.
+
+---
+
+## ZV0024
+
+**Severity:** Error
+
+**Title:** Validation attribute applied where the generator does not read it
+
+**When fired:** An attribute deriving from `ValidationAttribute` is applied to a field or a constructor parameter of a `[Validate]` model, or of a base type whose properties it validates. The generator reads rules from properties only. `ValidationAttribute<T>` targets properties, but a rule attribute can widen its own `[AttributeUsage]`, and then the usage compiles and the rule never runs:
+
+```csharp
+[AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter)]
+public sealed class NotBlankAttribute : ValidationAttribute<string?>
+{
+    public override bool IsValid(string? value) => !string.IsNullOrWhiteSpace(value);
+}
+
+[Validate]
+public class Order
+{
+    [NotBlank]                        // ZV0024 — Reference is a field
+    public string? Reference;
+}
+
+[Validate]
+public record Customer([NotBlank] string? Name);   // ZV0024 — applies to the parameter
+```
+
+> '{0}' is applied to '{1}', which the generator does not validate; apply it to a property
+
+**Fix:** Apply the rule to a property. Turn the field into a property, and on a record's positional parameter use the `property:` target so the attribute lands on the generated property:
+
+```csharp
+[Validate]
+public record Customer([property: NotBlank] string? Name);
+```
+
+A field or parameter of a base type that is itself `[Validate]` is reported once, by that type.

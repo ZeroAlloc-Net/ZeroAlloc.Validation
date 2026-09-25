@@ -77,6 +77,11 @@ ZeroAlloc.Validation.PrecisionScaleAttribute
 ZeroAlloc.Validation.PrecisionScaleAttribute.Precision.get -> int
 ZeroAlloc.Validation.PrecisionScaleAttribute.PrecisionScaleAttribute(int precision, int scale) -> void
 ZeroAlloc.Validation.PrecisionScaleAttribute.Scale.get -> int
+ZeroAlloc.Validation.RuleMessageAttribute
+ZeroAlloc.Validation.RuleMessageAttribute.ErrorCode.get -> string?
+ZeroAlloc.Validation.RuleMessageAttribute.ErrorCode.set -> void
+ZeroAlloc.Validation.RuleMessageAttribute.Message.get -> string!
+ZeroAlloc.Validation.RuleMessageAttribute.RuleMessageAttribute(string! message) -> void
 ZeroAlloc.Validation.Severity
 ZeroAlloc.Validation.Severity.Error = 0 -> ZeroAlloc.Validation.Severity
 ZeroAlloc.Validation.Severity.Info = 2 -> ZeroAlloc.Validation.Severity
@@ -107,6 +112,8 @@ ZeroAlloc.Validation.ValidationAttribute.Unless.set -> void
 ZeroAlloc.Validation.ValidationAttribute.ValidationAttribute() -> void
 ZeroAlloc.Validation.ValidationAttribute.When.get -> string?
 ZeroAlloc.Validation.ValidationAttribute.When.set -> void
+ZeroAlloc.Validation.ValidationAttribute<T>
+ZeroAlloc.Validation.ValidationAttribute<T>.ValidationAttribute() -> void
 ZeroAlloc.Validation.ValidationContext<T>
 ZeroAlloc.Validation.ValidationContext<T>.Instance.get -> T
 ZeroAlloc.Validation.ValidationContext<T>.ValidationContext() -> void
@@ -128,6 +135,7 @@ ZeroAlloc.Validation.ValidationResult.ValidationResult() -> void
 ZeroAlloc.Validation.ValidationResult.ValidationResult(ZeroAlloc.Validation.ValidationFailure[]! failures) -> void
 ZeroAlloc.Validation.ValidatorFor<T>
 ZeroAlloc.Validation.ValidatorFor<T>.ValidatorFor() -> void
+abstract ZeroAlloc.Validation.ValidationAttribute<T>.IsValid(T value) -> bool
 abstract ZeroAlloc.Validation.ValidatorFor<T>.Validate(T instance) -> ZeroAlloc.Validation.ValidationResult
 static ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale(decimal value, int precision, int scale) -> bool
 static ZeroAlloc.Validation.Internal.EmailValidator.IsValid(string? email) -> bool

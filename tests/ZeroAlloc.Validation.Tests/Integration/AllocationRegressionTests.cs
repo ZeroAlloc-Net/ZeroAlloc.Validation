@@ -86,6 +86,24 @@ public class AllocationRegressionTests
     }
 
     [Fact]
+    public void CustomRuleModel_ValidPath_AllocatesNothing()
+    {
+        var validator = new AllocCustomRuleModelValidator();
+        var model = new AllocCustomRuleModel { Name = "ok", Title = "one two three" };
+
+        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+    }
+
+    [Fact]
+    public void CustomRuleModel_SingleFailure_AllocatesResultArrayOnly()
+    {
+        var validator = new AllocCustomRuleModelValidator();
+        var model = new AllocCustomRuleModel { Name = " ", Title = "one two three" };
+
+        Assert.InRange(Measure(() => validator.Validate(model).IsValid), 1, OneFailureCeiling);
+    }
+
+    [Fact]
     public void InheritedRules_SingleFailure_AllocatesResultArrayOnly()
     {
         var validator = new AllocDerivedModelValidator();

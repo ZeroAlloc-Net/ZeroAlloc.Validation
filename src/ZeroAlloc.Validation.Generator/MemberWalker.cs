@@ -192,7 +192,8 @@ internal static class MemberWalker
         foreach (var attr in member.GetAttributes())
         {
             var ns = attr.AttributeClass?.ContainingNamespace?.ToDisplayString();
-            if (string.Equals(ns, "ZeroAlloc.Validation", StringComparison.Ordinal))
+            if (string.Equals(ns, "ZeroAlloc.Validation", StringComparison.Ordinal)
+                || CustomRules.IsCustomRule(attr))
                 return true;
         }
         return false;

@@ -37,6 +37,13 @@ internal static class RuleEmitter
     private const string PrecisionScaleFqn        = "ZeroAlloc.Validation.PrecisionScaleAttribute";
     private const string MustFqn                  = "ZeroAlloc.Validation.MustAttribute";
 
+    /// <summary>
+    /// The message a rule without a more specific one fails with: <c>[Must]</c>, and a custom rule
+    /// with neither a usage <c>Message</c> nor a <c>[RuleMessage]</c>. One constant keeps the two
+    /// from drifting apart.
+    /// </summary>
+    private const string InvalidFallbackMessage = "{PropertyName} is invalid.";
+
     private static bool IsRuleAttribute(AttributeData attr)
     {
         var fqn = attr.AttributeClass?.ToDisplayString();
@@ -50,7 +57,8 @@ internal static class RuleEmitter
             or IsInEnumFqn
             or IsEnumNameFqn
             or PrecisionScaleFqn
-            or MustFqn;
+            or MustFqn
+            || CustomRules.IsCustomRule(attr);
     }
 
     /// <summary>
@@ -67,7 +75,7 @@ internal static class RuleEmitter
         symbol.GetAttributes().Any(a =>
             string.Equals(a.AttributeClass?.ToDisplayString(), StopOnFirstFailureFqn, StringComparison.Ordinal));
 
-    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, string modelParamName = "instance", SourceProductionContext? ctx = null, System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
+    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName = "instance", SourceProductionContext? ctx = null, GeneratedFields? fields = null)
     {
         var skipWhenMethod = GetSkipWhenMethod(classSymbol);
         if (skipWhenMethod is not null)
@@ -77,7 +85,7 @@ internal static class RuleEmitter
             sb.AppendLine();
         }
 
-        var byProperty = CollectPropertyRules(classSymbol);
+        var byProperty = CollectPropertyRules(classSymbol, compilation, ctx);
         var nestedProperties = GetNestedValidateProperties(classSymbol).ToList();
         var collectionProperties = GetCollectionValidateProperties(classSymbol).ToList();
         var customMethods = CollectCustomValidationMethods(classSymbol);
@@ -89,12 +97,25 @@ internal static class RuleEmitter
         bool validatorStop = GetBoolNamedArg(validateAttr, "StopOnFirstFailure");
 
         if (hasNested)
-            EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, customMethods, modelParamName, validatorStop, totalDirectRules, ctx, regexMethods);
+            EmitNestedPath(sb, classSymbol, byProperty, nestedProperties, collectionProperties, customMethods, modelParamName, validatorStop, totalDirectRules, ctx, fields);
         else
-            EmitFlatPath(sb, classSymbol, byProperty, totalDirectRules, modelParamName, validatorStop, ctx, regexMethods);
+            EmitFlatPath(sb, classSymbol, byProperty, totalDirectRules, modelParamName, validatorStop, ctx, fields);
     }
 
-    private static List<(IPropertySymbol Property, List<AttributeData> Rules)> CollectPropertyRules(INamedTypeSymbol classSymbol)
+    /// <summary>
+    /// The rules to emit for each property, in declaration order. Every emit path, sync and async,
+    /// builds its rule indices, and so its <c>__Rule_{Prop}_{i}</c> field names, from this one
+    /// filtered list, so both paths name the same fields. A custom rule the validator cannot emit
+    /// is left out and reported: ZV0021 for a property type with no implicit conversion to the
+    /// rule's <c>T</c>, ZV0023 for an attribute the validator cannot reach. A
+    /// <c>ValidationAttribute</c> subclass that is neither a built-in nor a custom rule is
+    /// reported as ZV0020. Diagnostics are reported only when <paramref name="ctx"/> is set, which
+    /// only the sync visit does, so each usage reports once.
+    /// </summary>
+    private static List<(IPropertySymbol Property, List<AttributeData> Rules)> CollectPropertyRules(
+        INamedTypeSymbol classSymbol,
+        Compilation compilation,
+        SourceProductionContext? ctx)
     {
         var byProperty = new List<(IPropertySymbol Property, List<AttributeData> Rules)>();
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
@@ -103,7 +124,16 @@ internal static class RuleEmitter
             var propRules = new List<AttributeData>();
             foreach (var attr in prop.GetAttributes())
             {
-                if (IsRuleAttribute(attr) && HasReachableCondition(classSymbol, attr))
+                if (!IsRuleAttribute(attr))
+                {
+                    ReportZV0020IfApplicable(ctx, prop, attr);
+                    continue;
+                }
+
+                if (CustomRules.IsCustomRule(attr) && !CanEmitCustomRule(compilation, prop, attr, ctx))
+                    continue;
+
+                if (HasReachableCondition(classSymbol, attr))
                     propRules.Add(attr);
             }
             if (propRules.Count > 0)
@@ -123,20 +153,20 @@ internal static class RuleEmitter
         bool validatorStop,
         int totalDirectRules,
         SourceProductionContext? ctx,
-        System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
+        GeneratedFields? fields = null)
     {
         sb.AppendLine($"        var _buf = new global::ZeroAlloc.Validation.Internal.FailureBuffer({totalDirectRules});");
         sb.AppendLine();
 
         if (!validatorStop)
         {
-            EmitPropertyRulesWithAdd(sb, byProperty, classSymbol, modelParamName, ctx, regexMethods);
+            EmitPropertyRulesWithAdd(sb, byProperty, classSymbol, modelParamName, ctx, fields);
             EmitNestedValidators(sb, nestedProperties, modelParamName);
             EmitCollectionValidators(sb, collectionProperties, modelParamName);
         }
         else
         {
-            EmitNestedPathStop(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName, ctx, regexMethods);
+            EmitNestedPathStop(sb, classSymbol, byProperty, nestedProperties, collectionProperties, modelParamName, ctx, fields);
         }
 
         // [CustomValidation] methods always run last.
@@ -230,7 +260,7 @@ internal static class RuleEmitter
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
         string modelParamName,
         SourceProductionContext? ctx,
-        System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
+        GeneratedFields? fields = null)
     {
         int groupIdx = 0;
         int collCi = 0;
@@ -251,7 +281,7 @@ internal static class RuleEmitter
             sb.AppendLine($"        int _b{groupIdx} = _buf.Count;");
 
             if (directProp is not null && directRules is not null)
-                EmitPropertyRulesForProp(sb, directProp, directRules, classSymbol, modelParamName, ctx, regexMethods);
+                EmitPropertyRulesForProp(sb, directProp, directRules, classSymbol, modelParamName, ctx, fields);
 
             if (nestedProp is not null)
                 EmitNestedValidatorForProp(sb, nestedProp, modelParamName);
@@ -317,12 +347,12 @@ internal static class RuleEmitter
         INamedTypeSymbol? classSymbol,
         string modelParamName,
         SourceProductionContext? ctx,
-        System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
+        GeneratedFields? fields = null)
     {
         for (int pi = 0; pi < byProperty.Count; pi++)
         {
             var (prop, rules) = byProperty[pi];
-            EmitPropertyRulesForProp(sb, prop, rules, classSymbol, modelParamName, ctx, regexMethods);
+            EmitPropertyRulesForProp(sb, prop, rules, classSymbol, modelParamName, ctx, fields);
         }
     }
 
@@ -333,7 +363,7 @@ internal static class RuleEmitter
         INamedTypeSymbol? classSymbol,
         string modelParamName,
         SourceProductionContext? ctx,
-        System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
+        GeneratedFields? fields = null)
     {
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
@@ -348,9 +378,10 @@ internal static class RuleEmitter
             var attr = rules[i];
             var fqn = attr.AttributeClass!.ToDisplayString();
             var prefix = (stopMode && i > 0) ? "        else if" : "        if";
-            var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
+            var ruleMessage = FindCustomRuleMessage(attr);
+            var message = ResolveRuleMessage(attr, fqn, displayName, prop, ruleMessage, ctx);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, regexMethods: regexMethods);
+            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, ruleIndex: i, fields: fields);
             var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
@@ -358,7 +389,7 @@ internal static class RuleEmitter
             var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
 
             sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
-            sb.AppendLine($"            _buf.Add({BuildFailureInitializer(propName, message, attr, propertyValueExpr)});");
+            sb.AppendLine($"            _buf.Add({BuildFailureInitializer(propName, message, attr, ruleMessage, propertyValueExpr)});");
         }
         sb.AppendLine();
     }
@@ -499,7 +530,7 @@ internal static class RuleEmitter
         string modelParamName,
         bool validatorStop,
         SourceProductionContext? ctx,
-        System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
+        GeneratedFields? fields = null)
     {
         // Under model-level fail-fast, a group that can only ever produce one failure returns
         // that failure's array directly — no scratch buffer, no copy. When every group is like
@@ -526,7 +557,7 @@ internal static class RuleEmitter
             if (validatorStop && !direct[pi])
                 sb.AppendLine($"        int _b{pi} = _buf.Count;");
 
-            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx, regexMethods, direct[pi], classSymbol);
+            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx, fields, direct[pi], classSymbol);
 
             if (validatorStop && !direct[pi])
                 EmitFlatPathStopOnFirstFailureReturn(sb, pi);
@@ -559,7 +590,7 @@ internal static class RuleEmitter
         int totalDirectRules,
         string modelParamName,
         SourceProductionContext? ctx,
-        System.Collections.Generic.Dictionary<string, string>? regexMethods = null,
+        GeneratedFields? fields = null,
         bool directReturn = false,
         INamedTypeSymbol? classSymbol = null)
     {
@@ -576,9 +607,10 @@ internal static class RuleEmitter
             var attr = rules[i];
             var fqn = attr.AttributeClass!.ToDisplayString();
             var prefix = (stopMode && i > 0) ? "        else if" : "        if";
-            var message = ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
+            var ruleMessage = FindCustomRuleMessage(attr);
+            var message = ResolveRuleMessage(attr, fqn, displayName, prop, ruleMessage, ctx);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, regexMethods: regexMethods);
+            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, ruleIndex: i, fields: fields);
             var propertyValueExpr = HasPropertyValuePlaceholder(message) ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
@@ -591,12 +623,12 @@ internal static class RuleEmitter
             {
                 sb.AppendLine("            return new global::ZeroAlloc.Validation.ValidationResult(new global::ZeroAlloc.Validation.ValidationFailure[]");
                 sb.AppendLine("            {");
-                sb.AppendLine($"                {BuildFailureInitializer(propName, message, attr, propertyValueExpr)}");
+                sb.AppendLine($"                {BuildFailureInitializer(propName, message, attr, ruleMessage, propertyValueExpr)}");
                 sb.AppendLine("            });");
             }
             else
             {
-                sb.AppendLine($"            _buf.Add({BuildFailureInitializer(propName, message, attr, propertyValueExpr)});");
+                sb.AppendLine($"            _buf.Add({BuildFailureInitializer(propName, message, attr, ruleMessage, propertyValueExpr)});");
             }
             sb.AppendLine("        }");
         }
@@ -610,6 +642,52 @@ internal static class RuleEmitter
     private static bool IsGlobalOrEmpty(string? namespaceName) =>
         string.IsNullOrEmpty(namespaceName)
         || string.Equals(namespaceName, "<global namespace>", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The compile-time message for one rule usage. Built-in rules keep their existing handling.
+    /// A custom rule takes the usage's <c>Message</c>, then its nearest <c>[RuleMessage]</c>, then
+    /// the <c>[Must]</c> fallback, with named placeholders bound to the arguments written on the
+    /// usage. Each unknown placeholder is reported as ZV0022 when <paramref name="ctx"/> is set;
+    /// only the sync visit passes it, so each usage reports once. <paramref name="ruleMessage"/>
+    /// is the usage's <see cref="FindCustomRuleMessage"/>, resolved once by the caller.
+    /// </summary>
+    private static string ResolveRuleMessage(
+        AttributeData attr,
+        string fqn,
+        string displayName,
+        IPropertySymbol prop,
+        (string Message, string? ErrorCode)? ruleMessage,
+        SourceProductionContext? ctx)
+    {
+        if (!CustomRules.IsCustomRule(attr))
+            return ResolveMessage(attr, fqn, displayName) ?? GetDefaultMessage(fqn, attr, displayName);
+
+        var template = GetMessage(attr)
+            ?? ruleMessage?.Message
+            ?? InvalidFallbackMessage;
+        var resolved = CustomRules.ResolveNamedPlaceholders(template, attr, out var unknown);
+
+        if (ctx is not null)
+        {
+            foreach (var name in unknown)
+            {
+                ctx.Value.ReportDiagnostic(Diagnostic.Create(
+                    ZV0022,
+                    AttributeLocation(attr, prop),
+                    name, attr.AttributeClass!.Name, prop.Name));
+            }
+        }
+
+        return resolved.Replace("{PropertyName}", displayName);
+    }
+
+    /// <summary>
+    /// The <c>[RuleMessage]</c> a custom rule usage falls back to, or <see langword="null"/> for a
+    /// built-in rule or a custom rule without one. Resolved once per usage and passed to both the
+    /// message and the error-code lookups.
+    /// </summary>
+    private static (string Message, string? ErrorCode)? FindCustomRuleMessage(AttributeData attr) =>
+        CustomRules.IsCustomRule(attr) ? CustomRules.FindRuleMessage(attr.AttributeClass!) : null;
 
     private static string? ResolveMessage(AttributeData attr, string fqn, string propName)
     {
@@ -651,12 +729,30 @@ internal static class RuleEmitter
         return result;
     }
 
-    private static string? GetMessage(AttributeData attr)
+    private static string? GetMessage(AttributeData attr) =>
+        TryGetBaseMemberArgument(attr, "Message", out var value) ? value.Value as string : null;
+
+    /// <summary>
+    /// The value written on the usage for the base member <paramref name="name"/>, one of the
+    /// members declared on <c>ZeroAlloc.Validation.ValidationAttribute</c>. A named argument that
+    /// binds a member of the same name the attribute declares itself, such as a
+    /// <c>new Message</c>, is not a base member and is not returned.
+    /// </summary>
+    private static bool TryGetBaseMemberArgument(AttributeData attr, string name, out TypedConstant value)
     {
         foreach (var named in attr.NamedArguments)
-            if (string.Equals(named.Key, "Message", StringComparison.Ordinal) && named.Value.Value is string s)
-                return s;
-        return null;
+        {
+            if (string.Equals(named.Key, name, StringComparison.Ordinal)
+                && attr.AttributeClass is { } attrClass
+                && CustomRules.IsBaseMemberArgument(attrClass, name))
+            {
+                value = named.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     /// <summary>
@@ -698,21 +794,11 @@ internal static class RuleEmitter
         return true;
     }
 
-    private static string? GetWhen(AttributeData attr)
-    {
-        foreach (var named in attr.NamedArguments)
-            if (string.Equals(named.Key, "When", StringComparison.Ordinal) && named.Value.Value is string s)
-                return s;
-        return null;
-    }
+    private static string? GetWhen(AttributeData attr) =>
+        TryGetBaseMemberArgument(attr, "When", out var value) ? value.Value as string : null;
 
-    private static string? GetUnless(AttributeData attr)
-    {
-        foreach (var named in attr.NamedArguments)
-            if (string.Equals(named.Key, "Unless", StringComparison.Ordinal) && named.Value.Value is string s)
-                return s;
-        return null;
-    }
+    private static string? GetUnless(AttributeData attr) =>
+        TryGetBaseMemberArgument(attr, "Unless", out var value) ? value.Value as string : null;
 
     private static string? GetDisplayName(IPropertySymbol prop)
     {
@@ -738,22 +824,20 @@ internal static class RuleEmitter
         return null;
     }
 
-    private static string? GetErrorCode(AttributeData attr)
-    {
-        foreach (var named in attr.NamedArguments)
-            if (string.Equals(named.Key, "ErrorCode", StringComparison.Ordinal) && named.Value.Value is string s)
-                return s;
-        return null;
-    }
+    /// <summary>
+    /// The error code for one usage. An <c>ErrorCode</c> written on the usage wins, and an
+    /// explicit <c>ErrorCode = null</c> clears the code rather than falling back. Otherwise a
+    /// custom rule takes the code its <c>[RuleMessage]</c> declares, passed in as
+    /// <paramref name="ruleMessage"/>.
+    /// </summary>
+    private static string? GetErrorCode(AttributeData attr, (string Message, string? ErrorCode)? ruleMessage) =>
+        TryGetBaseMemberArgument(attr, "ErrorCode", out var value)
+            ? value.Value as string
+            : ruleMessage?.ErrorCode;
 
     // Returns 0 = Error (default), 1 = Warning, 2 = Info.
-    private static int GetSeverityValue(AttributeData attr)
-    {
-        foreach (var named in attr.NamedArguments)
-            if (string.Equals(named.Key, "Severity", StringComparison.Ordinal) && named.Value.Value is int i)
-                return i;
-        return 0;
-    }
+    private static int GetSeverityValue(AttributeData attr) =>
+        TryGetBaseMemberArgument(attr, "Severity", out var value) && value.Value is int i ? i : 0;
 
     private static bool GetBoolNamedArg(AttributeData? attr, string name)
     {
@@ -771,9 +855,14 @@ internal static class RuleEmitter
         _ => "global::ZeroAlloc.Validation.Severity.Error"
     };
 
-    private static string BuildFailureInitializer(string propName, string message, AttributeData attr, string? propertyValueExpr = null)
+    private static string BuildFailureInitializer(
+        string propName,
+        string message,
+        AttributeData attr,
+        (string Message, string? ErrorCode)? ruleMessage,
+        string? propertyValueExpr)
     {
-        var errorCode = GetErrorCode(attr);
+        var errorCode = GetErrorCode(attr, ruleMessage);
         var severityValue = GetSeverityValue(attr);
 
         string errorMessageExpr;
@@ -838,7 +927,7 @@ internal static class RuleEmitter
         return attr.ConstructorArguments[index].Type?.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String;
     }
 
-    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "", string modelParamName = "instance", ITypeSymbol? propType = null, string? rawAccess = null, string propName = "", System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
+    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "", string modelParamName = "instance", ITypeSymbol? propType = null, string? rawAccess = null, string propName = "", int ruleIndex = 0, GeneratedFields? fields = null)
     {
         // Predicate-style validators (e.g. [Must]) pass the property value as an argument
         // to a user-defined method whose parameter type matches the declared property type.
@@ -847,6 +936,22 @@ internal static class RuleEmitter
         // wrong for predicates — the user's method expects the wrapper. Predicate branches
         // therefore use rawAccess (the un-unwrapped form) when provided.
         var rawForPredicate = rawAccess ?? access;
+
+        // User-defined rules ([NotBlank] deriving from ValidationAttribute<T>) are rebuilt once as
+        // a static field and called directly. Like [Must], they receive the raw property value.
+        if (CustomRules.TryGetRuleValueType(attr.AttributeClass!, out _))
+        {
+            var field = CustomRules.FieldName(propName, ruleIndex);
+            if (fields is not null)
+            {
+                fields.RuleInstances[field] = new RuleInstanceField(
+                    attr.AttributeClass!.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    CustomRules.BuildInitializer(attr),
+                    CustomRules.NamesObsoleteSymbol(attr));
+            }
+            return $"!{field}.IsValid({rawForPredicate})";
+        }
+
         return fqn switch
         {
             NotNullFqn               => $"{access} is null",
@@ -861,7 +966,7 @@ internal static class RuleEmitter
             ExclusiveBetweenFqn      => $"System.Convert.ToDouble({access}) <= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)} || System.Convert.ToDouble({access}) >= {GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture)}",
             LengthFqn                => GuardAgainstNull(access, propType, $"{access}.Length < {GetIntArg(attr, 0)} || {access}.Length > {GetIntArg(attr, 1)}"),
             EmailAddressFqn          => $"!global::ZeroAlloc.Validation.Internal.EmailValidator.IsValid({access})",
-            MatchesFqn               => BuildMatchesCondition(access, propName, attr, regexMethods),
+            MatchesFqn               => BuildMatchesCondition(access, propName, attr, fields),
             NullFqn                  => $"{access} is not null",
             EmptyFqn                 => $"!string.IsNullOrEmpty({access})",
             EqualFqn                 => IsStringArg(attr, 0)
@@ -882,7 +987,7 @@ internal static class RuleEmitter
         string access,
         string propName,
         AttributeData attr,
-        System.Collections.Generic.Dictionary<string, string>? regexMethods)
+        GeneratedFields? fields)
     {
         var fieldName = $"__Regex_{propName}";
         var pattern = GetStringArg(attr, 0);
@@ -892,9 +997,9 @@ internal static class RuleEmitter
         // field declaration with RegexOptions.Compiled. Dictionary deduplicates
         // sync+async double-visit (both share a single dictionary at the outer
         // class-emission scope).
-        if (regexMethods is not null)
+        if (fields is not null)
         {
-            regexMethods[fieldName] = pattern;
+            fields.RegexPatterns[fieldName] = pattern;
         }
 
         return $"!{fieldName}.IsMatch({access} ?? \"\")";
@@ -927,8 +1032,8 @@ internal static class RuleEmitter
             IsInEnumFqn              => $"{propName} is not a valid value.",
             IsEnumNameFqn            => $"{propName} is not a valid enum name.",
             PrecisionScaleFqn        => $"{propName} must not exceed {GetArg(attr, 0)} digits total with {GetArg(attr, 1)} decimal places.",
-            MustFqn                  => $"{propName} is invalid.",
-            _                        => $"{propName} is invalid."
+            MustFqn                  => InvalidFallbackMessage.Replace("{PropertyName}", propName),
+            _                        => InvalidFallbackMessage.Replace("{PropertyName}", propName)
         };
 
     private static string GetNullableUnwrappedFullTypeName(IPropertySymbol prop)
@@ -1201,10 +1306,10 @@ internal static class RuleEmitter
     /// Returns the Validate method body as a string (multi-statement block WITHOUT outer braces),
     /// using <paramref name="modelParamName"/> as the instance variable.
     /// </summary>
-    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, string modelParamName, SourceProductionContext? ctx = null, System.Collections.Generic.Dictionary<string, string>? regexMethods = null)
+    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName, SourceProductionContext? ctx = null, GeneratedFields? fields = null)
     {
         var sb = new System.Text.StringBuilder();
-        EmitValidateBody(sb, classSymbol, modelParamName, ctx, regexMethods);
+        EmitValidateBody(sb, classSymbol, compilation, modelParamName, ctx, fields);
         return sb.ToString();
     }
 
@@ -1283,6 +1388,124 @@ internal static class RuleEmitter
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor ZV0022 = new DiagnosticDescriptor(
+        id: "ZV0022",
+        title: "Unknown placeholder in a custom rule message",
+        messageFormat: "Placeholder '{0}' in the message for '{1}' on '{2}' does not match any argument; it is emitted literally",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor ZV0020 = new DiagnosticDescriptor(
+        id: "ZV0020",
+        title: "ValidationAttribute subclass the generator cannot emit",
+        messageFormat: "'{0}' derives from ValidationAttribute but the generator cannot emit it; derive from ValidationAttribute<T> and override IsValid",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor ZV0021 = new DiagnosticDescriptor(
+        id: "ZV0021",
+        title: "Custom rule value type does not match the property type",
+        messageFormat: "'{0}' validates '{1}' but property '{2}' is '{3}'{4}",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor ZV0023 = new DiagnosticDescriptor(
+        id: "ZV0023",
+        title: "Custom rule attribute not accessible from the generated validator",
+        messageFormat: "'{0}' cannot be emitted: '{1}' is not accessible from the generated validator; make it internal or public",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// Fires ZV0020 for an attribute deriving from <c>ValidationAttribute</c> that is neither a
+    /// built-in rule nor a <c>ValidationAttribute&lt;T&gt;</c> custom rule. The generator has no
+    /// way to evaluate it, so without this error the property would silently go unvalidated.
+    /// The caller has already established that <paramref name="attr"/> is not a rule attribute.
+    /// </summary>
+    private static void ReportZV0020IfApplicable(SourceProductionContext? ctx, IPropertySymbol prop, AttributeData attr)
+    {
+        if (ctx is null) return;
+        if (attr.AttributeClass is not { } attrClass || !CustomRules.DerivesFromValidationAttribute(attrClass)) return;
+
+        ctx.Value.ReportDiagnostic(Diagnostic.Create(ZV0020, AttributeLocation(attr, prop), attrClass.Name));
+    }
+
+    /// <summary>
+    /// Whether a custom rule usage can be emitted. The rule is left out, and reported when
+    /// <paramref name="ctx"/> is set, when its attribute is not reachable from the generated
+    /// validator (ZV0023) or when the property type has no implicit conversion to the rule's
+    /// <c>T</c> (ZV0021). Either would otherwise surface as a compiler error in generated code.
+    /// </summary>
+    private static bool CanEmitCustomRule(Compilation compilation, IPropertySymbol prop, AttributeData attr, SourceProductionContext? ctx)
+    {
+        var attrClass = attr.AttributeClass!;
+        CustomRules.TryGetRuleValueType(attrClass, out var valueType);
+
+        var inaccessible = CustomRules.FindInaccessibleSymbol(compilation, attr);
+        var accessible = inaccessible is null;
+
+        // An unresolved property type or T is already a compiler error at its declaration, so the
+        // rule is skipped without adding a ZV0021 on top of it.
+        var unresolved = ContainsErrorType(prop.Type) || ContainsErrorType(valueType);
+        var nullMismatch = !unresolved && AcceptsNullRuleDoesNot(prop.Type, valueType);
+        var convertible = !unresolved
+            && !nullMismatch
+            && compilation.ClassifyCommonConversion(prop.Type, valueType).IsImplicit;
+
+        if (ctx is not null)
+        {
+            var location = AttributeLocation(attr, prop);
+            if (inaccessible is not null)
+                ctx.Value.ReportDiagnostic(Diagnostic.Create(ZV0023, location, attrClass.Name, inaccessible.ToDisplayString()));
+            if (!convertible && !unresolved)
+            {
+                var hint = nullMismatch
+                    ? $". Declare the rule as ValidationAttribute<{valueType.WithNullableAnnotation(NullableAnnotation.Annotated).ToDisplayString()}> to accept null."
+                    : "";
+                ctx.Value.ReportDiagnostic(Diagnostic.Create(
+                    ZV0021, location,
+                    attrClass.Name, valueType.ToDisplayString(), prop.Name, prop.Type.ToDisplayString(), hint));
+            }
+        }
+
+        return accessible && convertible;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="type"/> is, or is built from, a type the compiler could not
+    /// resolve. <c>Missing?</c> binds as <c>Nullable&lt;Missing&gt;</c>, so the type arguments of
+    /// a generic and the element type of an array are searched too.
+    /// </summary>
+    private static bool ContainsErrorType(ITypeSymbol type) => type switch
+    {
+        { TypeKind: TypeKind.Error } => true,
+        IArrayTypeSymbol array => ContainsErrorType(array.ElementType),
+        INamedTypeSymbol { IsGenericType: true } named => named.TypeArguments.Any(ContainsErrorType),
+        _ => false,
+    };
+
+    /// <summary>
+    /// Whether a property declared to hold null, such as <c>string?</c>, is checked by a rule
+    /// whose <c>T</c> declares it never receives null, such as <c>ValidationAttribute&lt;string&gt;</c>.
+    /// Conversion classification ignores nullable annotations, so this is checked separately.
+    /// Both annotations exist only where the nullable context is enabled; in an oblivious or
+    /// disabled context they are <c>None</c> and this never fires.
+    /// </summary>
+    private static bool AcceptsNullRuleDoesNot(ITypeSymbol propertyType, ITypeSymbol valueType) =>
+        propertyType.IsReferenceType
+        && valueType.IsReferenceType
+        && propertyType.NullableAnnotation == NullableAnnotation.Annotated
+        && valueType.NullableAnnotation == NullableAnnotation.NotAnnotated;
+
+    private static Location AttributeLocation(AttributeData attr, IPropertySymbol prop) =>
+        attr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
+            ?? prop.Locations.FirstOrDefault()
+            ?? Location.None;
+
     /// <summary>
     /// Fires ZV0016 when a property has built-in validation rules and its type is a
     /// multi-property <c>[ValueObject]</c> (i.e. has the marker attribute but no
@@ -1293,7 +1516,8 @@ internal static class RuleEmitter
     private static void ReportZV0016IfApplicable(SourceProductionContext? ctx, IPropertySymbol prop, List<AttributeData> rules)
     {
         if (ctx is null) return;
-        if (rules.Count == 0) return;
+        // User-defined rules receive the wrapper itself and never unwrap, so only built-ins count.
+        if (rules.TrueForAll(CustomRules.IsCustomRule)) return;
         if (!HasValueObjectAttribute(prop.Type)) return;
         if (GetValueObjectUnwrapMember(prop.Type) is not null) return;
 
