@@ -88,7 +88,9 @@ internal static class MemberWalker
     /// <summary>
     /// Base-type members that carry ZeroAlloc validation attributes but cannot be referenced
     /// from the generated validator (a separate class), so their rules are silently dropped.
-    /// Reported as ZV0017 rather than emitting code that would not compile.
+    /// Reported as ZV0017 rather than emitting code that would not compile. The walk stops at a
+    /// base type that is itself <c>[Validate]</c>: its own generation reports its members, as
+    /// ZV0027 for its own unreadable properties, so the same rule is not reported twice.
     /// </summary>
     public static IEnumerable<ISymbol> GetInaccessibleBaseMembers(INamedTypeSymbol type)
     {
@@ -96,6 +98,8 @@ internal static class MemberWalker
 
         for (var current = type.BaseType; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
         {
+            if (HasValidateAttribute(current)) yield break;
+
             foreach (var member in current.GetMembers())
             {
                 if (member is not IPropertySymbol && member is not IMethodSymbol) continue;
@@ -119,13 +123,38 @@ internal static class MemberWalker
     {
         if (property.IsIndexer) return UnreadableReason.Indexer;
         if (property.IsStatic) return UnreadableReason.Static;
-        if (property.GetMethod is null) return UnreadableReason.NoGetter;
+        var getter = FindGetter(property);
+        if (getter is null) return UnreadableReason.NoGetter;
         if (!IsAccessibleAccessibility(property.DeclaredAccessibility, property, validatedType))
             return UnreadableReason.Inaccessible;
-        if (!IsAccessibleAccessibility(property.GetMethod.DeclaredAccessibility, property.GetMethod, validatedType))
+        if (!IsAccessibleAccessibility(getter.DeclaredAccessibility, getter, validatedType))
             return UnreadableReason.GetterInaccessible;
         return UnreadableReason.None;
     }
+
+    /// <summary>
+    /// The getter <c>instance.Prop</c> calls. An override may declare only a setter and inherit
+    /// the getter, so the overridden chain is searched until one declares it.
+    /// </summary>
+    private static IMethodSymbol? FindGetter(IPropertySymbol property)
+    {
+        for (var current = property; current is not null; current = current.OverriddenProperty)
+        {
+            if (current.GetMethod is not null)
+                return current.GetMethod;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="member"/>, declared on <paramref name="validatedType"/> or one of
+    /// its base types, hides a base declaration of the same name from the generated validator,
+    /// as <see cref="GetMembersIncludingBase"/> treats it: name lookup from the validator skips a
+    /// member it cannot access, but binds to an accessible one even when it cannot be read.
+    /// </summary>
+    public static bool HidesBaseMembers(ISymbol member, INamedTypeSymbol validatedType) =>
+        member is IPropertySymbol or IFieldSymbol
+        && IsAccessibleAccessibility(member.DeclaredAccessibility, member, validatedType);
 
     /// <summary>
     /// Whether <paramref name="reason"/> holds whatever the property's accessibility: a static
@@ -206,8 +235,9 @@ internal static class MemberWalker
         // A property also needs a getter the validator can call.
         if (member is IPropertySymbol prop)
         {
-            if (prop.GetMethod is null) return false;
-            if (!IsAccessibleAccessibility(prop.GetMethod.DeclaredAccessibility, prop.GetMethod, accessingType))
+            var getter = FindGetter(prop);
+            if (getter is null) return false;
+            if (!IsAccessibleAccessibility(getter.DeclaredAccessibility, getter, accessingType))
                 return false;
         }
 
@@ -223,6 +253,16 @@ internal static class MemberWalker
                     member.ContainingAssembly, accessingType.ContainingAssembly),
             _ => false,
         };
+
+    private static bool HasValidateAttribute(INamedTypeSymbol type)
+    {
+        foreach (var attr in type.GetAttributes())
+        {
+            if (string.Equals(attr.AttributeClass?.ToDisplayString(), ValidateAttributeFqn, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
 
     private static bool HasZeroAllocValidationAttribute(ISymbol member)
     {

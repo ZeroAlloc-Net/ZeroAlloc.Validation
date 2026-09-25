@@ -266,6 +266,139 @@ public class UnreadablePropertyDiagnosticTests
         Assert.Equal(new[] { "Other" }, FailedProperties(output));
     }
 
+    [Fact]
+    public void Setter_only_override_of_a_readable_property_is_validated()
+    {
+        // The override declares only a setter, but `instance.Code` still reads the inherited getter.
+        var source = Prelude + """
+            public class RequestBase
+            {
+                public virtual string? Code { get; set; }
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                [NotEmpty] public override string? Code { set => base.Code = value; }
+
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id.StartsWith("ZV", StringComparison.Ordinal));
+        Assert.Equal(new[] { "Code", "Other" }, FailedProperties(output));
+    }
+
+    [Fact]
+    public void Setter_only_override_on_a_base_type_is_validated()
+    {
+        var source = Prelude + """
+            public class RequestRoot
+            {
+                public virtual string? Code { get; set; }
+            }
+
+            public class RequestBase : RequestRoot
+            {
+                [NotEmpty] public override string? Code { set => base.Code = value; }
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id.StartsWith("ZV", StringComparison.Ordinal));
+        Assert.Equal(new[] { "Code", "Other" }, FailedProperties(output));
+    }
+
+    [Theory]
+    [InlineData("[NotEmpty] protected string? Code { get; set; }")]
+    [InlineData("[NotEmpty] public string? Code { private get; set; }")]
+    public void Unreadable_property_on_a_Validate_base_is_reported_once_by_the_base(string member)
+    {
+        // The [Validate] base reports its own member as ZV0027; the derived type's generation
+        // must not add a ZV0017 for the same rule.
+        var source = Prelude + $$"""
+            [Validate]
+            public class RequestBase
+            {
+                {{member}}
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        SingleZV0027(result);
+        Assert.DoesNotContain(result.Diagnostics, d => string.Equals(d.Id, "ZV0017", StringComparison.Ordinal));
+        Assert.Equal(new[] { "Other" }, FailedProperties(output));
+    }
+
+    [Fact]
+    public void Unreadable_base_property_hidden_by_a_readable_one_is_not_reported()
+    {
+        var source = Prelude + """
+            public class RequestBase
+            {
+                [NotEmpty] public static string? Code { get; set; }
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                [NotEmpty] public new string? Code { get; set; }
+
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id.StartsWith("ZV", StringComparison.Ordinal));
+        Assert.Equal(new[] { "Code", "Other" }, FailedProperties(output));
+    }
+
+    [Fact]
+    public void Unreadable_property_on_a_metadata_base_type_is_not_reported()
+    {
+        // A base type from a referenced assembly cannot be changed, and a diagnostic on it would
+        // have no source location, so its unreadable rule is left out without a diagnostic.
+        var library = BuildLibrary("""
+            using ZeroAlloc.Validation;
+            namespace Library;
+
+            public class RequestBase
+            {
+                [NotEmpty] public static string? Code { get; set; }
+            }
+            """);
+
+        var source = Prelude + """
+            [Validate]
+            public class Request : Library.RequestBase
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source, library.Reference);
+
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id.StartsWith("ZV", StringComparison.Ordinal));
+        Assert.Equal(new[] { "Other" }, FailedProperties(output, library.Image));
+    }
+
     private static Diagnostic SingleZV0027(GeneratorDriverRunResult result)
     {
         var matches = result.Diagnostics
@@ -283,7 +416,7 @@ public class UnreadablePropertyDiagnosticTests
     /// Emits the generator's output compilation, which proves the generated validator compiles,
     /// then runs it against a default <c>Request</c> and returns the property names that failed.
     /// </summary>
-    private static string[] FailedProperties(Compilation output)
+    private static string[] FailedProperties(Compilation output, byte[]? libraryImage = null)
     {
         using var peStream = new MemoryStream();
         var emit = output.Emit(peStream);
@@ -291,22 +424,60 @@ public class UnreadablePropertyDiagnosticTests
             .Where(d => d.Severity == DiagnosticSeverity.Error)
             .Select(d => d.ToString())));
 
-        var assembly = System.Reflection.Assembly.Load(peStream.ToArray());
-        var probe = assembly.GetType("TestModels.Probe", throwOnError: true)!;
-        return (string[])probe.GetMethod("FailedProperties")!.Invoke(null, null)!;
+        // A referenced library is an in-memory image the runtime cannot find on disk, so resolve
+        // it by name while the probe runs.
+        var library = libraryImage is null ? null : System.Reflection.Assembly.Load(libraryImage);
+        ResolveEventHandler resolve = (_, args) =>
+            library is not null
+                && string.Equals(new System.Reflection.AssemblyName(args.Name).Name, library.GetName().Name, StringComparison.Ordinal)
+                ? library
+                : null;
+        AppDomain.CurrentDomain.AssemblyResolve += resolve;
+        try
+        {
+            var assembly = System.Reflection.Assembly.Load(peStream.ToArray());
+            var probe = assembly.GetType("TestModels.Probe", throwOnError: true)!;
+            return (string[])probe.GetMethod("FailedProperties")!.Invoke(null, null)!;
+        }
+        finally
+        {
+            AppDomain.CurrentDomain.AssemblyResolve -= resolve;
+        }
     }
 
-    private static (GeneratorDriverRunResult Result, Compilation Output) RunGenerator(string source)
+    /// <summary>Compiles <paramref name="source"/> without the generator, as a referenced library.</summary>
+    private static (MetadataReference Reference, byte[] Image) BuildLibrary(string source)
     {
-        var trusted = (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string ?? "")
+        var compilation = CSharpCompilation.Create(
+            "UnreadablePropertyLibrary_" + Guid.NewGuid().ToString("N"),
+            [CSharpSyntaxTree.ParseText(source)],
+            TrustedPlatformReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+
+        using var peStream = new MemoryStream();
+        var emit = compilation.Emit(peStream);
+        Assert.True(emit.Success, string.Join("\n", emit.Diagnostics.Select(d => d.ToString())));
+
+        var image = peStream.ToArray();
+        return (MetadataReference.CreateFromImage(image), image);
+    }
+
+    private static IEnumerable<MetadataReference> TrustedPlatformReferences() =>
+        (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string ?? "")
             .Split(Path.PathSeparator)
             .Where(p => p.Length > 0)
             .Select(p => (MetadataReference)MetadataReference.CreateFromFile(p));
 
+    private static (GeneratorDriverRunResult Result, Compilation Output) RunGenerator(string source, MetadataReference? library = null)
+    {
+        var references = TrustedPlatformReferences();
+        if (library is not null)
+            references = references.Append(library);
+
         var compilation = CSharpCompilation.Create(
             "UnreadablePropertyTests_" + Guid.NewGuid().ToString("N"),
             [CSharpSyntaxTree.ParseText(source)],
-            trusted,
+            references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
 
         var driver = CSharpGeneratorDriver.Create(new ValidatorGenerator())

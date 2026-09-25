@@ -689,23 +689,28 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// constructor parameters are searched on <paramref name="classSymbol"/> and on each base
     /// type whose properties it validates. The walk stops at a base type that is itself
     /// <c>[Validate]</c>, whose own generation reports its members, so each usage reports once.
-    /// The same walk reports ZV0027 for the properties the validator cannot read.
+    /// The same walk reports ZV0027 for the properties the validator cannot read. On a base type
+    /// it skips a property a more-derived declaration hides, and a base type that is not declared
+    /// in source, which the user cannot change and which has no location to report at.
     /// </summary>
     private static void ReportUnreadValidationAttributeDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol)
     {
         var includeBase = MemberWalker.IncludesBaseProperties(classSymbol);
+        var hidden = new HashSet<string>(StringComparer.Ordinal);
         for (var type = classSymbol; type is not null && type.SpecialType != SpecialType.System_Object; type = type.BaseType)
         {
             bool isBase = !SymbolEqualityComparer.Default.Equals(type, classSymbol);
             if (isBase && (!includeBase || HasValidateAttribute(type)))
                 break;
 
+            bool inSource = type.Locations.Any(l => l.IsInSource);
             foreach (var member in type.GetMembers())
             {
                 switch (member)
                 {
                     case IPropertySymbol property:
-                        ReportUnreadablePropertyAttributes(ctx, property, classSymbol, isBase);
+                        if (inSource && !hidden.Contains(property.Name))
+                            ReportUnreadablePropertyAttributes(ctx, property, classSymbol, isBase);
                         break;
                     case IFieldSymbol field:
                         ReportUnreadValidationAttributes(ctx, field, field.Name);
@@ -715,6 +720,12 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                             ReportUnreadValidationAttributes(ctx, parameter, parameter.Name);
                         break;
                 }
+            }
+
+            foreach (var member in type.GetMembers())
+            {
+                if (MemberWalker.HidesBaseMembers(member, classSymbol))
+                    hidden.Add(member.Name);
             }
         }
     }

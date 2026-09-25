@@ -560,9 +560,9 @@ public class Order
 
 The rule is left out rather than emitted as code that fails with CS0176, CS0154, CS0271 or CS0122, and every other property is still validated. Each attribute is reported, so a property with two rules reports twice.
 
-On a base type, a static, indexer or getter-less property is reported the same way. A base property that is only inaccessible stays [ZV0017](#zv0017), a warning, because the base type may not be yours to change. A property of a `[Validate]` type is composed into the parent's validator without any attribute, so when such a property cannot be read it is simply not composed, and nothing is reported.
+On a base type declared in source, a static, indexer or getter-less property is reported the same way, unless the derived type hides it with a readable property of the same name. A base property that is only inaccessible stays [ZV0017](#zv0017), a warning. A base type that is itself `[Validate]` reports its own members, as ZV0027 on its own properties, so a derived type does not report them again. A base type from a referenced assembly is never reported: its unreadable rules are left out. If a base type you cannot change carries such a rule, set `[Validate(IncludeBaseProperties = false)]` on the derived type to stop inheriting base-type rules. A property of a `[Validate]` type is composed into the parent's validator without any attribute, so when such a property cannot be read it is simply not composed, and nothing is reported.
 
-**Fix:** Put the rule on a public or internal instance property with a readable getter, or remove it. To validate state kept in a static or write-only member, expose it through a readable property, or check it in a `[CustomValidation]` method.
+**Fix:** Put the rule on a public or internal instance property with a readable getter, or remove it. An override that declares only a setter is readable, because `instance.Property` calls the inherited getter. To validate state kept in a static or write-only member, expose it through a readable property, or check it in a `[CustomValidation]` method.
 
 ---
 
