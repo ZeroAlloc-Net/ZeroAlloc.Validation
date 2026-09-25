@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0029 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0030 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -31,6 +31,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0027](#zv0027) | Error | Validation attribute applied to a property the generated validator cannot read |
 | [ZV0028](#zv0028) | Error | Validation method the generated validator cannot call |
 | [ZV0029](#zv0029) | Error | [Validate] on a generic type |
+| [ZV0030](#zv0030) | Error | Validation method call that does not compile |
 
 ---
 
@@ -64,9 +65,9 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 
 **Title:** Invalid [CustomValidation] method signature
 
-**When fired:** A method decorated with `[CustomValidation]` has parameters, or does not return `IEnumerable<ValidationFailure>`, `ValidationFailure[]` or `ReadOnlySpan<ValidationFailure>`.
+**When fired:** A method decorated with `[CustomValidation]` is generic, has parameters, or does not return `IEnumerable<ValidationFailure>`, `ValidationFailure[]` or `ReadOnlySpan<ValidationFailure>`. A generic method is an error because `instance.Check()` gives the compiler nothing to infer its type arguments from.
 
-The signature is checked first. A method that is also static, or also inaccessible on the `[Validate]` type itself, reports ZV0013 only; once the signature is fixed, [ZV0028](#zv0028) reports the rest. An inaccessible instance method on a base type reports [ZV0017](#zv0017) only, whatever its signature. A method declared on a base type that is itself `[Validate]` is reported once, by that type. If that base type sets `IncludeBaseProperties = false`, it does not see the types above it, so the derived type reports their methods.
+The signature is checked first. A method that is also static, or also inaccessible on the `[Validate]` type itself, reports ZV0013 only; once the signature is fixed, [ZV0028](#zv0028) reports the rest. An inaccessible instance method on a base type reports [ZV0017](#zv0017) only, whatever its signature. A method declared on a base type that is itself `[Validate]` is reported once, by that type. If that base type sets `IncludeBaseProperties = false`, it does not see the types above it, so the derived type reports their methods. A `[CustomValidation]` method is the attributed method itself, so it is never reported as [ZV0030](#zv0030): if the model declares another member of the same name that `instance.Check()` would bind to, the validator calls the method through the type that declares it instead.
 
 **Fix:** Ensure the method has no parameters and returns `IEnumerable<ValidationFailure>`:
 
@@ -573,12 +574,13 @@ On a base type declared in source, a static, indexer or getter-less property is 
 
 **Title:** Validation method the generated validator cannot call
 
-**When fired:** The generated validator is a separate class, so it calls the model's methods as `instance.Method(...)`. That call does not compile when the method a rule depends on is static, or is `private`, `protected` or `private protected`. Four usages are checked:
+**When fired:** The generated validator is a separate class, so it calls the model's methods as `instance.Method(...)`. That call does not compile when the method a rule depends on is static, or is `private`, `protected` or `private protected`. Five usages are checked:
 
 - a `[CustomValidation]` method;
 - the predicate a `[Must]` names;
 - the method a rule's `When` names;
-- the method a rule's `Unless` names.
+- the method a rule's `Unless` names;
+- the method a model's `[SkipWhen]` names.
 
 ```csharp
 [Validate]
@@ -600,11 +602,11 @@ public class Order
 
 > Method '{0}', used by {1}, cannot be called from the generated validator because it {2}
 
-The error is reported at the attribute. That rule is left out rather than emitted as code that fails with CS0122 or CS0176, and every other rule on the model is still validated. A `[Must]`, `When` or `Unless` method resolves the way the call would: an overload that cannot take the arguments is ignored, and the lookup stops at the most-derived type that declares an accessible overload that can. The rule is fine when one of that type's overloads is an instance method. When they are all static, the call binds to a static method, so ZV0028 is reported even if a base type declares an instance overload. A name that matches no method at all is left to the compiler.
+The error is reported at the attribute. That rule is left out rather than emitted as code that fails with CS0122 or CS0176, and every other rule on the model is still validated. For `[SkipWhen]` the skip check is left out, so the model is always validated. For a `[Must]`, `When`, `Unless` or `[SkipWhen]` method, the generator compiles the call the validator would contain and reports ZV0028 when the compiler rejects it with CS0176, because it binds to a static method, or CS0122, because it binds to one the validator cannot access. Any other error is [ZV0030](#zv0030).
 
 The generated validator lives in the model's assembly, so `internal` and `protected internal` methods are callable and are not reported.
 
-On a base type, a static method is reported the same way. A base method that is only inaccessible stays [ZV0017](#zv0017), a warning, because the base type may not be yours to change. A `[CustomValidation]` method with an invalid signature that is static, or inaccessible on the `[Validate]` type itself, is reported as [ZV0013](#zv0013) only; an inaccessible instance method on a base type is reported as ZV0017 only.
+On a base type, a static method is reported the same way. A base method that is only inaccessible stays [ZV0017](#zv0017), a warning, because the base type may not be yours to change. The exception is `[SkipWhen]`: it is read from the model only, so the usage is always yours to change, and an inaccessible base method it names is ZV0028. A `[CustomValidation]` method with an invalid signature that is static, or inaccessible on the `[Validate]` type itself, is reported as [ZV0013](#zv0013) only; an inaccessible instance method on a base type is reported as ZV0017 only.
 
 **Fix:** Make the method a `public` or `internal` instance method.
 
@@ -653,3 +655,49 @@ public class Page<T>
 public class OrderPage : Page<Order> { }
 // Generated: OrderPageValidator, which validates Title
 ```
+
+---
+
+## ZV0030
+
+**Severity:** Error
+
+**Title:** Validation method call that does not compile
+
+**When fired:** The generated validator calls the method a `[Must]` names as `instance.Method(instance.Property)`, and the method a `When`, `Unless` or `[SkipWhen]` names as `instance.Method()`, using the result as a condition. Before emitting a call, the generator compiles it in the generated file's own context: its `using` directives, the model's namespace and a class outside the model. ZV0030 is reported when the compiler rejects the call for any reason other than a static or inaccessible method, which is [ZV0028](#zv0028), or a member that does not exist at all, described below. Typical causes:
+
+- the name is empty, `null` or not an identifier;
+- no overload takes the arguments (CS1501, CS7036, CS1503);
+- the call is ambiguous (CS0121), or a generic method's type arguments cannot be inferred (CS0411) or violate its constraints (CS0453 and similar);
+- the result cannot be used as a condition (CS0019, CS0023, CS0029, CS0266).
+
+```csharp
+[Validate]
+[SkipWhen(nameof(IsDraft))]                      // ZV0030 — CS0266, IsDraft returns bool?
+public class Order
+{
+    [Must(nameof(IsKnownCode))]                  // ZV0030 — CS1503, takes an int, Code is a string
+    public string? Code { get; set; }
+
+    [NotEmpty(When = nameof(IsShipped))]         // ZV0030 — CS7036, IsShipped needs an argument
+    public string? TrackingNumber { get; set; }
+
+    public bool? IsDraft() => null;
+    public bool IsKnownCode(int code) => code > 0;
+    public bool IsShipped(int carrier) => carrier > 0;
+}
+```
+
+> Method '{0}', used by {1}, cannot be called by the generated validator: {2}
+
+The last part quotes the call and the compiler's error for it, for example `'instance.IsKnownCode(instance.Code)' fails with CS1503: Argument 1: cannot convert from 'string' to 'int'`.
+
+The error is reported at the attribute. That rule is left out rather than emitted as code that does not compile, and every other rule on the model is still validated. For `[SkipWhen]` the skip check is left out, so the model is always validated.
+
+**A member that does not exist is not reported.** The check compiles against the generator's input, which does not contain what other source generators add to the compilation. When the call fails only because no member of that name exists (CS1061, CS0117, CS0103, or CS1929 for an extension method of that name that takes another receiver), another generator may add the method or an extension method. So the call is emitted as it was before 2.0, and the final compilation, which contains every generator's output, decides. If nothing adds the member, that final compilation fails with the compiler's own error in the generated file.
+
+Because the compiler decides, anything it binds keeps working: an overload chosen by C# overload resolution, a generic method whose type arguments are inferred, an extension method in scope of the generated file, a delegate-typed field or property, and a method whose result converts to `bool`. Warnings do not count. The generated file imports only `ZeroAlloc.Validation` and your global usings, and sits in the model's namespace. An extension method imported only by a `using` in the model's own file is therefore not in scope there. The call fails with CS1061, which is left to the final compilation as described above.
+
+A `[CustomValidation]` method's signature is [ZV0013](#zv0013)'s to check, so it never reports ZV0030.
+
+**Fix:** Name a method the call can bind to: `public` or `internal`, taking no arguments for `When`, `Unless` and `[SkipWhen]` or the property's value for `[Must]`, and returning `bool`. The compiler's error in the message says what is wrong.

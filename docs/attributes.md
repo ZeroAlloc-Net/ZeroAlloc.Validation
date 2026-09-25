@@ -152,7 +152,7 @@ public class PasswordChange
     public string ConfirmPassword { get; set; } = "";
 
     // [Must] — called as instance.MatchesNew(value)
-    private bool MatchesNew(string value) => value == NewPassword;
+    public bool MatchesNew(string value) => value == NewPassword;
 
     // [CustomValidation] — called as instance.ValidateStrength()
     [CustomValidation]

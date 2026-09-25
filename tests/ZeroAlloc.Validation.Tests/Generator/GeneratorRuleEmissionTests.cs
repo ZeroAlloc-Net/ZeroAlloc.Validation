@@ -1495,7 +1495,7 @@ public class GeneratorRuleEmissionTests
             {
                 [NotEmpty]
                 public string Name { get; set; } = "";
-                private bool ShouldSkip() => true;
+                public bool ShouldSkip() => true;
             }
             """;
 

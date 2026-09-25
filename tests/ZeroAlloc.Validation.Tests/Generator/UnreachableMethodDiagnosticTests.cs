@@ -158,9 +158,10 @@ public class UnreachableMethodDiagnosticTests
     }
 
     [Fact]
-    public void Must_whose_only_applicable_overload_is_private_reports_ZV0028()
+    public void Must_whose_only_applicable_overload_is_private_is_reported_as_the_compiler_binds_it()
     {
-        // The public overload takes an int, which a string property cannot be passed to.
+        // The private overload is not a candidate from the validator, so the compiler binds to the
+        // public Ok(int) and reports CS1503 for the string argument: ZV0030, quoting that error.
         var source = Prelude + """
             [Validate]
             public class Request
@@ -176,8 +177,8 @@ public class UnreachableMethodDiagnosticTests
 
         var (result, output) = RunGenerator(source);
 
-        var zv0028 = SingleDiagnostic(result, "ZV0028");
-        Assert.EndsWith("is not accessible from it", zv0028.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        var zv0030 = SingleDiagnostic(result, "ZV0030");
+        Assert.Contains("fails with CS1503", zv0030.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
         Assert.Equal(new[] { "Other" }, FailedProperties(output));
     }
 

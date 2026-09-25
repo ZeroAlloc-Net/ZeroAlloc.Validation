@@ -24,3 +24,4 @@ ZV0026 | ZeroAlloc.Validation | Warning | [RuleMessage] on a class that is not a
 ZV0027 | ZeroAlloc.Validation | Error | Validation attribute applied to a property the generated validator cannot read
 ZV0028 | ZeroAlloc.Validation | Error | Validation method the generated validator cannot call
 ZV0029 | ZeroAlloc.Validation | Error | [Validate] on a generic type
+ZV0030 | ZeroAlloc.Validation | Error | Validation method call that does not compile

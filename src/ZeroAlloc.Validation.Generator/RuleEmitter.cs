@@ -78,10 +78,11 @@ internal static class RuleEmitter
 
     public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName = "instance", SourceProductionContext? ctx = null, GeneratedFields? fields = null)
     {
-        var skipWhenMethod = GetSkipWhenMethod(classSymbol);
-        if (skipWhenMethod is not null)
+        // A [SkipWhen] method the validator cannot call is reported, as ZV0017, ZV0028 or ZV0030,
+        // and left out, so the model is validated.
+        if (ResolveSkipWhen(compilation, classSymbol) is { Resolution.IsEmitted: true } skipWhen)
         {
-            sb.AppendLine($"        if ({modelParamName}.{skipWhenMethod}())");
+            sb.AppendLine($"        if ({GeneratedCalls.SkipWhenCondition(modelParamName, skipWhen.MethodName)})");
             sb.AppendLine($"            return new global::ZeroAlloc.Validation.ValidationResult(global::System.Array.Empty<global::ZeroAlloc.Validation.ValidationFailure>());");
             sb.AppendLine();
         }
@@ -149,7 +150,7 @@ internal static class RuleEmitter
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         List<IPropertySymbol> nestedProperties,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
-        List<(string Name, bool ByRef)> customMethods,
+        List<CustomValidationCall> customMethods,
         string modelParamName,
         bool validatorStop,
         int totalDirectRules,
@@ -178,22 +179,23 @@ internal static class RuleEmitter
         sb.AppendLine("        return _buf.ToResult();");
     }
 
-    private static void EmitCustomValidationCalls(StringBuilder sb, List<(string Name, bool ByRef)> customMethods, string modelParamName)
+    private static void EmitCustomValidationCalls(StringBuilder sb, List<CustomValidationCall> customMethods, string modelParamName)
     {
         for (int i = 0; i < customMethods.Count; i++)
         {
+            var call = GeneratedCalls.CustomValidationCall(modelParamName, customMethods[i].Name, customMethods[i].Receiver);
             if (customMethods[i].ByRef)
             {
                 // A span is walked by reference to avoid copying each failure. The call is hoisted
                 // into a local because `ref readonly` iteration needs an addressable variable
                 // rather than a call expression. Arrays cannot be iterated this way — their foreach
                 // lowers to indexing — but they allocate nothing either way.
-                sb.AppendLine($"        var _cv{i} = {modelParamName}.{customMethods[i].Name}();");
+                sb.AppendLine($"        var _cv{i} = {call};");
                 sb.AppendLine($"        foreach (ref readonly var _cf in _cv{i})");
             }
             else
             {
-                sb.AppendLine($"        foreach (var _cf in {modelParamName}.{customMethods[i].Name}())");
+                sb.AppendLine($"        foreach (var _cf in {call})");
             }
             sb.AppendLine("            _buf.Add(_cf);");
             sb.AppendLine();
@@ -228,9 +230,20 @@ internal static class RuleEmitter
         return false;
     }
 
-    private static List<(string Name, bool ByRef)> CollectCustomValidationMethods(INamedTypeSymbol classSymbol, Compilation compilation)
+    private static List<CustomValidationCall> CollectCustomValidationMethods(INamedTypeSymbol classSymbol, Compilation compilation)
     {
-        var result = new List<(string, bool)>();
+        var result = new List<CustomValidationCall>();
+        foreach (var (method, byRef) in CustomValidationMethods(classSymbol, compilation))
+            result.Add(new CustomValidationCall(method.Name, byRef, CustomValidationReceiver(compilation, classSymbol, method)));
+        return result;
+    }
+
+    /// <summary>
+    /// The <c>[CustomValidation]</c> methods the validator calls: a signature ZV0013 accepts, and
+    /// not static or inaccessible, which is ZV0028.
+    /// </summary>
+    private static IEnumerable<(IMethodSymbol Method, bool ByRef)> CustomValidationMethods(INamedTypeSymbol classSymbol, Compilation compilation)
+    {
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
         {
             if (member is not IMethodSymbol method) continue;
@@ -244,15 +257,42 @@ internal static class RuleEmitter
                 }
             }
             if (!hasAttr) continue;
-            // Only emit if the signature is one ZV0013 accepts: no parameters, and a return type
-            // the generated validator knows how to walk.
-            if (method.Parameters.Length != 0) continue;
+            // Only emit if the signature is one ZV0013 accepts: not generic, no parameters, and a
+            // return type the generated validator knows how to walk.
+            if (method.IsGenericMethod || method.Parameters.Length != 0) continue;
             if (!IsCustomValidationReturnType(method.ReturnType, out var byRef)) continue;
             // A static method, or one the validator cannot access, is reported as ZV0028.
             if (MethodReachability.Classify(compilation, classSymbol, method) != MethodReach.Callable) continue;
-            result.Add((method.Name, byRef));
+            yield return (method, byRef);
         }
-        return result;
+    }
+
+    private static string CustomValidationStatement(IMethodSymbol method) =>
+        MethodCallProbe.ValueStatement(GeneratedCalls.CustomValidationCall(MethodCallProbe.Model, method.Name, receiverType: null));
+
+    /// <summary>
+    /// The type to call <paramref name="method"/> through, or <see langword="null"/> to call it on
+    /// the model itself. The compiler, through <see cref="MethodCallProbe"/>, says what
+    /// <c>instance.Check()</c> binds to. A more-derived type declaring another <c>Check</c> the
+    /// call applies to, such as a <c>Check(int x = 0)</c> or a static <c>Check()</c>, would take
+    /// the call. It is then made through the type that declares the method, or the virtual method
+    /// it overrides, where <c>Check()</c> binds to it: any other overload applicable without
+    /// arguments there needs a default value or is static, and loses to it. The call is still
+    /// virtual.
+    /// </summary>
+    private static string? CustomValidationReceiver(Compilation compilation, INamedTypeSymbol classSymbol, IMethodSymbol method)
+    {
+        var root = method;
+        while (root.OverriddenMethod is { } overridden) root = overridden;
+
+        if (CertainCall.CustomValidation(compilation, classSymbol, method)) return null;
+
+        var resolution = MethodCallProbe.Resolve(compilation, classSymbol, method.Name, CustomValidationStatement(method));
+        if (resolution is { Reach: MethodReach.Callable, Method: { } bound }
+            && SymbolEqualityComparer.Default.Equals(bound.OriginalDefinition, root.OriginalDefinition))
+            return null;
+
+        return root.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
     }
 
     private static void EmitNestedPathStop(
@@ -371,7 +411,7 @@ internal static class RuleEmitter
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
         var propAccess = BuildPropertyAccess(modelParamName, prop);
-        var rawPropAccess = $"{modelParamName}.{prop.Name}";
+        var rawPropAccess = GeneratedCalls.RawPropertyAccess(modelParamName, prop);
         var stopMode = HasStopOnFirstFailure(prop, classSymbol);
 
         ReportZV0016IfApplicable(ctx, prop, rules);
@@ -388,8 +428,8 @@ internal static class RuleEmitter
             var propertyValueExpr = message.HasPropertyValue ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
-            var whenGuard    = whenMethod   is null ? "" : $"{modelParamName}.{whenMethod}() && ";
-            var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
+            var whenGuard    = whenMethod   is null ? "" : GeneratedCalls.WhenGuard(modelParamName, whenMethod);
+            var unlessGuard  = unlessMethod is null ? "" : GeneratedCalls.UnlessGuard(modelParamName, unlessMethod);
 
             sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
             sb.AppendLine($"            _buf.Add({BuildFailureInitializer(propName, message, attr, ruleMessage, propertyValueExpr)});");
@@ -600,7 +640,7 @@ internal static class RuleEmitter
         var propName = prop.Name;
         var displayName = GetDisplayName(prop) ?? propName;
         var propAccess = BuildPropertyAccess(modelParamName, prop);
-        var rawPropAccess = $"{modelParamName}.{prop.Name}";
+        var rawPropAccess = GeneratedCalls.RawPropertyAccess(modelParamName, prop);
         var stopMode = HasStopOnFirstFailure(prop, classSymbol);
 
         ReportZV0016IfApplicable(ctx, prop, rules);
@@ -617,8 +657,8 @@ internal static class RuleEmitter
             var propertyValueExpr = message.HasPropertyValue ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
-            var whenGuard    = whenMethod   is null ? "" : $"{modelParamName}.{whenMethod}() && ";
-            var unlessGuard  = unlessMethod is null ? "" : $"!{modelParamName}.{unlessMethod}() && ";
+            var whenGuard    = whenMethod   is null ? "" : GeneratedCalls.WhenGuard(modelParamName, whenMethod);
+            var unlessGuard  = unlessMethod is null ? "" : GeneratedCalls.UnlessGuard(modelParamName, unlessMethod);
 
             sb.AppendLine($"{prefix} ({whenGuard}{unlessGuard}{condition})");
             sb.AppendLine("        {");
@@ -766,38 +806,38 @@ internal static class RuleEmitter
     /// <summary>
     /// The model methods <paramref name="prop"/>'s rules call that the generated validator for
     /// <paramref name="classSymbol"/> cannot: a <c>When</c> or <c>Unless</c> condition, or a
-    /// <c>[Must]</c> predicate, that is static or inaccessible. Each one means a dropped rule,
-    /// reported as ZV0028, or as ZV0017 when the method is inaccessible on a base type.
+    /// <c>[Must]</c> predicate, that is static or inaccessible, or whose call does not compile
+    /// for another reason. Each one means a dropped rule, reported as ZV0028,
+    /// as ZV0017 when the method is inaccessible on a base type, or as ZV0030.
     /// </summary>
-    public static IEnumerable<UnreachableMethodCall> GetUnreachableMethodCalls(
+    public static IEnumerable<ResolvedMethodCall> GetUnreachableMethodCalls(
         Compilation compilation, INamedTypeSymbol classSymbol, IPropertySymbol prop)
     {
         foreach (var attr in prop.GetAttributes())
         {
             if (!IsRuleAttribute(attr)) continue;
 
-            foreach (var (usage, name, argumentType) in MethodCallsOf(attr, prop))
+            foreach (var (usage, name, statement, argumentType) in MethodCallsOf(attr, prop))
             {
-                var reach = MethodReachability.Resolve(compilation, classSymbol, name, argumentType, out var method);
-                if (reach is MethodReach.Callable or MethodReach.NotFound) continue;
-                yield return new UnreachableMethodCall(attr, usage, name, reach, method);
+                var resolution = MethodCallProbe.ResolveCondition(compilation, classSymbol, name, statement, argumentType);
+                if (resolution.IsEmitted) continue;
+                yield return new ResolvedMethodCall(attr, usage, name, resolution);
             }
         }
     }
 
     /// <summary>
     /// Whether every model method <paramref name="attr"/> calls can be called from the generated
-    /// validator. A rule that calls a static or inaccessible method is dropped here and reported
-    /// through <see cref="GetUnreachableMethodCalls"/>, rather than emitted as a call that would
-    /// not compile.
+    /// validator. A rule that calls a static or inaccessible method, or a name that resolves to
+    /// no usable method, is dropped here and reported through
+    /// <see cref="GetUnreachableMethodCalls"/>, rather than emitted as a call that would not compile.
     /// </summary>
     private static bool CallsOnlyReachableMethods(
         Compilation compilation, INamedTypeSymbol classSymbol, IPropertySymbol prop, AttributeData attr)
     {
-        foreach (var (_, name, argumentType) in MethodCallsOf(attr, prop))
+        foreach (var (_, name, statement, argumentType) in MethodCallsOf(attr, prop))
         {
-            var reach = MethodReachability.Resolve(compilation, classSymbol, name, argumentType, out _);
-            if (reach is not (MethodReach.Callable or MethodReach.NotFound))
+            if (!MethodCallProbe.ResolveCondition(compilation, classSymbol, name, statement, argumentType).IsEmitted)
                 return false;
         }
         return true;
@@ -805,28 +845,64 @@ internal static class RuleEmitter
 
     /// <summary>
     /// The model methods one rule calls, each with how the diagnostic names its usage and the
-    /// type of the argument it passes: none for a <c>When</c>/<c>Unless</c> condition, the
-    /// property value for a <c>[Must]</c> predicate.
+    /// statement <see cref="MethodCallProbe"/> compiles for it: the guard or condition exactly as
+    /// the emitter writes it, used the way the validator uses it.
     /// </summary>
-    private static IEnumerable<(string Usage, string Name, ITypeSymbol? ArgumentType)> MethodCallsOf(
+    private static IEnumerable<(string Usage, string Name, string Statement, ITypeSymbol? ArgumentType)> MethodCallsOf(
         AttributeData attr, IPropertySymbol prop)
     {
+        const string model = MethodCallProbe.Model;
         var ruleName = ShortAttributeName(attr);
 
         var when = GetWhen(attr);
         if (when is not null)
-            yield return ($"When of [{ruleName}] on '{prop.Name}'", when, null);
+            yield return ($"When of [{ruleName}] on '{prop.Name}'", when,
+                MethodCallProbe.GuardStatement(GeneratedCalls.WhenGuard(model, when)), null);
 
         var unless = GetUnless(attr);
         if (unless is not null)
-            yield return ($"Unless of [{ruleName}] on '{prop.Name}'", unless, null);
+            yield return ($"Unless of [{ruleName}] on '{prop.Name}'", unless,
+                MethodCallProbe.GuardStatement(GeneratedCalls.UnlessGuard(model, unless)), null);
 
         if (string.Equals(attr.AttributeClass?.ToDisplayString(), MustFqn, StringComparison.Ordinal))
         {
-            var predicate = GetStringArg(attr, 0);
-            if (predicate.Length > 0)
-                yield return ($"[{ruleName}] on '{prop.Name}'", predicate, prop.Type);
+            // An empty or null name is reported like any other that does not compile. An argument
+            // that is not a constant at all is already a compile error in the model's own source.
+            if (NameArgument(attr) is { } predicate)
+            {
+                yield return ($"[{ruleName}] on '{prop.Name}'", predicate,
+                    MethodCallProbe.ConditionStatement(
+                        GeneratedCalls.MustCondition(model, predicate, GeneratedCalls.RawPropertyAccess(model, prop))),
+                    prop.Type);
+            }
         }
+    }
+
+    /// <summary>
+    /// Every call to a model method the validator for <paramref name="classSymbol"/> can make,
+    /// as <see cref="MethodCallProbe"/> compiles it: the <c>[Must]</c>, <c>When</c> and
+    /// <c>Unless</c> calls of its rules, its <c>[SkipWhen]</c> call and its
+    /// <c>[CustomValidation]</c> calls. Empty for a model whose rules name no methods.
+    /// </summary>
+    public static IEnumerable<(string Name, string Statement, bool Certain)> ProbeCalls(INamedTypeSymbol classSymbol, Compilation compilation)
+    {
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
+        {
+            if (member is not IPropertySymbol prop) continue;
+            foreach (var attr in prop.GetAttributes())
+            {
+                if (!IsRuleAttribute(attr)) continue;
+                foreach (var (_, name, statement, argumentType) in MethodCallsOf(attr, prop))
+                    yield return (name, statement, CertainCall.Condition(compilation, classSymbol, name, argumentType) is not null);
+            }
+        }
+
+        if (SkipWhenName(classSymbol) is { } skipWhen)
+            yield return (skipWhen.Name, SkipWhenStatement(skipWhen.Name),
+                CertainCall.Condition(compilation, classSymbol, skipWhen.Name, argumentType: null) is not null);
+
+        foreach (var (method, _) in CustomValidationMethods(classSymbol, compilation))
+            yield return (method.Name, CustomValidationStatement(method), CertainCall.CustomValidation(compilation, classSymbol, method));
     }
 
     private static string ShortAttributeName(AttributeData attr)
@@ -856,17 +932,44 @@ internal static class RuleEmitter
         return null;
     }
 
-    private static string? GetSkipWhenMethod(INamedTypeSymbol classSymbol)
+    /// <summary>
+    /// The model's <c>[SkipWhen]</c> call, resolved as <c>instance.Method()</c>, or
+    /// <see langword="null"/> when the model has no <c>[SkipWhen]</c>. The attribute is read from
+    /// the model only, not inherited from a base type.
+    /// </summary>
+    public static ResolvedMethodCall? ResolveSkipWhen(Compilation compilation, INamedTypeSymbol classSymbol)
+    {
+        if (SkipWhenName(classSymbol) is not { } skipWhen) return null;
+        return new ResolvedMethodCall(skipWhen.Attribute, $"[SkipWhen] on '{classSymbol.Name}'", skipWhen.Name,
+            MethodCallProbe.ResolveCondition(compilation, classSymbol, skipWhen.Name, SkipWhenStatement(skipWhen.Name), argumentType: null));
+    }
+
+    private static (AttributeData Attribute, string Name)? SkipWhenName(INamedTypeSymbol classSymbol)
     {
         foreach (var attr in classSymbol.GetAttributes())
         {
             if (!string.Equals(attr.AttributeClass?.ToDisplayString(), SkipWhenAttributeFqn, StringComparison.Ordinal))
                 continue;
-            if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is string s)
-                return s;
+            return NameArgument(attr) is { } name ? (attr, name) : null;
         }
         return null;
     }
+
+    /// <summary>
+    /// The method name an attribute's first constructor argument gives: the string, or empty
+    /// for <c>null</c>, which is then reported rather than dropped. <see langword="null"/> when
+    /// the argument is missing or does not compile, which the compiler already reports.
+    /// </summary>
+    private static string? NameArgument(AttributeData attr)
+    {
+        if (attr.ConstructorArguments.Length == 0) return null;
+        var argument = attr.ConstructorArguments[0];
+        if (argument.Kind == TypedConstantKind.Error) return null;
+        return argument.Value as string ?? "";
+    }
+
+    private static string SkipWhenStatement(string name) =>
+        MethodCallProbe.ConditionStatement(GeneratedCalls.SkipWhenCondition(MethodCallProbe.Model, name));
 
     /// <summary>
     /// The error code for one usage. An <c>ErrorCode</c> written on the usage wins, and an
@@ -1024,7 +1127,7 @@ internal static class RuleEmitter
             IsInEnumFqn              => $"!global::System.Enum.IsDefined(typeof({propTypeFullName}), {access})",
             IsEnumNameFqn            => $"!global::System.Enum.IsDefined(typeof({GetTypeArgFullName(attr, 0)}), {access})",
             PrecisionScaleFqn        => $"global::ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale({access}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})",
-            MustFqn                  => $"!{modelParamName}.{GetStringArg(attr, 0)}({rawForPredicate})",
+            MustFqn                  => GeneratedCalls.MustCondition(modelParamName, GetStringArg(attr, 0), rawForPredicate),
             _                        => "false"
         };
     }
