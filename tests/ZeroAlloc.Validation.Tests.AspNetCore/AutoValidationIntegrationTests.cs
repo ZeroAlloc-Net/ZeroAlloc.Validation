@@ -74,6 +74,19 @@ public class AutoValidationIntegrationTests : IAsyncLifetime
         Assert.Contains("Name", body, StringComparison.Ordinal);
     }
 
+    // Issue #207: action arguments whose [Validate] model is nested in another type.
+    [Theory]
+    [InlineData("/sample/nested/orders", "{\"Name\":\"Widget\"}", HttpStatusCode.OK)]
+    [InlineData("/sample/nested/orders", "{\"Name\":\"\"}", HttpStatusCode.UnprocessableEntity)]
+    [InlineData("/sample/nested/returns", "{\"Quantity\":1}", HttpStatusCode.OK)]
+    [InlineData("/sample/nested/returns", "{\"Quantity\":0}", HttpStatusCode.UnprocessableEntity)]
+    public async Task NestedModel_IsValidatedByFilter(string path, string json, HttpStatusCode expected)
+    {
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        var response = await _client!.PostAsync(path, content);
+        Assert.Equal(expected, response.StatusCode);
+    }
+
     [Fact]
     public async Task UnknownModelType_FilterSkips_Returns200()
     {

@@ -106,6 +106,13 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     // props makes it available here as build_property.<name>.
     private const string GeneratedAccessibilityProperty = "build_property.ZeroAllocGeneratedAccessibility";
 
+    // The model's name for XML documentation: qualified by its containing types, so a nested
+    // model reads Outer.Request, and without type arguments, whose angle brackets would raise
+    // CS1570.
+    private static readonly SymbolDisplayFormat DocumentationNameFormat = new(
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypes,
+        genericsOptions: SymbolDisplayGenericsOptions.None);
+
     private enum GeneratedAccessibilityMode { Public, Internal }
 
     private readonly record struct GeneratedAccessibilityResult(GeneratedAccessibilityMode Mode, Diagnostic? Diagnostic);
@@ -201,8 +208,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             ? null
             : classSymbol.ContainingNamespace.ToDisplayString();
 
-        var validatorName = $"{classSymbol.Name}Validator";
-        var modelName = classSymbol.Name;
+        // The validator is a top-level class in the model's namespace, so it names the model by
+        // its fully qualified name: a model nested in another type is not in scope by its simple
+        // name there, issue #207. GeneratedValidatorNames documents the validator's own name.
+        var validatorName = GeneratedValidatorNames.ValidatorName(classSymbol);
+        var modelName = modelFqn;
 
         var sb = new System.Text.StringBuilder();
         EmitFileHeader(sb, namespaceName, classSymbol, validatorName, modelName, mode);
@@ -224,7 +234,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
         sb.AppendLine("}");
 
-        ctx.AddSource($"{validatorName}.g.cs", sb.ToString());
+        ctx.AddSource(GeneratedValidatorNames.HintName(classSymbol), sb.ToString());
     }
 
     /// <summary>
@@ -438,7 +448,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // public member raises CS1591 in any consumer with GenerateDocumentationFile enabled.
         // Documenting rather than suppressing also puts these members in the consumer's own
         // XML documentation file, which a #pragma would not.
-        sb.AppendLine($"/// <summary>Validates <c>{modelName}</c> instances against the rules declared on the type.</summary>");
+        sb.AppendLine($"/// <summary>Validates <c>{classSymbol.ToDisplayString(DocumentationNameFormat)}</c> instances against the rules declared on the type.</summary>");
         // The validator follows the model's effective accessibility. A public validator over an
         // internal model fails with CS9338 and CS0051, issue #184. Extended for issue #193
         // point 3: the validator is public only if the model itself is effectively public AND

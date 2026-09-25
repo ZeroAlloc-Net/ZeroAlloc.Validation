@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using ZeroAlloc.Validation.Generator.Shared;
 
 namespace ZeroAlloc.Validation.Inject;
 
@@ -20,9 +21,7 @@ public static class ValidatorRegistrationEmitter
         foreach (var model in models)
         {
             var modelFqn     = model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var validatorFqn = model.ContainingNamespace.IsGlobalNamespace
-                ? $"global::{model.Name}Validator"
-                : $"global::{model.ContainingNamespace.ToDisplayString()}.{model.Name}Validator";
+            var validatorFqn = GeneratedValidatorNames.QualifiedValidatorName(model);
 
             sb.AppendLine(
                 $"        services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<{modelFqn}>, {validatorFqn}>();");

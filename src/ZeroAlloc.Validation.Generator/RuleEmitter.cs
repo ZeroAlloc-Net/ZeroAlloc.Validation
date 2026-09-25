@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using ZeroAlloc.Validation.Generator.Shared;
 
 namespace ZeroAlloc.Validation.Generator;
 
@@ -639,10 +640,6 @@ internal static class RuleEmitter
         sb.AppendLine($"        if (_buf.Count > _b{pi}) return _buf.ToResult();");
     }
 
-    private static bool IsGlobalOrEmpty(string? namespaceName) =>
-        string.IsNullOrEmpty(namespaceName)
-        || string.Equals(namespaceName, "<global namespace>", StringComparison.Ordinal);
-
     /// <summary>
     /// The compile-time message for one rule usage. Built-in rules keep their existing handling.
     /// A custom rule takes the usage's <c>Message</c>, then its nearest <c>[RuleMessage]</c>, then
@@ -1268,26 +1265,18 @@ internal static class RuleEmitter
             var validateWithType = GetValidateWithType(prop);
             if (validateWithType is not null)
             {
-                var ns2 = validateWithType.ContainingNamespace?.ToDisplayString();
-                qualifiedType = IsGlobalOrEmpty(ns2)
-                    ? $"global::{validateWithType.Name}"
-                    : $"global::{ns2}.{validateWithType.Name}";
+                // Fully qualified, so a validator declared inside another type resolves too.
+                qualifiedType = validateWithType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             }
             // Single nested type with [Validate]
             else if (prop.Type is INamedTypeSymbol nestedNamed && HasValidateAttribute(nestedNamed))
             {
-                var ns = nestedNamed.ContainingNamespace?.ToDisplayString();
-                qualifiedType = IsGlobalOrEmpty(ns)
-                    ? $"global::{nestedNamed.Name}Validator"
-                    : $"global::{ns}.{nestedNamed.Name}Validator";
+                qualifiedType = GeneratedValidatorNames.QualifiedValidatorName(nestedNamed);
             }
             // Collection element type with [Validate]
             else if (GetCollectionElementType(prop) is INamedTypeSymbol elemNamed && HasValidateAttribute(elemNamed))
             {
-                var ns = elemNamed.ContainingNamespace?.ToDisplayString();
-                qualifiedType = IsGlobalOrEmpty(ns)
-                    ? $"global::{elemNamed.Name}Validator"
-                    : $"global::{ns}.{elemNamed.Name}Validator";
+                qualifiedType = GeneratedValidatorNames.QualifiedValidatorName(elemNamed);
             }
 
             if (qualifiedType is null) continue;
