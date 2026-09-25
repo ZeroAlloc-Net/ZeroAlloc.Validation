@@ -67,7 +67,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 
 **When fired:** A method decorated with `[CustomValidation]` is generic, has parameters, or does not return `IEnumerable<ValidationFailure>`, `ValidationFailure[]` or `ReadOnlySpan<ValidationFailure>`. A generic method is an error because `instance.Check()` gives the compiler nothing to infer its type arguments from.
 
-The signature is checked first. A method that is also static, or also inaccessible on the `[Validate]` type itself, reports ZV0013 only; once the signature is fixed, [ZV0028](#zv0028) reports the rest. An inaccessible instance method on a base type reports [ZV0017](#zv0017) only, whatever its signature. A method declared on a base type that is itself `[Validate]` is reported once, by that type. If that base type sets `IncludeBaseProperties = false`, it does not see the types above it, so the derived type reports their methods. A `[CustomValidation]` method is the attributed method itself, so it is never reported as [ZV0030](#zv0030): if the model declares another member of the same name that `instance.Check()` would bind to, the validator calls the method through the type that declares it instead.
+The signature is checked first. A method that is also static, or also inaccessible on the `[Validate]` type itself, reports ZV0013 only; once the signature is fixed, [ZV0028](#zv0028) reports the rest. An inaccessible instance method on a base type reports [ZV0017](#zv0017) only, whatever its signature. A method declared on a base type that is itself `[Validate]` is reported once, by that type. If that base type sets `IncludeBaseProperties = false`, it does not see the types above it, so the derived type reports their methods. A method on a base type from a referenced assembly is never reported, as for [ZV0027](#zv0027), and is left out of the validator. A `[CustomValidation]` method is the attributed method itself, so it is never reported as [ZV0030](#zv0030): if the model declares another member of the same name that `instance.Check()` would bind to, the validator calls the method through the type that declares it instead.
 
 **Fix:** Ensure the method has no parameters and returns `IEnumerable<ValidationFailure>`:
 
@@ -174,7 +174,7 @@ public partial class PriceCommand
 - a `[CustomValidation]` method on a base type is `protected` or `private`;
 - a rule on an otherwise-reachable property names a `When` / `Unless` method or a `[Must]` predicate that is `protected` or `private` on a base type.
 
-In each case the rule is dropped rather than emitted as code that would not compile. A base property that is static, an indexer or has no getter is reported as [ZV0027](#zv0027) instead, because widening it would not make it readable. A static method is reported as [ZV0028](#zv0028) instead, wherever it is declared, because widening it would not make it callable. So is an inaccessible method declared on the `[Validate]` type itself, since that type is yours to change. A rule declared on a base type that is itself `[Validate]` is reported once, by that type.
+In each case the rule is dropped rather than emitted as code that would not compile. A base property that is static, an indexer or has no getter is reported as [ZV0027](#zv0027) instead, because widening it would not make it readable. A static method is reported as [ZV0028](#zv0028) instead, wherever it is declared, because widening it would not make it callable. So is an inaccessible method declared on the `[Validate]` type itself, since that type is yours to change. A rule declared on a base type that is itself `[Validate]` is reported once, by that type. A member of a base type from a referenced assembly has no source location, so its warning is reported at the derived type's `[Validate]` attribute.
 
 **Fix:** Widen the member to `public`, or to `internal` within the same assembly or one that grants yours `[InternalsVisibleTo]`, or move it onto the derived type:
 
@@ -387,7 +387,7 @@ The warning is reported at the attribute usage, `[MinWords(3)]`, so a property w
 
 **Title:** Custom rule attribute not accessible from the generated validator
 
-**When fired:** The generated validator is a separate class in the model's own assembly, declared in its own generated file. A custom rule usage can compile while its attribute type, a type containing it, its constructor, a named member it sets, or a `typeof`/enum argument type is not reachable from that class — for example a `private` or `protected` attribute nested inside the model, which would otherwise surface as CS0122 in generated code. A `file`-local type is never reachable from the generated file, so any of those types declared `file` is reported too:
+**When fired:** The generated validator is a separate class in the model's own assembly, declared in its own generated file. A custom rule usage can compile while its attribute type, a type containing it, a type argument of a generic rule such as `[Rule<Secret>]`, its constructor, a named member it sets, or a `typeof`/enum argument type is not reachable from that class — for example a `private` or `protected` attribute nested inside the model, which would otherwise surface as CS0122 in generated code. A `file`-local type is never reachable from the generated file, so any of those types declared `file` is reported too:
 
 ```csharp
 [Validate]
@@ -405,7 +405,7 @@ public class Order
 
 > '{0}' cannot be emitted: '{1}' is not accessible from the generated validator; make it internal or public
 
-**Fix:** Make the attribute type — and anything it names, including its constructor, any named member set on the usage, and any `typeof`/enum argument type — `internal` (within the same assembly) or `public`, and not `file`-local. The rule is left out of the generated validator until it is reachable; the build already fails on this error, so nothing unvalidated ships.
+**Fix:** Make the attribute type — and anything it names, including its type arguments, its constructor, any named member set on the usage, and any `typeof`/enum argument type — `internal` (within the same assembly) or `public`, and not `file`-local. The rule is left out of the generated validator until it is reachable; the build already fails on this error, so nothing unvalidated ships.
 
 ---
 
@@ -443,6 +443,8 @@ public record Customer([NotBlank] string? Name);   // ZV0024 — applies to the 
 [Validate]
 public record Customer([property: NotBlank] string? Name);
 ```
+
+A rule written with the `field:` target on an auto-property, such as `[field: NotBlank] public string? Name { get; init; }`, lands on the compiler's backing field and is reported with the property's name; drop the `field:` target to apply it to the property.
 
 A field or parameter of a base type that is itself `[Validate]` is reported once, by that type. If that base type sets `IncludeBaseProperties = false`, it does not see the types above it, so the derived type, whose validator still inherits their rules, reports those. A base type from a referenced assembly is never reported, as for [ZV0027](#zv0027).
 
@@ -604,11 +606,11 @@ public class Order
 
 > Method '{0}', used by {1}, cannot be called from the generated validator because it {2}
 
-The error is reported at the attribute. That rule is left out rather than emitted as code that fails with CS0122 or CS0176, and every other rule on the model is still validated. For `[SkipWhen]` the skip check is left out, so the model is always validated. For a `[Must]`, `When`, `Unless` or `[SkipWhen]` method, the generator compiles the call the validator would contain and reports ZV0028 when the compiler rejects it with CS0176, because it binds to a static method, or CS0122, because it binds to one the validator cannot access. Any other error is [ZV0030](#zv0030).
+The error is reported at the attribute, or at the model's `[Validate]` attribute for a rule on a property of a base type from a referenced assembly, which has no source location; the message names the method and the property the rule is on. That rule is left out rather than emitted as code that fails with CS0122 or CS0176, and every other rule on the model is still validated. For `[SkipWhen]` the skip check is left out, so the model is always validated. For a `[Must]`, `When`, `Unless` or `[SkipWhen]` method, the generator compiles the call the validator would contain and reports ZV0028 when the compiler rejects it with CS0176, because it binds to a static method, or CS0122, because it binds to one the validator cannot access. Any other error is [ZV0030](#zv0030).
 
 The generated validator lives in the model's assembly, so `internal` and `protected internal` methods are callable and are not reported.
 
-On a base type, a static method is reported the same way. A base method that is only inaccessible stays [ZV0017](#zv0017), a warning, because the base type may not be yours to change. The exception is `[SkipWhen]`: it is read from the model only, so the usage is always yours to change, and an inaccessible base method it names is ZV0028. A `[CustomValidation]` method with an invalid signature that is static, or inaccessible on the `[Validate]` type itself, is reported as [ZV0013](#zv0013) only; an inaccessible instance method on a base type is reported as ZV0017 only.
+On a base type, a static method is reported the same way. A base method that is only inaccessible stays [ZV0017](#zv0017), a warning, because the base type may not be yours to change. The exception is `[SkipWhen]`: it is read from the model only, so the usage is always yours to change, and an inaccessible base method it names is ZV0028. A `[CustomValidation]` method with an invalid signature that is static, or inaccessible on the `[Validate]` type itself, is reported as [ZV0013](#zv0013) only; an inaccessible instance method on a base type is reported as ZV0017 only. A `[CustomValidation]` method on a base type from a referenced assembly is never reported, as for ZV0013.
 
 **Fix:** Make the method a `public` or `internal` instance method.
 
@@ -694,7 +696,7 @@ public class Order
 
 The last part quotes the call and the compiler's error for it, for example `'instance.IsKnownCode(instance.Code)' fails with CS1503: Argument 1: cannot convert from 'string' to 'int'`.
 
-The error is reported at the attribute. That rule is left out rather than emitted as code that does not compile, and every other rule on the model is still validated. For `[SkipWhen]` the skip check is left out, so the model is always validated.
+The error is reported at the attribute. That rule is left out rather than emitted as code that does not compile, and every other rule on the model is still validated. For `[SkipWhen]` the skip check is left out, so the model is always validated. A rule on a property of a base type from a referenced assembly has no source location, so it is reported at the model's `[Validate]` attribute; the message names the method and the property the rule is on.
 
 **A member that does not exist is not reported.** The check compiles against the generator's input, which does not contain what other source generators add to the compilation. When the call fails only because no member of that name exists (CS1061, CS0117, CS0103, or CS1929 for an extension method of that name that takes another receiver), another generator may add the method or an extension method. So the call is emitted as it was before 2.0, and the final compilation, which contains every generator's output, decides. If nothing adds the member, that final compilation fails with the compiler's own error in the generated file.
 

@@ -1719,6 +1719,33 @@ public class CustomRuleAttributeTests
     }
 
     [Fact]
+    public void Custom_rule_on_auto_property_backing_field_names_the_property_in_ZV0024()
+    {
+        var source = """
+            using System;
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
+            public sealed class NotBlankAttribute : ValidationAttribute<string?>
+            {
+                public override bool IsValid(string? value) => !string.IsNullOrWhiteSpace(value);
+            }
+
+            [Validate]
+            public sealed class Request
+            {
+                [field: NotBlank] public string? Name { get; init; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Empty(CompileErrors(output));
+        AssertSingleZV0024(result, "NotBlankAttribute", "Name");
+    }
+
+    [Fact]
     public void Custom_rule_on_record_positional_parameter_reports_ZV0024()
     {
         var source = """
@@ -2002,6 +2029,69 @@ public class CustomRuleAttributeTests
     }
 
     [Fact]
+    public void File_local_type_argument_of_generic_rule_reports_ZV0023()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            file sealed class FileSecret { }
+
+            public sealed class RuleAttribute<T> : ValidationAttribute<string?>
+            {
+                public override bool IsValid(string? value) => value is not null;
+            }
+
+            [Validate]
+            public sealed class Request
+            {
+                [Rule<FileSecret>] public string? Name { get; init; }
+            }
+            """;
+
+        AssertZV0023AndNoField(source, "RuleAttribute", "TestModels.FileSecret", "Rule<FileSecret>");
+    }
+
+    [Fact]
+    public void Obsolete_type_argument_of_generic_rule_is_wrapped_in_a_pragma()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            [System.Obsolete("Use NewTag.")]
+            public sealed class OldTag { }
+
+            public sealed class RuleAttribute<T> : ValidationAttribute<string?>
+            {
+                public override bool IsValid(string? value) => value is not null;
+            }
+
+            [Validate]
+            public sealed class Request
+            {
+            #pragma warning disable CS0618
+                [Rule<OldTag>] public string? Name { get; init; }
+            #pragma warning restore CS0618
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Empty(CompileErrors(output));
+        var generatedTree = result.GeneratedTrees.First(t => t.FilePath.EndsWith("RequestValidator.g.cs", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            output.GetDiagnostics(),
+            d => d.Location.SourceTree == generatedTree && d.Id is "CS0618" or "CS0612");
+        var src = NormalizeNewLines(generatedTree.ToString());
+        Assert.Contains(
+            "#pragma warning disable CS0618, CS0612\n"
+                + "    private static readonly global::TestModels.RuleAttribute<global::TestModels.OldTag> __Rule_Name_0\n",
+            src,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Explicit_null_ErrorCode_on_usage_clears_RuleMessage_error_code()
     {
         var source = """
@@ -2100,7 +2190,7 @@ public class CustomRuleAttributeTests
             d => d.Location.SourceTree == generatedTree && d.Id is "CS0618" or "CS0612");
         var src = NormalizeNewLines(generatedTree.ToString());
         Assert.Contains(
-            "\n    // The rule type is obsolete; the compiler already warns at the attribute usage in user code.\n"
+            "\n    // The rule's initializer names an obsolete symbol; the compiler already warns at the attribute usage in user code.\n"
                 + "#pragma warning disable CS0618, CS0612\n"
                 + "    private static readonly global::TestModels.OldRuleAttribute __Rule_Name_0\n"
                 + "        = new global::TestModels.OldRuleAttribute();\n"

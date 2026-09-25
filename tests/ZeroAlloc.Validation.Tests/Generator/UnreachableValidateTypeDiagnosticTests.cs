@@ -190,6 +190,56 @@ public class UnreachableValidateTypeDiagnosticTests
         Assert.Equal(["ZV0025"], diagnostics.ConvertAll(d => d.Id));
     }
 
+    /// <summary>
+    /// An unreachable <c>[Validate]</c> base type under a reachable model. C# rejects both, since
+    /// a type cannot be more accessible than its base, so the source does not compile; the
+    /// generator still runs on it and must not lose the base type's usages.
+    /// </summary>
+    /// <remarks>
+    /// A member of a <c>private</c> nested type is itself out of the validator's reach, so the
+    /// model reports it as ZV0017 rather than ZV0013; a <c>file</c>-local type's member is
+    /// accessible within the assembly, so its bad signature is ZV0013.
+    /// </remarks>
+    public static TheoryData<string, string, string> UnreachableValidateBases() => new()
+    {
+        {
+            """
+            public class Outer
+            {
+                [Validate] private class RequestBase { [CustomValidation] public int Check() => 0; }
+
+                [Validate] public class Request : RequestBase { [NotEmpty] public string Name { get; set; } = ""; }
+            }
+            """,
+            "ZV0017",
+            "Check"
+        },
+        {
+            """
+            [Validate] file class RequestBase { [CustomValidation] public int Check() => 0; }
+
+            [Validate] public class Request : RequestBase { [NotEmpty] public string Name { get; set; } = ""; }
+            """,
+            "ZV0013",
+            "CustomValidation"
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(UnreachableValidateBases))]
+    public void UsageOnAnUnreachableValidateBase_IsReportedByTheReachableModel(string declaration, string expectedId, string expectedSpan)
+    {
+        // The base type returns at ZV0025 and reports none of its members, so the model must not
+        // defer its base's usages to it: the [CustomValidation] method is reported once, by the
+        // model, issue #236.
+        var (_, diagnostics, _) = Run(Source(declaration), new ValidatorGenerator());
+
+        Assert.Equal(1, diagnostics.Count(d => string.Equals(d.Id, "ZV0025", StringComparison.Ordinal)));
+        var others = diagnostics.FindAll(d => !string.Equals(d.Id, "ZV0025", StringComparison.Ordinal));
+        Assert.Equal([expectedId], others.ConvertAll(d => d.Id));
+        Assert.Equal(expectedSpan, SourceAt(others[0]));
+    }
+
     private static string Source(string declaration) => $$"""
         using ZeroAlloc.Validation;
         namespace MyApp;

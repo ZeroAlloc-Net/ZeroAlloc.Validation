@@ -47,6 +47,35 @@ public class StructValidationDiagnosticTests
     }
 
     [Fact]
+    public void ZV0014_Names_A_Nested_Struct_By_Its_Qualified_Name()
+    {
+        // Two nested models may share a simple name, so the message must tell them apart.
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            public static class First
+            {
+                [Validate]
+                public struct Request
+                {
+                    [GreaterThan(0)]
+                    public int Total { get; set; }
+                }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Equal(1, result.Diagnostics.Count(d => string.Equals(d.Id, "ZV0014", StringComparison.Ordinal)));
+        var zv0014 = result.Diagnostics.First(d => string.Equals(d.Id, "ZV0014", StringComparison.Ordinal));
+        Assert.StartsWith(
+            "Struct 'TestModels.First.Request' is decorated with [Validate]",
+            zv0014.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Readonly_RecordStruct_With_Validate_Does_Not_Fire_ZV0014()
     {
         var source = """

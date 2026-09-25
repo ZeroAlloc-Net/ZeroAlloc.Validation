@@ -237,7 +237,7 @@ public class UnreachableMethodDiagnosticTests
         var (result, output) = RunGenerator(source);
 
         var zv0017 = SingleDiagnostic(result, "ZV0017");
-        Assert.StartsWith("Base type member 'RequestBase.Ok'", zv0017.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.StartsWith("Base type member 'TestModels.RequestBase.Ok'", zv0017.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
         Assert.DoesNotContain(result.Diagnostics, d => string.Equals(d.Id, "ZV0028", StringComparison.Ordinal));
         Assert.Equal(new[] { "Other" }, FailedProperties(output));
     }

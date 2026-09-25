@@ -438,6 +438,164 @@ public class UnreadablePropertyDiagnosticTests
         Assert.Equal(new[] { "Other" }, FailedProperties(output, library.Image));
     }
 
+    [Theory]
+    // ZV0013: the signature is wrong.
+    [InlineData("", "public int Check() => 0;")]
+    [InlineData("[Validate]", "public int Check() => 0;")]
+    // ZV0028: the signature is valid, but the method is static.
+    [InlineData("", "public static IEnumerable<ValidationFailure> Check() { yield break; }")]
+    [InlineData("[Validate]", "public static IEnumerable<ValidationFailure> Check() { yield break; }")]
+    public void Unusable_CustomValidation_method_on_a_metadata_base_type_is_not_reported(string baseAttribute, string method)
+    {
+        // ZV0013 and ZV0028 follow the same rule as ZV0024 and ZV0027: a base type from a
+        // referenced assembly has no source location and is not the user's to change, and its own
+        // generation, if it has one, reports it there. The method is left out of the validator.
+        var library = BuildLibrary($$"""
+            using System.Collections.Generic;
+            using ZeroAlloc.Validation;
+            namespace Library;
+
+            {{baseAttribute}}
+            public class RequestBase
+            {
+                [CustomValidation]
+                {{method}}
+            }
+            """);
+
+        var source = Prelude + """
+            [Validate]
+            public class Request : Library.RequestBase
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source, library.Reference);
+
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id.StartsWith("ZV", StringComparison.Ordinal));
+        Assert.Equal(new[] { "Other" }, FailedProperties(output, library.Image));
+    }
+
+    [Fact]
+    public void Override_inheriting_CustomValidation_from_a_metadata_base_reports_ZV0013_at_the_override()
+    {
+        // The override is the user's own code and inherits the attribute, issue #240, so its bad
+        // signature is reported there, although the attribute itself lives in a referenced assembly.
+        var library = BuildLibrary("""
+            using ZeroAlloc.Validation;
+            namespace Library;
+
+            public class RequestBase
+            {
+                [CustomValidation]
+                public virtual int Check() => 0;
+            }
+            """);
+
+        var source = Prelude + """
+            [Validate]
+            public class Request : Library.RequestBase
+            {
+                public override int Check() => 1;
+
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, _) = RunGenerator(source, library.Reference);
+
+        var reported = result.Diagnostics.Where(d => d.Id.StartsWith("ZV", StringComparison.Ordinal)).ToArray();
+        Assert.True(reported.Length == 1, "Expected exactly one ZV diagnostic, got: "
+            + string.Join("; ", reported.Select(d => d.ToString())));
+        Assert.Equal("ZV0013", reported[0].Id);
+        Assert.Equal("Check", SpanText(reported[0]));
+    }
+
+    [Theory]
+    // The method is static.
+    [InlineData("public static bool IsKnown(string? value) => true;", "ZV0028")]
+    // The call does not compile: the method takes no argument, CS1501.
+    [InlineData("public bool IsKnown() => true;", "ZV0030")]
+    // The method is inaccessible on the base type.
+    [InlineData("protected bool IsKnown(string? value) => true;", "ZV0017")]
+    public void Unusable_rule_call_on_a_metadata_base_property_is_reported_at_the_model(
+        string baseMethod, string id)
+    {
+        // The rule lives in a referenced assembly, so neither its attribute nor its property has
+        // a source location. The build error is real, and often caused by the model declaring its
+        // own member of the method's name, so it is reported at the model's [Validate] attribute
+        // rather than at no location.
+        var library = BuildLibrary($$"""
+            using ZeroAlloc.Validation;
+            namespace Library;
+
+            public class RequestBase
+            {
+                [Must(nameof(IsKnown))] public string? Code { get; set; } = "x";
+
+                {{baseMethod}}
+            }
+            """);
+
+        var source = Prelude + """
+            [Validate]
+            public class Request : Library.RequestBase
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source, library.Reference);
+
+        var reported = result.Diagnostics.Where(d => d.Id.StartsWith("ZV", StringComparison.Ordinal)).ToArray();
+        Assert.True(reported.Length == 1, "Expected exactly one ZV diagnostic, got: "
+            + string.Join("; ", reported.Select(d => d.ToString())));
+        var diagnostic = reported[0];
+        Assert.Equal(id, diagnostic.Id);
+        Assert.Equal("Validate", SpanText(diagnostic));
+        var message = diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Contains("IsKnown'", message, StringComparison.Ordinal);
+        Assert.Contains(string.Equals(id, "ZV0017", StringComparison.Ordinal) ? "'Library.RequestBase.IsKnown'" : "on 'Code'", message, StringComparison.Ordinal);
+        Assert.Equal(new[] { "Other" }, FailedProperties(output, library.Image));
+    }
+
+    [Fact]
+    public void Inaccessible_metadata_base_property_with_rules_reports_ZV0017_at_the_model()
+    {
+        // The protected property is declared in a referenced assembly and has no source location.
+        var library = BuildLibrary("""
+            using ZeroAlloc.Validation;
+            namespace Library;
+
+            public class RequestBase
+            {
+                [NotEmpty] protected string? Secret { get; set; }
+            }
+            """);
+
+        var source = Prelude + """
+            [Validate]
+            public class Request : Library.RequestBase
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source, library.Reference);
+
+        var reported = result.Diagnostics.Where(d => d.Id.StartsWith("ZV", StringComparison.Ordinal)).ToArray();
+        Assert.True(reported.Length == 1, "Expected exactly one ZV diagnostic, got: "
+            + string.Join("; ", reported.Select(d => d.ToString())));
+        Assert.Equal("ZV0017", reported[0].Id);
+        Assert.Equal("Validate", SpanText(reported[0]));
+        Assert.StartsWith(
+            "Base type member 'Library.RequestBase.Secret' is not accessible to the generated validator for 'TestModels.Request'",
+            reported[0].GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+            StringComparison.Ordinal);
+        Assert.Equal(new[] { "Other" }, FailedProperties(output, library.Image));
+    }
+
     [Fact]
     public void Rule_on_unreadable_property_of_a_nested_model_reports_ZV0027_and_validates_the_rest()
     {

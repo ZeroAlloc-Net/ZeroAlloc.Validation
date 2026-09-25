@@ -333,14 +333,14 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             ctx.ReportDiagnostic(Diagnostic.Create(
                 ZV0014,
                 classSymbol.Locations.FirstOrDefault() ?? Location.None,
-                classSymbol.Name));
+                classSymbol.ToDisplayString()));
         }
 
         var modelFqn = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var (syncBehaviors, asyncBehaviors) = BehaviorDiscoverer.ForModel(allBehaviors.Sync, allBehaviors.Async, modelFqn);
 
         ReportNestedDiagnostics(ctx, classSymbol, compilation);
-        ReportDuplicateOrderDiagnostics(ctx, syncBehaviors, asyncBehaviors, classSymbol.Name);
+        ReportDuplicateOrderDiagnostics(ctx, syncBehaviors, asyncBehaviors, classSymbol.ToDisplayString());
 
         var namespaceName = GeneratedCalls.NamespaceOf(classSymbol);
 
@@ -420,7 +420,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             sb.AppendLine();
             if (kvp.Value.IsObsolete)
             {
-                sb.AppendLine("    // The rule type is obsolete; the compiler already warns at the attribute usage in user code.");
+                sb.AppendLine("    // The rule's initializer names an obsolete symbol; the compiler already warns at the attribute usage in user code.");
                 sb.AppendLine("#pragma warning disable CS0618, CS0612");
             }
             sb.AppendLine($"    private static readonly {kvp.Value.TypeName} {kvp.Key}");
@@ -736,7 +736,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                                 ReportUnreadablePropertyAttributes(ctx, property, compilation, isBase);
                             break;
                         case IFieldSymbol field:
-                            ReportUnreadValidationAttributes(ctx, field, field.Name);
+                            // [field: Rule] on an auto-property lands on the compiler's backing
+                            // field, which is named after the property the user wrote.
+                            ReportUnreadValidationAttributes(ctx, field, field.AssociatedSymbol?.Name ?? field.Name);
                             break;
                         case IMethodSymbol { MethodKind: MethodKind.Constructor } constructor:
                             foreach (var parameter in constructor.Parameters)
@@ -963,12 +965,14 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             if (member is IMethodSymbol { IsStatic: true })
                 continue;
 
+            // A member of a base type from a referenced assembly has no source location, so it is
+            // reported at the model's [Validate] attribute.
             ctx.ReportDiagnostic(Diagnostic.Create(
                 ZV0017,
-                member.Locations.FirstOrDefault(),
-                member.ContainingType?.Name,
+                member.Locations.FirstOrDefault(l => l.IsInSource) ?? FindValidateAttributeLocation(classSymbol),
+                member.ContainingType?.ToDisplayString(),
                 member.Name,
-                classSymbol.Name));
+                classSymbol.ToDisplayString()));
         }
 
         // A reachable property can still carry a rule that calls a method the validator cannot.
@@ -1012,6 +1016,8 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// method the attribute is written on, which shares its signature. When that declaration is
     /// itself out of reach it is already reported, as ZV0017 or by its own type, so the override
     /// adds nothing.
+    /// A method on a base type from a referenced assembly is not reported, as for ZV0024 and ZV0027;
+    /// an override declared in source that inherits the attribute from one is reported at the override.
     /// </summary>
     private static void ReportCustomValidationDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
@@ -1029,6 +1035,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             // A [Validate] base type that walks the type declaring the attributed method reports
             // it, as ZV0013 or ZV0028.
             if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, declaration.ContainingType))
+                continue;
+
+            // A base type from a referenced assembly has no source location to report at and is
+            // not the user's to change; its own generation, if it has one, reports the method.
+            if (!method.ContainingType.Locations.Any(l => l.IsInSource))
                 continue;
 
             // instance.Check<T>() cannot infer T, so a generic method is a signature error too.
@@ -1050,7 +1061,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 && (SymbolEqualityComparer.Default.Equals(declaration, method)
                     || MethodReachability.Classify(compilation, classSymbol, declaration) == MethodReach.Callable))
             {
-                ReportZV0028(ctx, attrData, method, method.Name, "[CustomValidation]", reach);
+                ReportZV0028(ctx, classSymbol, attrData, method, method.Name, "[CustomValidation]", reach);
             }
         }
     }
@@ -1058,14 +1069,16 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// <summary>
     /// ZV0028: a <c>[CustomValidation]</c>, <c>[Must]</c>, <c>When</c>, <c>Unless</c> or
     /// <c>[SkipWhen]</c> method the generated validator cannot call as <c>instance.Method()</c>.
-    /// Reported at the attribute; the rule has already been left out of the generated code.
+    /// Reported at the attribute, as <see cref="AttributeLocation"/> decides; the rule has already
+    /// been left out of the generated code.
     /// </summary>
     private static void ReportZV0028(
-        SourceProductionContext ctx, AttributeData attr, ISymbol target, string methodName, string usage, MethodReach reach)
+        SourceProductionContext ctx, INamedTypeSymbol classSymbol, AttributeData attr, ISymbol target,
+        string methodName, string usage, MethodReach reach)
     {
         ctx.ReportDiagnostic(Diagnostic.Create(
             ZV0028,
-            AttributeLocation(attr, target),
+            AttributeLocation(attr, target, classSymbol),
             methodName,
             usage,
             reach == MethodReach.Static ? "is static" : "is not accessible from it"));
@@ -1076,7 +1089,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// has already been left out of the generated code: ZV0017 when the method is inaccessible on
     /// a base type, ZV0030 when the call does not compile otherwise, and ZV0028 for
     /// a static or inaccessible method.
-    /// ZV0017 is reported at <paramref name="fallbackLocation"/>, the rest at the attribute.
+    /// ZV0017 is reported at <paramref name="fallbackLocation"/>, the rest at the attribute. A rule
+    /// declared on a base type from a referenced assembly has neither in source, so each is then
+    /// reported at <paramref name="classSymbol"/>'s <c>[Validate]</c> attribute: the build error is
+    /// real, and the cause is usually the model declaring its own member of the method's name.
+    /// The message names the method and the member the rule is on.
     /// </summary>
     private static void ReportUnreachableCall(
         SourceProductionContext ctx, INamedTypeSymbol classSymbol, in ResolvedMethodCall call, ISymbol target, Location? fallbackLocation)
@@ -1089,29 +1106,35 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             case MethodReach.InaccessibleOnBase:
                 ctx.ReportDiagnostic(Diagnostic.Create(
                     ZV0017,
-                    fallbackLocation,
-                    call.Resolution.Method?.ContainingType?.Name,
+                    fallbackLocation is { IsInSource: true } ? fallbackLocation : FindValidateAttributeLocation(classSymbol),
+                    call.Resolution.Method?.ContainingType?.ToDisplayString(),
                     call.MethodName,
-                    classSymbol.Name));
+                    classSymbol.ToDisplayString()));
                 return;
             case MethodReach.NotFound:
                 ctx.ReportDiagnostic(Diagnostic.Create(
                     ZV0030,
-                    AttributeLocation(call.Attribute, target),
+                    AttributeLocation(call.Attribute, target, classSymbol),
                     call.MethodName,
                     call.Usage,
                     call.Resolution.Reason));
                 return;
             default:
-                ReportZV0028(ctx, call.Attribute, target, call.MethodName, call.Usage, call.Resolution.Reach);
+                ReportZV0028(ctx, classSymbol, call.Attribute, target, call.MethodName, call.Usage, call.Resolution.Reach);
                 return;
         }
     }
 
-    private static Location AttributeLocation(AttributeData attr, ISymbol target) =>
+    /// <summary>
+    /// Where a usage of <paramref name="attr"/> on <paramref name="target"/> is reported: the
+    /// attribute, else the target. An attribute read from a referenced assembly has neither in
+    /// source, so the usage is reported at <paramref name="classSymbol"/>'s <c>[Validate]</c>
+    /// attribute, which the user can open, rather than at no location.
+    /// </summary>
+    private static Location AttributeLocation(AttributeData attr, ISymbol target, INamedTypeSymbol classSymbol) =>
         attr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
             ?? target.Locations.FirstOrDefault(l => l.IsInSource)
-            ?? Location.None;
+            ?? FindValidateAttributeLocation(classSymbol);
 
     /// <summary>
     /// ZV0028 or ZV0030 for a <c>[SkipWhen]</c> method the generated validator cannot call. The
@@ -1126,10 +1149,10 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
         if (call.Resolution.Reach == MethodReach.InaccessibleOnBase)
         {
-            ReportZV0028(ctx, call.Attribute, classSymbol, call.MethodName, call.Usage, MethodReach.Inaccessible);
+            ReportZV0028(ctx, classSymbol, call.Attribute, classSymbol, call.MethodName, call.Usage, MethodReach.Inaccessible);
             return;
         }
-        ReportUnreachableCall(ctx, classSymbol, in call, classSymbol, AttributeLocation(call.Attribute, classSymbol));
+        ReportUnreachableCall(ctx, classSymbol, in call, classSymbol, AttributeLocation(call.Attribute, classSymbol, classSymbol));
     }
 
     /// <summary>

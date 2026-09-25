@@ -152,6 +152,48 @@ public class BehaviorDiscoveryTests
     }
 
     [Fact]
+    public void Generator_DuplicateBehaviorOrder_NamesANestedModelByItsQualifiedName()
+    {
+        // Two nested models may share a simple name, so the message must tell them apart.
+        var source = """
+            using ZeroAlloc.Validation;
+            using ZeroAlloc.Pipeline;
+
+            namespace TestModels;
+
+            public static class First
+            {
+                [Validate]
+                public class Order { [NotEmpty] public string Reference { get; set; } = ""; }
+            }
+
+            [PipelineBehavior(Order = 0)]
+            public class BehaviorA : IPipelineBehavior
+            {
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
+                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst);
+            }
+
+            [PipelineBehavior(Order = 0)]
+            public class BehaviorB : IPipelineBehavior
+            {
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
+                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst);
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Equal(1, result.Diagnostics.Count(d => string.Equals(d.Id, "ZV0015", System.StringComparison.Ordinal)));
+        var zv0015 = result.Diagnostics.First(d => string.Equals(d.Id, "ZV0015", System.StringComparison.Ordinal));
+        Assert.Equal(
+            "Two behaviors have the same Order value 0 for model 'TestModels.First.Order'. Each behavior must have a unique Order.",
+            zv0015.GetMessage(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
     public void Generator_AsyncBehavior_OnNestedModel_GeneratesValidCode()
     {
         var source = """
