@@ -33,10 +33,10 @@ public static class NestedValidatorAccessibility
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
     private const string ValidateWithAttributeFqn = "ZeroAlloc.Validation.ValidateWithAttribute";
 
-    public static bool WouldBePublic(INamedTypeSymbol model) =>
-        WouldBePublic(model, new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default));
+    public static bool WouldBePublic(INamedTypeSymbol model, Compilation compilation) =>
+        WouldBePublic(model, compilation, new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default));
 
-    private static bool WouldBePublic(INamedTypeSymbol model, HashSet<INamedTypeSymbol> inProgress)
+    private static bool WouldBePublic(INamedTypeSymbol model, Compilation compilation, HashSet<INamedTypeSymbol> inProgress)
     {
         if (!IsEffectivelyPublic(model))
             return false;
@@ -55,15 +55,15 @@ public static class NestedValidatorAccessibility
                 if (HasValidateWithAttribute(prop))
                     continue;
 
-                if (prop.Type is INamedTypeSymbol nested && HasValidateAttribute(nested))
+                if (prop.Type is INamedTypeSymbol nested && IsValidatorDependency(nested, compilation))
                 {
-                    if (!WouldBePublic(nested, inProgress)) return false;
+                    if (!WouldBePublic(nested, compilation, inProgress)) return false;
                     continue;
                 }
 
-                if (GetCollectionElementType(prop.Type) is INamedTypeSymbol element && HasValidateAttribute(element))
+                if (GetCollectionElementType(prop.Type) is INamedTypeSymbol element && IsValidatorDependency(element, compilation))
                 {
-                    if (!WouldBePublic(element, inProgress)) return false;
+                    if (!WouldBePublic(element, compilation, inProgress)) return false;
                 }
             }
 
@@ -96,6 +96,11 @@ public static class NestedValidatorAccessibility
         }
         return true;
     }
+
+    // A [Validate] type the generated validator cannot reach gets no validator, ZV0025, so it is
+    // never a constructor dependency and must not make the outer validator internal, #216.
+    private static bool IsValidatorDependency(INamedTypeSymbol type, Compilation compilation) =>
+        HasValidateAttribute(type) && GeneratedValidatorReach.CanReach(type, compilation);
 
     private static bool HasValidateAttribute(INamedTypeSymbol type) =>
         type.GetAttributes().Any(a =>

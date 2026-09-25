@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using ZeroAlloc.Validation.Generator.Shared;
 
 namespace ZeroAlloc.Validation.Inject;
 
@@ -23,7 +24,13 @@ public sealed class InjectGenerator : IIncrementalGenerator
                 // emitted at all.
                 predicate: static (node, _) => node is ClassDeclarationSyntax
                                                     or RecordDeclarationSyntax,
-                transform: static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol);
+                // A model the generated validator cannot reach gets no validator, ZV0025, so it is
+                // left out here too; naming it would only add CS0122 in generated code, #216.
+                // Null marks it; Emit drops it, so the provider chain needs no extra step.
+                transform: static (ctx, _) =>
+                    GeneratedValidatorReach.CanReach((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
+                        ? (INamedTypeSymbol)ctx.TargetSymbol
+                        : null);
 
 #pragma warning disable EPS06
         var collected = validateClasses.Collect();
@@ -34,8 +41,9 @@ public sealed class InjectGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(combined, static (ctx, pair) => Emit(ctx, pair.Left, pair.Right));
     }
 
-    private static void Emit(SourceProductionContext ctx, ImmutableArray<INamedTypeSymbol> models, bool isInternal)
+    private static void Emit(SourceProductionContext ctx, ImmutableArray<INamedTypeSymbol?> candidates, bool isInternal)
     {
+        var models = GeneratedValidatorReach.WithoutUnreachable(candidates);
         if (models.IsDefaultOrEmpty) return;
 
         var sb = new StringBuilder();
