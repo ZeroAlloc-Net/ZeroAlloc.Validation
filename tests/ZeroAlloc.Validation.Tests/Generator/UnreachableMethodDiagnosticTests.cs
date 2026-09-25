@@ -324,6 +324,72 @@ public class UnreachableMethodDiagnosticTests
     }
 
     [Theory]
+    // B does not walk A, so Request reports A's usages.
+    [InlineData("", "[Validate(IncludeBaseProperties = false)]")]
+    // C walks A through B, so C reports them and Request does not report them again.
+    [InlineData("[Validate(IncludeBaseProperties = false)]", "[Validate]")]
+    public void Usage_above_a_Validate_base_that_does_not_walk_it_is_still_reported(string bAttribute, string cAttribute)
+    {
+        var source = Prelude + $$"""
+            public class A
+            {
+                [NotEmpty(When = nameof(Ok))] public string? Code { get; set; }
+                [Must(nameof(Pred))] public string? Name { get; set; }
+
+                protected bool Ok() => true;
+                public static bool Pred(string? value) => false;
+            }
+
+            {{bAttribute}}
+            public class B : A { }
+
+            {{cAttribute}}
+            public class C : B { }
+
+            [Validate]
+            public class Request : C
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        SingleDiagnostic(result, "ZV0017");
+        SingleDiagnostic(result, "ZV0028");
+        Assert.Equal(new[] { "Other" }, FailedProperties(output));
+    }
+
+    [Fact]
+    public void Static_overload_on_the_model_hides_the_base_instance_method()
+    {
+        // C# lookup stops at Request, whose applicable Ok is static: instance.Ok(value) binds to
+        // it, which is CS0176, even though RequestBase declares an instance Ok(string?).
+        var source = Prelude + """
+            public class RequestBase
+            {
+                public bool Ok(string? value) => false;
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                [Must(nameof(Ok))] public string? Code { get; set; }
+
+                public static bool Ok(object? value) => false;
+
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        var zv0028 = SingleDiagnostic(result, "ZV0028");
+        Assert.EndsWith("is static", zv0028.GetMessage(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Equal(new[] { "Other" }, FailedProperties(output));
+    }
+
+    [Theory]
     [InlineData("[CustomValidation] private IEnumerable<ValidationFailure> Check(int x) { yield break; }")]
     [InlineData("[CustomValidation] public static string Check() => \"\";")]
     public void Invalid_CustomValidation_signature_reports_ZV0013_only(string member)

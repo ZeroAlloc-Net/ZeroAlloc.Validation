@@ -63,7 +63,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 
 **When fired:** A method decorated with `[CustomValidation]` has parameters, or does not return `IEnumerable<ValidationFailure>`, `ValidationFailure[]` or `ReadOnlySpan<ValidationFailure>`.
 
-The signature is checked first. A method that also is static or cannot be accessed reports ZV0013 only; once the signature is fixed, [ZV0028](#zv0028) reports the rest.
+The signature is checked first. A method that is also static, or also inaccessible on the `[Validate]` type itself, reports ZV0013 only; once the signature is fixed, [ZV0028](#zv0028) reports the rest. An inaccessible instance method on a base type reports [ZV0017](#zv0017) only, whatever its signature.
 
 **Fix:** Ensure the method has no parameters and returns `IEnumerable<ValidationFailure>`:
 
@@ -504,10 +504,10 @@ public class Order
 
 > Method '{0}', used by {1}, cannot be called from the generated validator because it {2}
 
-The error is reported at the attribute. That rule is left out rather than emitted as code that fails with CS0122 or CS0176, and every other rule on the model is still validated. A `[Must]`, `When` or `Unless` method resolves the way the call would: an overload that cannot take the arguments is ignored, and the rule is fine when any accessible instance overload applies. A name that matches no method at all is left to the compiler.
+The error is reported at the attribute. That rule is left out rather than emitted as code that fails with CS0122 or CS0176, and every other rule on the model is still validated. A `[Must]`, `When` or `Unless` method resolves the way the call would: an overload that cannot take the arguments is ignored, and the lookup stops at the most-derived type that declares an accessible overload that can. The rule is fine when one of that type's overloads is an instance method. When they are all static, the call binds to a static method, so ZV0028 is reported even if a base type declares an instance overload. A name that matches no method at all is left to the compiler.
 
 The generated validator lives in the model's assembly, so `internal` and `protected internal` methods are callable and are not reported.
 
-On a base type, a static method is reported the same way. A base method that is only inaccessible stays [ZV0017](#zv0017), a warning, because the base type may not be yours to change. A `[CustomValidation]` method with an invalid signature is reported as [ZV0013](#zv0013) only.
+On a base type, a static method is reported the same way. A base method that is only inaccessible stays [ZV0017](#zv0017), a warning, because the base type may not be yours to change. A `[CustomValidation]` method with an invalid signature that is static, or inaccessible on the `[Validate]` type itself, is reported as [ZV0013](#zv0013) only; an inaccessible instance method on a base type is reported as ZV0017 only.
 
 **Fix:** Make the method a `public` or `internal` instance method.

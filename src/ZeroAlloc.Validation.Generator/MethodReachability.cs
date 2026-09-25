@@ -1,5 +1,4 @@
 using Microsoft.CodeAnalysis;
-using System.Collections.Generic;
 
 namespace ZeroAlloc.Validation.Generator;
 
@@ -31,11 +30,14 @@ internal static class MethodReachability
     /// Resolves the method a rule names, the way <c>instance.Name(args)</c> binds from the
     /// generated validator. <paramref name="argumentType"/> is the type of the single argument a
     /// <c>[Must]</c> predicate receives, or <see langword="null"/> for a parameterless
-    /// <c>When</c>/<c>Unless</c> call. Overloads that cannot take those arguments are ignored, and
-    /// an accessible method hides a base method with the same signature. The call is
-    /// <see cref="MethodReach.Callable"/> when an accessible instance overload applies; otherwise
-    /// the applicable overloads say why not, static first, then inaccessible on the model, then
-    /// inaccessible on a base type. <paramref name="method"/> is the overload the verdict is about.
+    /// <c>When</c>/<c>Unless</c> call. Overloads that cannot take those arguments are ignored.
+    /// Like C# member lookup, the walk stops at the most-derived type that declares an accessible
+    /// applicable overload: the call is <see cref="MethodReach.Callable"/> when one of that type's
+    /// overloads is an instance method, and <see cref="MethodReach.Static"/> when they are all
+    /// static, since the call then binds to a static method whatever the base types declare.
+    /// When no type declares an accessible overload, the inaccessible ones say why, static
+    /// first, then inaccessible on the model, then inaccessible on a base type.
+    /// <paramref name="method"/> is the overload the verdict is about.
     /// </summary>
     public static MethodReach Resolve(
         Compilation compilation,
@@ -44,21 +46,17 @@ internal static class MethodReachability
         ITypeSymbol? argumentType,
         out IMethodSymbol? method)
     {
-        IMethodSymbol? isStatic = null;
+        IMethodSymbol? inaccessibleStatic = null;
         IMethodSymbol? inaccessibleOwn = null;
         IMethodSymbol? inaccessibleBase = null;
-        var hidden = new HashSet<string>(StringComparer.Ordinal);
 
         for (var type = model; type is not null; type = type.BaseType)
         {
-            var visible = new List<string>();
+            IMethodSymbol? accessibleStatic = null;
             foreach (var member in type.GetMembers(name))
             {
                 if (member is not IMethodSymbol { MethodKind: MethodKind.Ordinary } candidate) continue;
                 if (!IsApplicable(compilation, candidate, argumentType)) continue;
-
-                var key = SignatureKey(candidate);
-                if (hidden.Contains(key)) continue;
 
                 if (IsAccessible(compilation, candidate))
                 {
@@ -67,13 +65,11 @@ internal static class MethodReachability
                         method = candidate;
                         return MethodReach.Callable;
                     }
-                    // An accessible static method still hides the base methods it matches.
-                    visible.Add(key);
-                    isStatic ??= candidate;
+                    accessibleStatic ??= candidate;
                 }
                 else if (candidate.IsStatic)
                 {
-                    isStatic ??= candidate;
+                    inaccessibleStatic ??= candidate;
                 }
                 else if (IsDeclaredOn(candidate, model))
                 {
@@ -85,13 +81,17 @@ internal static class MethodReachability
                 }
             }
 
-            for (int i = 0; i < visible.Count; i++)
-                hidden.Add(visible[i]);
+            // This type's accessible overloads are all static; base methods are not considered.
+            if (accessibleStatic is not null)
+            {
+                method = accessibleStatic;
+                return MethodReach.Static;
+            }
         }
 
-        if (isStatic is not null)
+        if (inaccessibleStatic is not null)
         {
-            method = isStatic;
+            method = inaccessibleStatic;
             return MethodReach.Static;
         }
         if (inaccessibleOwn is not null)
@@ -104,27 +104,30 @@ internal static class MethodReachability
     }
 
     /// <summary>
-    /// Whether a method declared on <paramref name="declaringType"/> is reported by the generation
+    /// Whether a usage declared on <paramref name="declaringType"/> is reported by the generation
     /// of a <c>[Validate]</c> base type of <paramref name="model"/> in this compilation rather than
-    /// by <paramref name="model"/>'s own. That base type's validator runs the same checks from the
-    /// same assembly, so each usage is reported once, by the validator it belongs to.
+    /// by <paramref name="model"/>'s own. That holds only when such a base type walks the
+    /// declaring type: it is the declaring type itself, or it sits below the declaring type and
+    /// includes base properties. A base type with <c>IncludeBaseProperties = false</c> does not
+    /// see the types above it, so their usages stay <paramref name="model"/>'s to report. That base
+    /// type's validator runs the same checks from the same assembly, so each usage is reported
+    /// once, by one validator.
     /// </summary>
     public static bool IsReportedByBaseValidator(Compilation compilation, INamedTypeSymbol model, INamedTypeSymbol? declaringType)
     {
         if (declaringType is null) return false;
 
-        bool pastValidateBase = false;
+        bool coveredFromBelow = false;
         for (var type = model.BaseType; type is not null; type = type.BaseType)
         {
-            if (!pastValidateBase
-                && SymbolEqualityComparer.Default.Equals(type.ContainingAssembly, compilation.Assembly)
-                && HasValidateAttribute(type))
-            {
-                pastValidateBase = true;
-            }
+            bool isValidated = SymbolEqualityComparer.Default.Equals(type.ContainingAssembly, compilation.Assembly)
+                && HasValidateAttribute(type);
 
-            if (pastValidateBase && SymbolEqualityComparer.Default.Equals(type.OriginalDefinition, declaringType.OriginalDefinition))
-                return true;
+            if (SymbolEqualityComparer.Default.Equals(type.OriginalDefinition, declaringType.OriginalDefinition))
+                return coveredFromBelow || isValidated;
+
+            if (isValidated && MemberWalker.IncludesBaseProperties(type))
+                coveredFromBelow = true;
         }
         return false;
     }
@@ -164,17 +167,6 @@ internal static class MethodReachability
         if (first.RefKind is not (RefKind.None or RefKind.In)) return false;
         if (method.IsGenericMethod || first.IsParams) return true;
         return compilation.ClassifyCommonConversion(argumentType, first.Type).IsImplicit;
-    }
-
-    private static string SignatureKey(IMethodSymbol method)
-    {
-        var sb = new System.Text.StringBuilder();
-        foreach (var parameter in method.Parameters)
-        {
-            if (parameter.Ordinal > 0) sb.Append(',');
-            sb.Append((int)parameter.RefKind).Append(' ').Append(parameter.Type.ToDisplayString());
-        }
-        return sb.ToString();
     }
 
     private static bool HasValidateAttribute(INamedTypeSymbol type)
