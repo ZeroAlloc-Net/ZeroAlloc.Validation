@@ -77,6 +77,35 @@ parameter, such as a record's positional parameter written without the `property
 1.x ignored it there without a word; 2.0 fails the build, because the rule never runs. Move the
 attribute to a property, or write it as `[property: X]` on a positional parameter.
 
+## A `[Validate]` type the generated validator cannot reach now fails the build (ZV0025)
+
+The generated validator is a top-level class in its own file. In 2.0.0 it can validate a model
+nested in another type, as long as the model and every type containing it are `public`,
+`internal` or `protected internal`; see
+[Models declared inside another type](getting-started.md). It still cannot name a `private`,
+`protected` or `private protected` nested type, a type inside one, or a `file`-local type.
+
+In 1.x such a type did not work either:
+
+- A `private` nested type was **skipped without a word**. No validator was generated, the
+  attribute did nothing, and none of the other diagnostics ran for its members, so a misplaced
+  or broken rule on it was never reported either. With `ZeroAlloc.Validation.Inject`
+  referenced, the generated `AddZeroAllocValidators()` then failed with CS0122 and CS0234.
+- Every other case produced generated code that did not compile.
+
+In 2.0.0 every such type fails the build with [ZV0025](diagnostics.md#zv0025) at the attribute:
+`The generated validator cannot access '{Type}', so no validator is generated for it; make it
+and every type containing it internal or public`. No validator, registration, options overload
+or filter entry is generated for it, so ZV0025 is the only error. The breaking case is the
+`private` nested type that used to compile because nothing was generated for it.
+
+### What to do
+
+Make the type, and every type containing it, `internal` or `public`, and drop `file` from a
+`file`-local one. `internal` keeps it out of the public API, and the generated validator
+follows it and is `internal` too. If the type never needed validating, remove `[Validate]`
+instead.
+
 ## A validation method the validator cannot call now fails the build (ZV0028)
 
 The generated validator calls `[CustomValidation]`, `[Must]`, `When` and `Unless` methods as

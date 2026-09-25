@@ -26,6 +26,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0022](#zv0022) | Warning | Unknown placeholder in a custom rule message |
 | [ZV0023](#zv0023) | Error | Custom rule attribute not accessible from the generated validator |
 | [ZV0024](#zv0024) | Error | Validation attribute applied where the generator does not read it |
+| [ZV0025](#zv0025) | Error | [Validate] type not accessible from the generated validator |
 | [ZV0026](#zv0026) | Warning | [RuleMessage] on a class that is not a custom rule |
 | [ZV0028](#zv0028) | Error | Validation method the generated validator cannot call |
 
@@ -439,6 +440,58 @@ public record Customer([property: NotBlank] string? Name);
 ```
 
 A field or parameter of a base type that is itself `[Validate]` is reported once, by that type.
+
+---
+
+## ZV0025
+
+**Severity:** Error
+
+**Title:** [Validate] type not accessible from the generated validator
+
+**When fired:** The generated `{Model}Validator` is a top-level class in the model's namespace, declared in its own generated file. It can validate a model nested in another type, as long as the model and every type containing it are `public`, `internal` or `protected internal`. ZV0025 is reported at the `[Validate]` attribute of a model it cannot reach:
+
+- a `private`, `protected` or `private protected` nested type;
+- a type of any accessibility nested inside such a type;
+- a `file`-local type, or a type nested inside one.
+
+```csharp
+public class Checkout
+{
+    [Validate]                        // ZV0025 — Address is private
+    private class Address
+    {
+        [NotEmpty] public string City { get; set; } = "";
+    }
+
+    private class Steps
+    {
+        [Validate]                    // ZV0025 — Payment is inside a private type
+        public class Payment { }
+    }
+}
+
+[Validate]                            // ZV0025 — file-local
+file class Draft { }
+```
+
+> The generated validator cannot access '{0}', so no validator is generated for it; make it and every type containing it internal or public
+
+No validator is generated for the type. `AddZeroAllocValidators()`, `ValidateWithZeroAlloc()` and the ASP.NET Core filter leave it out, and a property of that type is not validated as a nested model. The other diagnostics are not reported for the type's members: they describe how the generated validator treats its rules, and there is none. They run as usual once the type is reachable.
+
+**Fix:** Make the type and every type containing it `internal` or `public`, and drop the `file` modifier. `internal` keeps the type out of the public API:
+
+```csharp
+public class Checkout
+{
+    [Validate]
+    internal class Address
+    {
+        [NotEmpty] public string City { get; set; } = "";
+    }
+}
+// Generated: Checkout_AddressValidator
+```
 
 ---
 

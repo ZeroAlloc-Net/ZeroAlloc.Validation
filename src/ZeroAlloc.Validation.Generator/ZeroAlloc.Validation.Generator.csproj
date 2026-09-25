@@ -46,6 +46,9 @@
          Inject, Options and ASP.NET Core generators name the same class this one declares. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedValidatorNames.cs"
              Link="Shared\GeneratedValidatorNames.cs" />
+    <!-- GeneratedValidatorReach decides which [Validate] models get a validator, issue #216. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedValidatorReach.cs"
+             Link="Shared\GeneratedValidatorReach.cs" />
   </ItemGroup>
 
   <!--

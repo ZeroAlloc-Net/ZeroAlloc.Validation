@@ -25,6 +25,9 @@
              Link="Shared\ValidatorRegistrationEmitter.cs" />
     <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedValidatorNames.cs"
              Link="Shared\GeneratedValidatorNames.cs" />
+    <!-- GeneratedValidatorReach decides which [Validate] models get a validator, issue #216. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedValidatorReach.cs"
+             Link="Shared\GeneratedValidatorReach.cs" />
     <!-- GeneratedAccessibilityOption reads the org-wide ZeroAllocGeneratedAccessibility MSBuild
          property (issue #193). Shared the same way as ValidatorRegistrationEmitter above. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedAccessibilityOption.cs"

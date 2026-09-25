@@ -87,8 +87,8 @@ internal static class RuleEmitter
         }
 
         var byProperty = CollectPropertyRules(classSymbol, compilation, ctx);
-        var nestedProperties = GetNestedValidateProperties(classSymbol).ToList();
-        var collectionProperties = GetCollectionValidateProperties(classSymbol).ToList();
+        var nestedProperties = GetNestedValidateProperties(classSymbol, compilation).ToList();
+        var collectionProperties = GetCollectionValidateProperties(classSymbol, compilation).ToList();
         var customMethods = CollectCustomValidationMethods(classSymbol, compilation);
         bool hasNested = nestedProperties.Count > 0 || collectionProperties.Count > 0 || customMethods.Count > 0;
         int totalDirectRules = byProperty.Sum(x => x.Rules.Count);
@@ -1243,18 +1243,24 @@ internal static class RuleEmitter
         return null;
     }
 
-    private static IEnumerable<IPropertySymbol> GetNestedValidateProperties(INamedTypeSymbol classSymbol) =>
+    private static IEnumerable<IPropertySymbol> GetNestedValidateProperties(INamedTypeSymbol classSymbol, Compilation compilation) =>
         MemberWalker.GetMembersIncludingBase(classSymbol)
             .OfType<IPropertySymbol>()
             // First arm: type has [Validate] (auto-compose) — also covers the overlap where [ValidateWith] is present on a [Validate] type; [ValidateWith] wins in CollectNestedValidatorFields.
             // Second arm: [ValidateWith] on a non-collection property whose type has no [Validate].
             .Where(p =>
-                (p.Type is INamedTypeSymbol t && HasValidateAttribute(t))
+                (p.Type is INamedTypeSymbol t && HasValidateAttribute(t, compilation))
                 || (GetValidateWithType(p) is not null && GetCollectionElementType(p) is null));
 
-    private static bool HasValidateAttribute(INamedTypeSymbol typeSymbol) =>
+    /// <summary>
+    /// Whether <paramref name="typeSymbol"/> has a generated validator this one can inject. A
+    /// <c>[Validate]</c> type the generated validator cannot reach gets none, ZV0025, so a
+    /// property of that type is not wired to a validator that does not exist.
+    /// </summary>
+    private static bool HasValidateAttribute(INamedTypeSymbol typeSymbol, Compilation compilation) =>
         typeSymbol.GetAttributes()
-            .Any(a => string.Equals(a.AttributeClass?.ToDisplayString(), ValidateAttributeFqn, StringComparison.Ordinal));
+            .Any(a => string.Equals(a.AttributeClass?.ToDisplayString(), ValidateAttributeFqn, StringComparison.Ordinal))
+        && GeneratedValidatorReach.CanReach(typeSymbol, compilation);
 
     private static ITypeSymbol? GetCollectionElementType(IPropertySymbol prop)
     {
@@ -1281,13 +1287,13 @@ internal static class RuleEmitter
         return null;
     }
 
-    private static IEnumerable<(IPropertySymbol Property, INamedTypeSymbol ElementType)> GetCollectionValidateProperties(INamedTypeSymbol classSymbol) =>
+    private static IEnumerable<(IPropertySymbol Property, INamedTypeSymbol ElementType)> GetCollectionValidateProperties(INamedTypeSymbol classSymbol, Compilation compilation) =>
         MemberWalker.GetMembersIncludingBase(classSymbol)
             .OfType<IPropertySymbol>()
             .Select(p =>
             {
                 var elemType = GetCollectionElementType(p) as INamedTypeSymbol;
-                if (elemType is not null && HasValidateAttribute(elemType))
+                if (elemType is not null && HasValidateAttribute(elemType, compilation))
                     return ((IPropertySymbol, INamedTypeSymbol)?)(p, elemType);
                 if (elemType is not null && GetValidateWithType(p) is not null)
                     return (p, elemType);
@@ -1297,7 +1303,7 @@ internal static class RuleEmitter
             .Select(x => x!.Value);
 
     public static System.Collections.Generic.List<(string FieldName, string ParamName, string QualifiedValidatorType)>
-        CollectNestedValidatorFields(INamedTypeSymbol classSymbol)
+        CollectNestedValidatorFields(INamedTypeSymbol classSymbol, Compilation compilation)
     {
         var result = new System.Collections.Generic.List<(string, string, string)>();
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol))
@@ -1315,12 +1321,12 @@ internal static class RuleEmitter
                 qualifiedType = validateWithType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
             }
             // Single nested type with [Validate]
-            else if (prop.Type is INamedTypeSymbol nestedNamed && HasValidateAttribute(nestedNamed))
+            else if (prop.Type is INamedTypeSymbol nestedNamed && HasValidateAttribute(nestedNamed, compilation))
             {
                 qualifiedType = GeneratedValidatorNames.QualifiedValidatorName(nestedNamed);
             }
             // Collection element type with [Validate]
-            else if (GetCollectionElementType(prop) is INamedTypeSymbol elemNamed && HasValidateAttribute(elemNamed))
+            else if (GetCollectionElementType(prop) is INamedTypeSymbol elemNamed && HasValidateAttribute(elemNamed, compilation))
             {
                 qualifiedType = GeneratedValidatorNames.QualifiedValidatorName(elemNamed);
             }

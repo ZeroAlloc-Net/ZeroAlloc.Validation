@@ -78,7 +78,11 @@ The generator emits `RegisterUserRequestValidator` in the same namespace as your
 > top-level `Request` in the same namespace each get their own validator. Plain concatenation,
 > `OrdersRequestValidator`, would clash with the validator of a top-level `OrdersRequest`
 > model; the underscore can only clash with a type name that itself contains an underscore.
-> A `private` nested model is not generated.
+> The validator must be able to reach the model, so the model and every type containing it
+> must be `public`, `internal` or `protected internal`. A `private`, `protected` or
+> `private protected` nested model, a model inside such a type, or a `file`-local model or one
+> nested inside it fails the build with [ZV0025](diagnostics.md#zv0025), and no validator is
+> generated for it.
 
 > **Target types.** `[Validate]` works on `class`, `record`, `readonly struct`, and
 > `readonly record struct`. Decorating a non-readonly `struct` or `record struct`

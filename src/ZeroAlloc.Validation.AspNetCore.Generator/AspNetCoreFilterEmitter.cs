@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using ZeroAlloc.Validation.Generator.Shared;
 using ZeroAlloc.Validation.Inject;
 
 namespace ZeroAlloc.Validation.AspNetCore.Generator;
@@ -22,7 +23,13 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
                 // InjectGenerator, so both register the same validators.
                 predicate: static (node, _) => node is ClassDeclarationSyntax
                                                     or RecordDeclarationSyntax,
-                transform: static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol);
+                // A model the generated validator cannot reach gets no validator, ZV0025, so it is
+                // left out here too; naming it would only add CS0122 in generated code, #216.
+                // Null marks it; Emit drops it, so the provider chain needs no extra step.
+                transform: static (ctx, _) =>
+                    GeneratedValidatorReach.CanReach((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
+                        ? (INamedTypeSymbol)ctx.TargetSymbol
+                        : null);
 
 #pragma warning disable EPS06 // Collect() on IncrementalValuesProvider<T> is intentional
         var collected = validateClasses.Collect();
@@ -33,8 +40,9 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         context.RegisterSourceOutput(combined, static (ctx, pair) => EmitFiles(ctx, pair.Left, pair.Right));
     }
 
-    private static void EmitFiles(SourceProductionContext ctx, ImmutableArray<INamedTypeSymbol> models, bool isInternal)
+    private static void EmitFiles(SourceProductionContext ctx, ImmutableArray<INamedTypeSymbol?> candidates, bool isInternal)
     {
+        var models = GeneratedValidatorReach.WithoutUnreachable(candidates);
         if (models.IsDefaultOrEmpty) return;
 
         ctx.AddSource("ZeroAlloc.Validation.ZeroAllocValidationActionFilter.g.cs",                EmitFilter(models));

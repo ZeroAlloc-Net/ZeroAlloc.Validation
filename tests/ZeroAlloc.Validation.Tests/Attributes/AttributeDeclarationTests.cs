@@ -322,8 +322,9 @@ public class AttributeDeclarationTests
         Assert.True(usage.Inherited);
     }
 
+    // internal, not private: the generated validator cannot reach a private nested type, ZV0025.
     [Validate]
-    private class SampleModel { }
+    internal class SampleModel { }
 
     private class NullModel
     {
