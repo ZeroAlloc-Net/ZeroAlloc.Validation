@@ -22,6 +22,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
     private const string ValidateWithFqn      = "ZeroAlloc.Validation.ValidateWithAttribute";
     private const string RuleMessageFqn       = "ZeroAlloc.Validation.RuleMessageAttribute";
+    private const string PipelineBehaviorAttributeFqn = "ZeroAlloc.Pipeline.PipelineBehaviorAttribute";
 
     /// <summary>Tracking name of the ZV0026 step, so tests can assert that it stays cached.</summary>
     internal const string MisplacedRuleMessageTrackingName = "MisplacedRuleMessage";
@@ -68,7 +69,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor ZV0015 = new DiagnosticDescriptor(
         id: "ZV0015",
         title: "Duplicate pipeline behavior Order",
-        messageFormat: "Two behaviors have the same Order value {0} for model '{1}'. Each behavior must have a unique Order.",
+        messageFormat: "Two behaviors have the same Order value {0} for model '{1}'. '{2}' already uses this Order; each behavior must have a unique Order.",
         category: "ZeroAlloc.Validation",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -364,7 +365,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         var (syncBehaviors, asyncBehaviors) = BehaviorDiscoverer.ForModel(allBehaviors.Sync, allBehaviors.Async, modelFqn);
 
         ReportNestedDiagnostics(ctx, classSymbol, compilation);
-        ReportDuplicateOrderDiagnostics(ctx, syncBehaviors, asyncBehaviors, classSymbol.ToDisplayString());
+        ReportDuplicateOrderDiagnostics(ctx, compilation, classSymbol, syncBehaviors, asyncBehaviors, classSymbol.ToDisplayString());
 
         var namespaceName = GeneratedCalls.NamespaceOf(classSymbol);
 
@@ -651,6 +652,8 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
     private static void ReportDuplicateOrderDiagnostics(
         SourceProductionContext ctx,
+        Compilation compilation,
+        INamedTypeSymbol classSymbol,
         List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> sync,
         List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> async_,
         string modelName)
@@ -659,23 +662,69 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         all.AddRange(sync);
         all.AddRange(async_);
 
-        var seen = new System.Collections.Generic.Dictionary<int, string>();
+        var seen = new System.Collections.Generic.Dictionary<int, global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo>();
         for (int i = 0; i < all.Count; i++)
         {
             var b = all[i];
-            if (seen.TryGetValue(b.Order, out _))
+            if (seen.TryGetValue(b.Order, out var first))
             {
                 ctx.ReportDiagnostic(Diagnostic.Create(
                     ZV0015,
-                    Location.None,
+                    ResolveDuplicateOrderLocation(compilation, classSymbol, b),
                     b.Order.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                    modelName));
+                    modelName,
+                    DescribeBehavior(first)));
             }
             else
             {
-                seen[b.Order] = b.BehaviorTypeName;
+                seen[b.Order] = b;
             }
         }
+    }
+
+    /// <summary>
+    /// Where ZV0015 should point for the second (colliding) behavior: its own
+    /// <c>[PipelineBehavior]</c> attribute when that can be recovered, otherwise the model's own
+    /// <c>[Validate]</c> attribute — issue #247, so the diagnostic never reports at
+    /// <see cref="Location.None"/>. Pure function of the compilation and the two symbols
+    /// involved, so it is unit-testable without a <see cref="SourceProductionContext"/>.
+    /// </summary>
+    internal static Location ResolveDuplicateOrderLocation(
+        Compilation compilation,
+        INamedTypeSymbol classSymbol,
+        global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo secondBehavior)
+        => FindBehaviorAttributeLocation(secondBehavior, compilation)
+            ?? FindValidateAttributeLocation(classSymbol);
+
+    /// <summary>
+    /// Resolves the location of the <c>[PipelineBehavior]</c> (or subclass) attribute applied to
+    /// <paramref name="behavior"/>'s type, or null when the type has no such syntax in this
+    /// compilation — either it could not be re-resolved (e.g. an ambiguous name across
+    /// assemblies), or it and its attribute came from a referenced assembly rather than source.
+    /// </summary>
+    internal static Location? FindBehaviorAttributeLocation(
+        global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo behavior, Compilation compilation)
+    {
+        var symbol = BehaviorDiscoverer.ResolveSymbol(compilation, behavior.BehaviorTypeName);
+        if (symbol is null) return null;
+
+        foreach (var attr in symbol.GetAttributes())
+        {
+            for (var attrClass = attr.AttributeClass; attrClass is not null; attrClass = attrClass.BaseType)
+            {
+                if (string.Equals(attrClass.ToDisplayString(), PipelineBehaviorAttributeFqn, StringComparison.Ordinal))
+                    return attr.ApplicationSyntaxReference?.GetSyntax().GetLocation();
+            }
+        }
+        return null;
+    }
+
+    /// <summary>The simple type name the user wrote, e.g. "LoggingBehavior" from "global::App.LoggingBehavior".</summary>
+    internal static string DescribeBehavior(global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo behavior)
+    {
+        var name = behavior.BehaviorTypeName;
+        var lastSeparator = name.LastIndexOfAny(['.', '+']);
+        return lastSeparator >= 0 ? name.Substring(lastSeparator + 1) : name;
     }
 
     private static void ReportNestedDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)

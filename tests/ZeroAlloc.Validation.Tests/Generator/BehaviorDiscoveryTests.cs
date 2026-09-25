@@ -156,6 +156,47 @@ public class BehaviorDiscoveryTests
     }
 
     [Fact]
+    public void Generator_DuplicateBehaviorOrder_SyncAndAsyncBothOrderZero_EmitsExactlyOneZV0015()
+    {
+        // ReportDuplicateOrderDiagnostics merges the sync and async lists before checking for
+        // Order collisions, since both kinds run in the same per-model behavior chain. A sync
+        // behavior and an async behavior sharing Order = 0 must still be reported exactly once,
+        // not once per list.
+        var source = """
+            using ZeroAlloc.Validation;
+            using ZeroAlloc.Pipeline;
+            using System.Threading;
+            using System.Threading.Tasks;
+
+            namespace TestModels;
+
+            [Validate]
+            public class Order { [NotEmpty] public string Reference { get; set; } = ""; }
+
+            [PipelineBehavior(Order = 0)]
+            public class SyncBehavior : IPipelineBehavior
+            {
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
+                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst);
+            }
+
+            [PipelineBehavior(Order = 0)]
+            public class AsyncBehavior : IPipelineBehavior
+            {
+                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel>(
+                    TModel inst, CancellationToken ct,
+                    System.Func<TModel, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
+                    => await next(inst, ct);
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Equal(1, result.Diagnostics.Count(d => string.Equals(d.Id, "ZV0015", System.StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public void Generator_DuplicateBehaviorOrder_NamesANestedModelByItsQualifiedName()
     {
         // Two nested models may share a simple name, so the message must tell them apart.
@@ -193,8 +234,114 @@ public class BehaviorDiscoveryTests
         Assert.Equal(1, result.Diagnostics.Count(d => string.Equals(d.Id, "ZV0015", System.StringComparison.Ordinal)));
         var zv0015 = result.Diagnostics.First(d => string.Equals(d.Id, "ZV0015", System.StringComparison.Ordinal));
         Assert.Equal(
-            "Two behaviors have the same Order value 0 for model 'TestModels.First.Order'. Each behavior must have a unique Order.",
+            "Two behaviors have the same Order value 0 for model 'TestModels.First.Order'. "
+            + "'BehaviorA' already uses this Order; each behavior must have a unique Order.",
             zv0015.GetMessage(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public void Generator_DuplicateBehaviorOrder_ReportsAtSecondBehaviorAttribute()
+    {
+        // Issue #247: ZV0015 used to report at Location.None, so the user got an error that
+        // pointed nowhere. It must now point at the [PipelineBehavior] attribute of the second
+        // (colliding) behavior — BehaviorB here — not at the model or the first behavior.
+        var source = """
+            using ZeroAlloc.Validation;
+            using ZeroAlloc.Pipeline;
+
+            namespace TestModels;
+
+            [Validate]
+            public class Order { [NotEmpty] public string Reference { get; set; } = ""; }
+
+            [PipelineBehavior(Order = 0)]
+            public class BehaviorA : IPipelineBehavior
+            {
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
+                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst);
+            }
+
+            [PipelineBehavior(Order = 0)]
+            public class BehaviorB : IPipelineBehavior
+            {
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
+                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst);
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Equal(1, result.Diagnostics.Count(d => string.Equals(d.Id, "ZV0015", System.StringComparison.Ordinal)));
+        var zv0015 = result.Diagnostics.First(d => string.Equals(d.Id, "ZV0015", System.StringComparison.Ordinal));
+
+        Assert.NotEqual(Location.None, zv0015.Location);
+        Assert.True(zv0015.Location.IsInSource);
+
+        // The reported span must fall on BehaviorB's [PipelineBehavior] attribute, not BehaviorA's.
+        // AttributeSyntax's own span starts after the '[', at the attribute name.
+        var behaviorAAttributeStart = source.IndexOf("[PipelineBehavior(Order = 0)]", StringComparison.Ordinal);
+        var behaviorBAttributeStart = source.IndexOf(
+            "[PipelineBehavior(Order = 0)]", behaviorAAttributeStart + 1, StringComparison.Ordinal);
+        Assert.True(behaviorBAttributeStart > behaviorAAttributeStart);
+
+        Assert.Equal(behaviorBAttributeStart + 1, zv0015.Location.SourceSpan.Start);
+    }
+
+    [Fact]
+    public void FindBehaviorAttributeLocation_UnresolvableBehavior_ReturnsNull()
+    {
+        // Compilation.GetTypeByMetadataName returns null both when a name simply does not exist
+        // and when it is ambiguous across assemblies (issue #247's "if both are in metadata"
+        // case is one way this happens). Either way, FindBehaviorAttributeLocation must not
+        // throw and must signal "no location" so the caller falls back, rather than reporting at
+        // Location.None as before the fix.
+        var compilation = CreateCompilation("namespace TestModels;");
+        var unresolvable = new ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo(
+            "global::TestModels.NoSuchBehavior", 0, null, 1);
+
+        var location = ZeroAlloc.Validation.Generator.ValidatorGenerator.FindBehaviorAttributeLocation(
+            unresolvable, compilation);
+
+        Assert.Null(location);
+    }
+
+    [Fact]
+    public void ResolveDuplicateOrderLocation_UnresolvableBehavior_FallsBackToValidateAttribute()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+
+            namespace TestModels;
+
+            [Validate]
+            public class Order { [NotEmpty] public string Reference { get; set; } = ""; }
+            """;
+        var compilation = CreateCompilation(source);
+        var classSymbol = compilation.GetTypeByMetadataName("TestModels.Order")!;
+        var unresolvable = new ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo(
+            "global::TestModels.NoSuchBehavior", 0, null, 1);
+
+        var location = ZeroAlloc.Validation.Generator.ValidatorGenerator.ResolveDuplicateOrderLocation(
+            compilation, classSymbol, unresolvable);
+
+        Assert.NotEqual(Location.None, location);
+        Assert.True(location.IsInSource);
+        // AttributeSyntax's own span starts after the '[', at the attribute name.
+        var validateAttributeStart = source.IndexOf("[Validate]", StringComparison.Ordinal);
+        Assert.Equal(validateAttributeStart + 1, location.SourceSpan.Start);
+    }
+
+    [Theory]
+    [InlineData("global::App.LoggingBehavior", "LoggingBehavior")]
+    [InlineData("global::App.Outer+Inner", "Inner")]
+    [InlineData("NoNamespace", "NoNamespace")]
+    public void DescribeBehavior_ReturnsSimpleName(string behaviorTypeName, string expected)
+    {
+        var behavior = new ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo(behaviorTypeName, 0, null, 1);
+
+        Assert.Equal(expected, ZeroAlloc.Validation.Generator.ValidatorGenerator.DescribeBehavior(behavior));
     }
 
     [Fact]

@@ -115,7 +115,7 @@ or add `<NoWarn>$(NoWarn);ZV0014</NoWarn>` in the consuming project.
 
 **Title:** Duplicate pipeline behavior Order
 
-**When fired:** Two `[PipelineBehavior]` classes targeting the same model have the same `Order` value. The execution order of the behavior chain would be ambiguous.
+**When fired:** Two `[PipelineBehavior]` classes targeting the same model have the same `Order` value. The execution order of the behavior chain would be ambiguous. The diagnostic is reported at the `[PipelineBehavior]` attribute of the second (colliding) behavior and names the first one that already uses the value. When the second behavior's attribute has no source location in the current compilation, it falls back to the model's own `[Validate]` attribute.
 
 **Fix:** Assign a unique `Order` value to each behavior:
 
