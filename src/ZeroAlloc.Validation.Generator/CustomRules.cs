@@ -62,8 +62,8 @@ internal static class CustomRules
     /// <summary>
     /// The first symbol the rule's field initializer names that the generated validator, a
     /// separate class in the same assembly, cannot access, or <see langword="null"/> when every
-    /// one is accessible. Checked in order: the attribute type and each type containing it, the
-    /// constructor the usage binds, each member a named argument sets, and every type an argument
+    /// one is accessible. Checked in order: the attribute type, each type containing it and each
+    /// type argument of a generic rule, the constructor the usage binds, each member a named argument sets, and every type an argument
     /// value names, the operand of a <c>typeof</c> or the type of an enum constant. A
     /// <c>file</c>-local type counts as inaccessible, because the generated validator is declared
     /// in another file.
@@ -77,8 +77,8 @@ internal static class CustomRules
     }
 
     /// <summary>
-    /// Whether the rule's field initializer names an <c>[Obsolete]</c> symbol: the attribute type
-    /// or a type containing it, the constructor, a member a named argument sets, or a type an
+    /// Whether the rule's field initializer names an <c>[Obsolete]</c> symbol: the attribute type,
+    /// a type containing it or a type argument of a generic rule, the constructor, a member a named argument sets, or a type an
     /// argument value names. The compiler would warn about it inside generated code, where the
     /// user cannot suppress it, although it already warns at the usage in user code.
     /// </summary>
@@ -93,11 +93,10 @@ internal static class CustomRules
     {
         var attrClass = attr.AttributeClass!;
 
-        for (INamedTypeSymbol? type = attrClass; type is not null; type = type.ContainingType)
-        {
-            if (matches(type))
-                return type;
-        }
+        // The attribute type is written in full, so its containing types and the type arguments
+        // of a generic rule such as [Rule<Secret>] are named too.
+        if (FindNamedType(attrClass, matches) is { } foundType)
+            return foundType;
 
         if (attr.AttributeConstructor is { } ctor && matches(ctor))
             return ctor;

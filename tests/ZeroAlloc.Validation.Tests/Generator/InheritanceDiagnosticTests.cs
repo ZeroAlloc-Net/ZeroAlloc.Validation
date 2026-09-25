@@ -38,6 +38,41 @@ public class InheritanceDiagnosticTests
     }
 
     [Fact]
+    public void ZV0017_NamesNestedTypesByTheirQualifiedNames()
+    {
+        // Two nested models may share a simple name, so the message must tell them apart.
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            public static class First
+            {
+                public class AuditBase
+                {
+                    [NotEmpty]
+                    protected string? ModifiedBy { get; init; }
+                }
+
+                [Validate]
+                public class Audited : AuditBase
+                {
+                    [GreaterThan(0)]
+                    public int Total { get; init; }
+                }
+            }
+            """;
+
+        var result = RunGenerator(source);
+
+        Assert.Equal(1, result.Diagnostics.Count(d => string.Equals(d.Id, "ZV0017", StringComparison.Ordinal)));
+        var zv0017 = result.Diagnostics.First(d => string.Equals(d.Id, "ZV0017", StringComparison.Ordinal));
+        Assert.StartsWith(
+            "Base type member 'TestModels.First.AuditBase.ModifiedBy' is not accessible to the generated validator for 'TestModels.First.Audited'",
+            zv0017.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ProtectedBaseMemberWithRules_DoesNotEmitInaccessibleReference()
     {
         var source = """
