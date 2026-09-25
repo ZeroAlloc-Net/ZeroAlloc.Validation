@@ -20,11 +20,7 @@ internal static class BehaviorDiscoverer
         foreach (var info in PipelineBehaviorDiscoverer.Discover(compilation))
         {
             // Re-resolve the symbol to inspect the Handle method return type.
-            var cleanName = info.BehaviorTypeName
-                .Replace("global::", string.Empty)
-                .Replace("+", ".");   // handle nested types
-
-            var symbol = compilation.GetTypeByMetadataName(cleanName);
+            var symbol = ResolveSymbol(compilation, info.BehaviorTypeName);
             if (symbol is null) continue;
 
             if (IsAsyncBehavior(symbol))
@@ -53,6 +49,21 @@ internal static class BehaviorDiscoverer
         var async_ = allAsync.Where(b => Applies(b, modelFqn)).OrderBy(b => b.Order).ToList();
 
         return (sync, async_);
+    }
+
+    /// <summary>
+    /// Re-resolves a <see cref="PipelineBehaviorInfo.BehaviorTypeName"/> (e.g.
+    /// <c>"global::App.Outer+Inner"</c>) back to its symbol in <paramref name="compilation"/>, or
+    /// null when it cannot be found — e.g. the type came from a stale cache entry. Shared by
+    /// <see cref="DiscoverAll"/> and ZV0015's location lookup in <c>ValidatorGenerator</c>.
+    /// </summary>
+    internal static INamedTypeSymbol? ResolveSymbol(Compilation compilation, string behaviorTypeName)
+    {
+        var cleanName = behaviorTypeName
+            .Replace("global::", string.Empty)
+            .Replace("+", ".");   // handle nested types
+
+        return compilation.GetTypeByMetadataName(cleanName);
     }
 
     private static bool IsAsyncBehavior(INamedTypeSymbol symbol)
