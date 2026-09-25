@@ -1861,6 +1861,49 @@ public class CustomRuleAttributeTests
         AssertSingleZV0024(result, "NotBlankAttribute", "Code");
     }
 
+    [Theory]
+    // B does not walk A, so Request reports A's field.
+    [InlineData("[Validate(IncludeBaseProperties = false)]", "")]
+    [InlineData("", "[Validate(IncludeBaseProperties = false)]")]
+    // C walks A through B, so C reports it and Request does not report it again.
+    [InlineData("[Validate(IncludeBaseProperties = false)]", "[Validate]")]
+    public void Field_above_a_Validate_base_that_does_not_walk_it_reports_ZV0024_once(string bAttribute, string cAttribute)
+    {
+        var source = $$"""
+            using System;
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
+            public sealed class NotBlankAttribute : ValidationAttribute<string?>
+            {
+                public override bool IsValid(string? value) => !string.IsNullOrWhiteSpace(value);
+            }
+
+            public class A
+            {
+                [NotBlank] public string? Code;
+            }
+
+            {{bAttribute}}
+            public class B : A { }
+
+            {{cAttribute}}
+            public class C : B { }
+
+            [Validate]
+            public sealed class Request : C
+            {
+                public string? Name { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Empty(CompileErrors(output));
+        AssertSingleZV0024(result, "NotBlankAttribute", "Code");
+    }
+
     [Fact]
     public void File_local_attribute_reports_ZV0023_and_emits_no_field()
     {

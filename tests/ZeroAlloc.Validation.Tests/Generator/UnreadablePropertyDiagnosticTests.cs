@@ -399,6 +399,45 @@ public class UnreadablePropertyDiagnosticTests
         Assert.Equal(new[] { "Other" }, FailedProperties(output, library.Image));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("[Validate]")]
+    public void Rule_on_a_field_of_a_metadata_base_type_is_not_reported(string baseAttribute)
+    {
+        // ZV0024 follows the same rule as ZV0027: a base type from a referenced assembly has no
+        // source location, and its own generation, if it has one, reports it there.
+        var library = BuildLibrary($$"""
+            using System;
+            using ZeroAlloc.Validation;
+            namespace Library;
+
+            [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field)]
+            public sealed class NotBlankAttribute : ValidationAttribute<string?>
+            {
+                public override bool IsValid(string? value) => !string.IsNullOrWhiteSpace(value);
+            }
+
+            {{baseAttribute}}
+            public class RequestBase
+            {
+                [NotBlank] public string? Code;
+            }
+            """);
+
+        var source = Prelude + """
+            [Validate]
+            public class Request : Library.RequestBase
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source, library.Reference);
+
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id.StartsWith("ZV", StringComparison.Ordinal));
+        Assert.Equal(new[] { "Other" }, FailedProperties(output, library.Image));
+    }
+
     [Fact]
     public void Rule_on_unreadable_property_of_a_nested_model_reports_ZV0027_and_validates_the_rest()
     {
