@@ -16,6 +16,10 @@ Add the core library to your project. The integration and testing packages are o
 dotnet add package ZeroAlloc.Validation
 ```
 
+`ZeroAlloc.Validation` bundles its own source generator — no other package is required.
+**Upgrading?** Remove any direct `ZeroAlloc.Validation.Generator` reference — keeping it
+alongside `ZeroAlloc.Validation` loads the generator twice and fails the build with `ZV9001`.
+
 **ASP.NET Core auto-validation (optional)**
 
 ```bash

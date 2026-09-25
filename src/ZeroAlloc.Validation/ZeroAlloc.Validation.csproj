@@ -19,13 +19,17 @@
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 
-  <!-- Run the source generator against THIS project's local build (so e.g. tests pick it up).
-       Consumer projects get the generator via the separate ZeroAlloc.Validation.Generator
-       nupkg (mirrors the ZeroAlloc.Mediator + ZeroAlloc.Mediator.Generator package split). -->
+  <!-- Run the source generator against THIS project's local build (so e.g. tests pick it up),
+       and bundle it into this package below so consumers get it by referencing only
+       ZeroAlloc.Validation, mirroring how ZeroAlloc.Resilience and ZeroAlloc.Rest bundle
+       their own generators (issue #194). The standalone ZeroAlloc.Validation.Generator
+       package is still published for backwards compatibility, but new consumers should
+       reference the main package only. -->
   <ItemGroup>
     <ProjectReference Include="..\ZeroAlloc.Validation.Generator\ZeroAlloc.Validation.Generator.csproj"
                       OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+                      ReferenceOutputAssembly="false"
+                      PrivateAssets="all" />
   </ItemGroup>
 
   <!-- Expose generator dependency DLLs as Analyzer items so Roslyn's loader finds them
@@ -33,6 +37,42 @@
   <ItemGroup>
     <Analyzer Include="$(PkgZeroAlloc_Pipeline_Generators)\lib\netstandard2.0\ZeroAlloc.Pipeline.Generators.dll" />
     <Analyzer Include="$(PkgZeroAlloc_Pipeline)\lib\netstandard2.0\ZeroAlloc.Pipeline.dll" />
+  </ItemGroup>
+
+  <!--
+    Bundle the generator (and the helper DLLs it needs at generator-load time, since Roslyn
+    does not resolve a generator's own PackageReference dependencies) into this package under
+    analyzers/dotnet/cs, the same layout ZeroAlloc.Resilience and ZeroAlloc.Rest use to bundle
+    their generators into their main package.
+  -->
+  <Target Name="IncludeGeneratorInPackage" BeforeTargets="_GetPackageFiles">
+    <ItemGroup>
+      <None Include="$(MSBuildThisFileDirectory)..\ZeroAlloc.Validation.Generator\bin\$(Configuration)\netstandard2.0\ZeroAlloc.Validation.Generator.dll"
+            Pack="true"
+            PackagePath="analyzers/dotnet/cs"
+            Visible="false" />
+      <None Include="$(MSBuildThisFileDirectory)..\ZeroAlloc.Validation.Generator\bin\$(Configuration)\netstandard2.0\ZeroAlloc.Pipeline.Generators.dll"
+            Pack="true"
+            PackagePath="analyzers/dotnet/cs"
+            Visible="false" />
+      <None Include="$(MSBuildThisFileDirectory)..\ZeroAlloc.Validation.Generator\bin\$(Configuration)\netstandard2.0\ZeroAlloc.Pipeline.dll"
+            Pack="true"
+            PackagePath="analyzers/dotnet/cs"
+            Visible="false" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    build/ZeroAlloc.Validation.targets is auto-imported by NuGet into any project that
+    references this package. It fails the build with ZV9001 if the consumer also references
+    ZeroAlloc.Validation.Generator directly, since this package now bundles it and a dual
+    reference loads the generator twice, producing duplicate {Model}Validator types.
+  -->
+  <ItemGroup>
+    <None Include="build/ZeroAlloc.Validation.targets"
+          Pack="true"
+          PackagePath="build/"
+          Visible="false" />
   </ItemGroup>
 
 </Project>

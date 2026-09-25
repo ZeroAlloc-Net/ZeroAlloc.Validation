@@ -11,6 +11,12 @@
     <WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2067;IL2075;IL2091;IL3050;IL3051</WarningsAsErrors>
   </PropertyGroup>
 
+  <!-- Required so Roslyn can locate ZeroAlloc.Pipeline.Generators when loading ValidatorGenerator -->
+  <ItemGroup>
+    <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="0.1.1" GeneratePathProperty="true" />
+    <PackageReference Include="ZeroAlloc.Pipeline" Version="1.2.2" GeneratePathProperty="true" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj"
                       SetTargetFramework="TargetFramework=net10.0" />
@@ -18,5 +24,12 @@
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false"
                       UndefineProperties="PublishAot" />
+  </ItemGroup>
+
+  <!-- Expose generator dependency DLLs as Analyzer items so Roslyn's loader finds them
+       during this project's build. -->
+  <ItemGroup>
+    <Analyzer Include="$(PkgZeroAlloc_Pipeline_Generators)\lib\netstandard2.0\ZeroAlloc.Pipeline.Generators.dll" />
+    <Analyzer Include="$(PkgZeroAlloc_Pipeline)\lib\netstandard2.0\ZeroAlloc.Pipeline.dll" />
   </ItemGroup>
 </Project>
