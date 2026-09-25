@@ -20,6 +20,8 @@ it alongside `ZeroAlloc.Validation` loads the generator twice and fails the buil
 ## Setup
 
 ```csharp
+using ZeroAlloc.Validation.Options;
+
 builder.Services.AddOptions<DatabaseOptions>()
     .BindConfiguration("Database")
     .ValidateWithZeroAlloc()
@@ -28,20 +30,29 @@ builder.Services.AddOptions<DatabaseOptions>()
 
 `ValidateWithZeroAlloc()` is source-generated — a strongly-typed overload is emitted for each `[Validate]` class in your project. If a class does not have `[Validate]`, no overload is generated and the compiler reports an error at the call site.
 
+The generated extension class lives in the `ZeroAlloc.Validation.Options` namespace, the same
+namespace as `ZeroAllocOptionsValidator<T>`, so the `using` above is all that is needed to bring
+`ValidateWithZeroAlloc()` into scope.
+
 ## What it emits
 
 For each `[Validate]` class, the generator emits an extension method on `OptionsBuilder<T>`:
 
 ```csharp
 // generated in your assembly
-public static OptionsBuilder<DatabaseOptions> ValidateWithZeroAlloc(
-    this OptionsBuilder<DatabaseOptions> builder)
+namespace ZeroAlloc.Validation.Options;
+
+public static class ZeroAllocOptionsValidationExtensions
 {
-    var services = builder.Services;
-    services.TryAddSingleton<ValidatorFor<DatabaseOptions>, DatabaseOptionsValidator>();
-    services.TryAddSingleton<IValidateOptions<DatabaseOptions>,
-        ZeroAllocOptionsValidator<DatabaseOptions>>();
-    return builder;
+    public static OptionsBuilder<DatabaseOptions> ValidateWithZeroAlloc(
+        this OptionsBuilder<DatabaseOptions> builder)
+    {
+        var services = builder.Services;
+        services.TryAddSingleton<ValidatorFor<DatabaseOptions>, DatabaseOptionsValidator>();
+        services.TryAddSingleton<IValidateOptions<DatabaseOptions>,
+            ZeroAllocOptionsValidator<DatabaseOptions>>();
+        return builder;
+    }
 }
 ```
 

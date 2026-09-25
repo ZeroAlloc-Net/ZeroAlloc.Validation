@@ -120,9 +120,15 @@ public sealed class PackedFeed : IDisposable
 
     private static void WriteSource(string dir, ConsumerPackages packages)
     {
-        var calls = new StringBuilder();
+        var calls        = new StringBuilder();
+        var usingOptions = "";
         if (packages.HasFlag(ConsumerPackages.Options))
         {
+            // ValidateWithZeroAlloc() lives in ZeroAlloc.Validation.Options, issue #193 point 2 —
+            // only added when the Options package is actually referenced, so an
+            // Inject-only/AspNetCore-only consumer does not get a using for a namespace no
+            // referenced assembly defines (CS0246).
+            usingOptions = "using ZeroAlloc.Validation.Options;";
             calls.AppendLine("services.AddOptions<DatabaseOptions>().ValidateWithZeroAlloc().ValidateOnStart();");
             calls.AppendLine("services.AddOptions<SmtpOptions>().ValidateWithZeroAlloc().ValidateOnStart();");
         }
@@ -137,7 +143,7 @@ public sealed class PackedFeed : IDisposable
         File.WriteAllText(Path.Combine(dir, "Wiring.cs"), $$"""
             using Microsoft.Extensions.DependencyInjection;
             using ZeroAlloc.Validation;
-
+            {{usingOptions}}
             namespace Consumer;
 
             [Validate]

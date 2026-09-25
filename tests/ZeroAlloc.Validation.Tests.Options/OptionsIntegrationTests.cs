@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Xunit;
+using ZeroAlloc.Validation.Options;
 
 namespace ZeroAlloc.Validation.Tests.Options;
 
