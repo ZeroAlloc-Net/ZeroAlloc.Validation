@@ -87,6 +87,20 @@ public class AutoValidationIntegrationTests : IAsyncLifetime
         Assert.Equal(expected, response.StatusCode);
     }
 
+    // Issue #246: an argument whose validator composes nested and collection validators.
+    [Theory]
+    [InlineData("{\"Parcel\":{\"Weight\":1},\"Extras\":[{\"Weight\":2}]}", HttpStatusCode.OK, null)]
+    [InlineData("{\"Parcel\":{\"Weight\":0},\"Extras\":[]}", HttpStatusCode.UnprocessableEntity, "Parcel.Weight")]
+    [InlineData("{\"Parcel\":{\"Weight\":1},\"Extras\":[{\"Weight\":0}]}", HttpStatusCode.UnprocessableEntity, "Extras[0].Weight")]
+    public async Task ComposedModel_IsValidatedByFilter(string json, HttpStatusCode expected, string? failedPath)
+    {
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        var response = await _client!.PostAsync("/sample/composed", content);
+        Assert.Equal(expected, response.StatusCode);
+        if (failedPath is not null)
+            Assert.Contains(failedPath, await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task UnknownModelType_FilterSkips_Returns200()
     {

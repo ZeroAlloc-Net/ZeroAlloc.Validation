@@ -1492,6 +1492,16 @@ internal static class RuleEmitter
         validatorFields.TryGetValue(prop, out var field) ? field : $"_{CamelCase(prop.Name)}Validator";
 
     /// <summary>
+    /// <c>ValidatorFor&lt;TModel&gt;</c> for the nested <c>[Validate]</c> model <paramref name="model"/>,
+    /// fully qualified, the type the constructor takes its validator as. Not the model's generated
+    /// validator, issue #246: <c>ValidatorFor&lt;TModel&gt;</c> is the service type every generated
+    /// validator is registered under, so a container resolves it, and a caller can still pass the
+    /// generated validator itself, which converts to it.
+    /// </summary>
+    private static string ValidatorForParameterType(INamedTypeSymbol model) =>
+        $"global::ZeroAlloc.Validation.ValidatorFor<{model.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>";
+
+    /// <summary>
     /// One validator field and constructor parameter per nested or collection property, in
     /// declaration order. Each is named after the property in camel case, <c>_addressValidator</c>
     /// and <c>addressValidator</c>. Two properties whose names differ only in the case of the first
@@ -1523,12 +1533,12 @@ internal static class RuleEmitter
             // Single nested type with [Validate]
             else if (prop.Type is INamedTypeSymbol nestedNamed && HasValidateAttribute(nestedNamed, compilation))
             {
-                qualifiedType = GeneratedValidatorNames.QualifiedValidatorName(nestedNamed);
+                qualifiedType = ValidatorForParameterType(nestedNamed);
             }
             // Collection element type with [Validate]
             else if (GetCollectionElementType(prop) is INamedTypeSymbol elemNamed && HasValidateAttribute(elemNamed, compilation))
             {
-                qualifiedType = GeneratedValidatorNames.QualifiedValidatorName(elemNamed);
+                qualifiedType = ValidatorForParameterType(elemNamed);
             }
 
             if (qualifiedType is null) continue;

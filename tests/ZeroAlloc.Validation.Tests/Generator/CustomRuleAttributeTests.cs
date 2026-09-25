@@ -633,7 +633,7 @@ public class CustomRuleAttributeTests
 
         Assert.Empty(CompileErrors(output));
         var src = NormalizeNewLines(GetGeneratedSource(result, "CustomerValidator.g.cs"));
-        Assert.Contains("global::TestModels.AddressValidator", src, StringComparison.Ordinal);
+        Assert.Contains("global::ZeroAlloc.Validation.ValidatorFor<global::TestModels.Address>", src, StringComparison.Ordinal);
         Assert.Contains(
             "        if (instance.Cond() && !__Rule_Name_0.IsValid(instance.Name))\n"
                 + "            _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure { PropertyName = \"Name\", ErrorMessage = \"Name needs text\", "

@@ -46,6 +46,24 @@ public static class ZeroAllocValidatorRegistrationExtensions
 
 Validators are registered as `ValidatorFor<T>` — the abstract base type — so any consumer can resolve by the interface without knowing the concrete generated class.
 
+## Composed validators
+
+A validator for a model with a nested or collection `[Validate]` property takes the nested validator in its constructor as `ValidatorFor<TNested>` — the same service type the nested validator is registered under — so the container builds it from `AddZeroAllocValidators()` alone. The registration also covers every validator such a constructor needs that the `[Validate]` scan of your assembly would not find on its own:
+
+```csharp
+// for [Validate] class Order { Address Shipping; List<Line> Lines; [ValidateWith(typeof(MoneyChecker))] Money Total; }
+services.TryAddSingleton<ValidatorFor<Order>, OrderValidator>();
+services.TryAddSingleton<ValidatorFor<Address>, AddressValidator>();   // also when Address is in a referenced assembly
+services.TryAddSingleton<ValidatorFor<Line>, LineValidator>();
+services.TryAddSingleton<MoneyChecker>();                              // a [ValidateWith] validator, by its own type
+```
+
+- A nested model from a referenced assembly is registered when its generated validator is accessible from your assembly. An internal one is left to that assembly's own `AddZeroAllocValidators()`.
+- A `[ValidateWith]` validator is registered by its own type, because that is what the constructor takes, unless it is abstract; its own constructor dependencies come from the container as usual.
+- Registering your own `ValidatorFor<Address>` **before** calling `AddZeroAllocValidators()` replaces the nested validator every composed validator receives, because each registration is a `TryAdd`.
+
+Before 2.0 the constructor took the nested validator's concrete type, which `AddZeroAllocValidators()` did not register, so resolving a composed validator threw. See [Migrating to v2](./migrating-to-v2.md).
+
 ## Idempotency
 
 All registrations use `TryAddSingleton`. Calling `AddZeroAllocValidators()` multiple times, or alongside `AddZeroAllocAspNetCoreValidation()` or `.ValidateWithZeroAlloc()`, produces no duplicate registrations.
@@ -59,11 +77,13 @@ services.AddOptions<DatabaseOptions>().ValidateWithZeroAlloc();
 
 ## Validators without DI
 
-Validators are always usable without DI — the generated classes are plain classes with a parameterless constructor:
+Validators are always usable without DI. A validator for a flat model has a parameterless constructor; one that composes others takes each nested validator, and the generated one converts to the `ValidatorFor<T>` parameter:
 
 ```csharp
 var validator = new DatabaseOptionsValidator();
 var result = validator.Validate(options);
+
+var orderValidator = new OrderValidator(new AddressValidator(), new LineValidator(), new MoneyChecker());
 ```
 
 DI registration via `AddZeroAllocValidators()` is opt-in.

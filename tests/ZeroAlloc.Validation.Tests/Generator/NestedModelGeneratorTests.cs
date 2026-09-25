@@ -209,8 +209,8 @@ public class NestedModelGeneratorTests
 
         Assert.Empty(Errors(output));
         var order = Single(sources, "TestModels.OrderValidator.g.cs");
-        Assert.Contains("global::TestModels.Outer_LineValidator firstValidator", order, StringComparison.Ordinal);
-        Assert.Contains("global::TestModels.Outer_LineValidator linesValidator", order, StringComparison.Ordinal);
+        Assert.Contains("global::ZeroAlloc.Validation.ValidatorFor<global::TestModels.Outer.Line> firstValidator", order, StringComparison.Ordinal);
+        Assert.Contains("global::ZeroAlloc.Validation.ValidatorFor<global::TestModels.Outer.Line> linesValidator", order, StringComparison.Ordinal);
         Assert.Contains("global::TestModels.Outer.PlainChecker checkedValidator", order, StringComparison.Ordinal);
     }
 

@@ -19,8 +19,8 @@ namespace ZeroAlloc.Validation.Tests.Generator;
 /// Also guards points 1 and 3 of issue #193. Point 1: the opt-in ZeroAllocGeneratedAccessibility
 /// MSBuild property makes every generated entry point internal, even for a public model. Point
 /// 3 extends the #184 rule itself, unconditionally: a validator is public only if the model is
-/// effectively public AND every nested [Validate] model it takes as a constructor-injected
-/// dependency would itself resolve to a public validator, computed transitively — so a public
+/// effectively public AND every type its constructor takes is public too: ValidatorFor of each
+/// nested [Validate] model since issue #246, and each [ValidateWith] validator. So a public
 /// model with an internal nested [Validate] model now compiles (and is internal) even with the
 /// property unset, no opt-in required.
 /// </summary>
@@ -259,8 +259,8 @@ public class GeneratedAccessibilityTests
     public void Unset_PublicModelWithInternalNestedModel_CompilesAndValidatorIsInternal()
     {
         // Point 3 of #193, extending the #184 rule: a public model's validator is public only
-        // if the model itself is effectively public AND every nested [Validate] model it takes
-        // as a constructor-injected dependency would itself resolve to a public validator.
+        // if the model itself is effectively public AND every type its constructor takes is
+        // public too; for a nested [Validate] model that is ValidatorFor<Address>, issue #246.
         // Customer is public, but Address (its nested dependency) is internal, so
         // CustomerValidator's own constructor parameter would be less accessible than a public
         // constructor allows — CustomerValidator is internal instead, and the whole thing
@@ -280,13 +280,14 @@ public class GeneratedAccessibilityTests
     }
 
     [Fact]
-    public void Unset_TwoLevelTransitiveNesting_AllThreeValidatorsBecomeInternal()
+    public void Unset_TwoLevelNesting_OnlyTheValidatorTakingTheInternalModelBecomesInternal()
     {
-        // Order (public) -> Customer (public) -> Address (internal). The rule is a fixed point
-        // over the whole model graph, not just one level: Customer is itself public, but its
-        // own validator is forced internal because it depends on Address's internal validator,
-        // which in turn forces Order's validator internal too, even though Order and Customer
-        // are both public models.
+        // Order (public) -> Customer (public) -> Address (internal). A constructor takes each
+        // nested validator as ValidatorFor<TNested>, issue #246, and ValidatorFor<Customer> is as
+        // public as Customer itself, whatever CustomerValidator's own accessibility. So only
+        // CustomerValidator, whose constructor takes ValidatorFor<Address>, has to be internal;
+        // OrderValidator stays public. Before #246 the constructor took CustomerValidator
+        // itself, which forced every validator up the chain internal too.
         var source = """
             using ZeroAlloc.Validation;
             namespace MyApp;
@@ -298,9 +299,53 @@ public class GeneratedAccessibilityTests
         var compilation = RunAndCompile(source, new ValidatorGenerator());
 
         Assert.Empty(Errors(compilation));
-        Assert.Equal(Accessibility.Internal, TypeAccessibility(compilation, "MyApp.OrderValidator"));
+        Assert.Equal(Accessibility.Public, TypeAccessibility(compilation, "MyApp.OrderValidator"));
         Assert.Equal(Accessibility.Internal, TypeAccessibility(compilation, "MyApp.CustomerValidator"));
         Assert.Equal(Accessibility.Internal, TypeAccessibility(compilation, "MyApp.AddressValidator"));
+    }
+
+    [Fact]
+    public void Unset_PublicModelWithInternalValidateWithValidator_CompilesAndValidatorIsInternal()
+    {
+        // [ValidateWith] keeps the named validator's own type as the constructor parameter, so
+        // an internal one would put a less accessible parameter on a public constructor, CS0051.
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace MyApp;
+            public class Money { public decimal Amount { get; set; } }
+            internal sealed class MoneyChecker : ValidatorFor<Money>
+            {
+                public override ValidationResult Validate(Money instance) =>
+                    new ValidationResult(System.Array.Empty<ValidationFailure>());
+            }
+            [Validate] public class Invoice { [ValidateWith(typeof(MoneyChecker))] public Money Total { get; set; } = new(); }
+            """;
+
+        var compilation = RunAndCompile(source, new ValidatorGenerator());
+
+        Assert.Empty(Errors(compilation));
+        Assert.Equal(Accessibility.Internal, TypeAccessibility(compilation, "MyApp.InvoiceValidator"));
+    }
+
+    [Fact]
+    public void Unset_PublicModelWithPublicValidateWithValidator_ValidatorStaysPublic()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace MyApp;
+            public class Money { public decimal Amount { get; set; } }
+            public sealed class MoneyChecker : ValidatorFor<Money>
+            {
+                public override ValidationResult Validate(Money instance) =>
+                    new ValidationResult(System.Array.Empty<ValidationFailure>());
+            }
+            [Validate] public class Invoice { [ValidateWith(typeof(MoneyChecker))] public Money Total { get; set; } = new(); }
+            """;
+
+        var compilation = RunAndCompile(source, new ValidatorGenerator());
+
+        Assert.Empty(Errors(compilation));
+        Assert.Equal(Accessibility.Public, TypeAccessibility(compilation, "MyApp.InvoiceValidator"));
     }
 
     [Fact]

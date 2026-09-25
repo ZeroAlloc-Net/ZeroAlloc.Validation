@@ -12,7 +12,7 @@ ZeroAlloc.Validation supports automatic validation of nested objects. When a pro
 
 ## Automatic nested validation
 
-Nested validation is triggered when a property's type carries `[Validate]`. The generator detects this, declares a private readonly field for the nested validator, and injects it through the outer validator's constructor. `[NotNull]` is commonly added alongside for nullable properties, but it is not the trigger — the presence of `[Validate]` on the property's type is what drives code generation.
+Nested validation is triggered when a property's type carries `[Validate]`. The generator detects this, declares a private readonly field for the nested validator, and injects it through the outer validator's constructor as `ValidatorFor<Address>`. `[NotNull]` is commonly added alongside for nullable properties, but it is not the trigger — the presence of `[Validate]` on the property's type is what drives code generation.
 
 ```csharp
 [Validate]
@@ -39,9 +39,9 @@ The generator emits code equivalent to:
 ```csharp
 public sealed class OrderValidator : ValidatorFor<Order>
 {
-    private readonly AddressValidator _shippingAddressValidator;
+    private readonly ValidatorFor<Address> _shippingAddressValidator;
 
-    public OrderValidator(AddressValidator shippingAddressValidator)
+    public OrderValidator(ValidatorFor<Address> shippingAddressValidator)
     {
         _shippingAddressValidator = shippingAddressValidator;
     }
@@ -69,6 +69,8 @@ public sealed class OrderValidator : ValidatorFor<Order>
 ```
 
 The nested validator is always injected via constructor — the generator never uses `new AddressValidator()` directly.
+
+The constructor takes the nested validator as `ValidatorFor<Address>`, the abstract base every generated validator derives from and the service type `AddZeroAllocValidators()` registers it under. A container therefore resolves it with no extra registration, and you can pass the generated `AddressValidator` directly, or any other `ValidatorFor<Address>`, such as a test double. Before 2.0 the parameter was the concrete `AddressValidator`; see [Migrating to v2](./migrating-to-v2.md).
 
 Each nested validator's field and constructor parameter are named after the property in camel case, `shippingAddressValidator` for `ShippingAddress`. Two properties whose names differ only in the case of the first letter, such as `Address` and `address`, would get the same name, so the later one in declaration order takes the first free numeric suffix: `addressValidator` and `address2Validator`. Every other model keeps the plain names.
 
@@ -121,6 +123,8 @@ public class Order
 }
 ```
 
+The outer validator's constructor takes a `[ValidateWith]` validator by its own type, `MyAddressValidator` here, not as `ValidatorFor<ExternalAddress>`: the attribute names exactly one validator, and two properties of the same type can name different ones. `AddZeroAllocValidators()` registers it by that type, unless it is abstract.
+
 > **Note:** Using `[ValidateWith]` on a property whose type already carries `[Validate]` produces a **ZV0011** compiler warning. The auto-generated validator is used by default; `[ValidateWith]` should only be needed for types you do not control.
 
 `[ValidateWith]` is in the `ZeroAlloc.Validation` namespace. It accepts a `Type` constructor argument:
@@ -159,9 +163,17 @@ flowchart TD
 
 ## DI registration
 
-Because the nested validator is constructor-injected, it integrates naturally with dependency injection. If you annotate your validators with `[Transient]`, `[Scoped]`, or `[Singleton]` from `ZeroAlloc.Inject`, the DI container resolves the full dependency graph — including nested validators — automatically.
+Because the nested validator is constructor-injected, it integrates naturally with dependency injection. `AddZeroAllocValidators()` from [`ZeroAlloc.Validation.Inject`](./inject.md) registers every generated validator as `ValidatorFor<T>`, which is exactly what a composed validator's constructor asks for, plus every `[ValidateWith]` validator by its own type, so the container builds the full graph with no extra registrations:
 
-Without DI, construct the dependency graph manually and pass each nested validator to the parent constructor:
+```csharp
+services.AddZeroAllocValidators();
+
+var orderValidator = provider.GetRequiredService<ValidatorFor<Order>>(); // gets its ValidatorFor<Address>
+```
+
+A nested model declared in a referenced assembly is registered too, as long as its generated validator is accessible from the assembly calling `AddZeroAllocValidators()`. An internal one is left to that assembly's own registration.
+
+Without DI, construct the dependency graph manually and pass each nested validator to the parent constructor. The generated `AddressValidator` converts to the `ValidatorFor<Address>` parameter:
 
 ```csharp
 var addressValidator = new AddressValidator();

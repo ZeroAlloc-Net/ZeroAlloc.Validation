@@ -57,7 +57,7 @@ public static class ZeroAllocOptionsValidationExtensions
 ```
 
 The generated method registers:
-1. The validator as `ValidatorFor<T>` (singleton) — so it can also be resolved by other consumers
+1. The validator as `ValidatorFor<T>` (singleton) — so it can also be resolved by other consumers — and every validator it composes: each nested or collection `[Validate]` model's validator as `ValidatorFor<TNested>`, and each `[ValidateWith]` validator by its own type, so an options model with nested sections needs nothing else registered
 2. `ZeroAllocOptionsValidator<T>` as `IValidateOptions<T>` (singleton) — the bridge into the options pipeline
 
 ## How validation works at runtime

@@ -32,6 +32,10 @@
          property (issue #193). Shared the same way as ValidatorRegistrationEmitter above. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedAccessibilityOption.cs"
              Link="Shared\GeneratedAccessibilityOption.cs" />
+    <!-- ValidatorDependencies lists the validators a generated validator's constructor takes, so
+         ValidatorRegistrationEmitter can register them too, issue #246. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\ValidatorDependencies.cs"
+             Link="Shared\ValidatorDependencies.cs" />
   </ItemGroup>
 
 </Project>

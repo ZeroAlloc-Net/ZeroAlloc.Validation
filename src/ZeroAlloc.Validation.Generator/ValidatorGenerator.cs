@@ -603,11 +603,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // The validator follows the model's effective accessibility. A public validator over an
         // internal model fails with CS9338 and CS0051, issue #184. Extended for issue #193
         // point 3: the validator is public only if the model itself is effectively public AND
-        // every nested [Validate] model it takes as a constructor-injected validator dependency
-        // would itself resolve to a public validator, computed transitively — otherwise the
-        // outer validator's public constructor would take a less-accessible parameter and fail
-        // with CS0051, exactly the case point 3 reported. With
-        // ZeroAllocGeneratedAccessibility=Internal, every validator is internal regardless.
+        // every type its constructor takes is too: ValidatorFor<TNested> for each nested
+        // [Validate] model, issue #246, and each [ValidateWith] validator. Otherwise the public
+        // constructor would take a less-accessible parameter and fail with CS0051, exactly the
+        // case point 3 reported. With ZeroAllocGeneratedAccessibility=Internal, every validator
+        // is internal regardless.
         var accessibility = mode == GeneratedAccessibilityMode.Public && NestedValidatorAccessibility.WouldBePublic(classSymbol, compilation)
             ? "public"
             : "internal";

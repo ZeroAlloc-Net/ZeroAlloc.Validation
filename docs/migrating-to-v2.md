@@ -176,3 +176,53 @@ through the type that declares it.
 
 Nothing for code that builds today. Where a build failed inside generated code, read the
 compiler error quoted in ZV0030 and fix the method or the name, or remove the rule.
+
+## A composed validator's constructor takes `ValidatorFor<TNested>`
+
+A validator for a model with a nested `[Validate]` property, or a collection of `[Validate]`
+elements, takes the nested validator in its constructor. In 1.x that parameter was the nested
+model's concrete generated validator:
+
+```csharp
+public OrderValidator(AddressValidator shippingAddressValidator, LineValidator linesValidator)
+```
+
+`AddZeroAllocValidators()`, `AddZeroAllocAspNetCoreValidation()` and `ValidateWithZeroAlloc()`
+register every generated validator only as `ValidatorFor<T>`, so the container could not supply
+`AddressValidator`, and resolving any validator that composes another one threw
+`InvalidOperationException: Unable to resolve service for type 'AddressValidator'`. The only
+fix was to register each nested validator again by hand.
+
+In 2.0.0 the parameter is `ValidatorFor<TNested>`, the service type every generated validator is
+already registered under:
+
+```csharp
+public OrderValidator(ValidatorFor<Address> shippingAddressValidator, ValidatorFor<Line> linesValidator)
+```
+
+The registration methods also register each validator a composed one takes that your assembly's
+own `[Validate]` scan does not cover: a nested model declared in a referenced assembly, when its
+validator is accessible, and each `[ValidateWith]` validator. A `[ValidateWith(typeof(X))]`
+property still takes `X` itself, since the attribute names exactly one validator, and it is now
+registered as `X` unless `X` is abstract.
+
+A validator whose model is public and whose nested model is public is now `public` even when the
+nested model's own validator is internal: its constructor no longer names that validator.
+Conversely, a public model with an internal `[ValidateWith]` validator now gets an `internal`
+validator instead of failing with `CS0051`.
+
+### What to do
+
+- **Constructing validators yourself**: nothing. `new OrderValidator(new AddressValidator(), new
+  LineValidator())` still compiles, because the generated validator converts to
+  `ValidatorFor<TNested>`. You can now also pass any other `ValidatorFor<TNested>`, such as a
+  test stub.
+- **Using DI**: remove the registrations you added for nested validators by their concrete type,
+  such as `services.AddSingleton<AddressValidator>()`. They are no longer needed, and the composed
+  validator no longer receives them. To replace a nested validator, register your own
+  `ValidatorFor<TNested>` before calling the registration method.
+- **Code that names the constructor parameter types**, such as reflection over the generated
+  constructor, or a constructor you added in a partial declaration that chains to it with
+  `: this(...)`: switch to `ValidatorFor<TNested>`.
+- **Performance**: each nested call is now a virtual call through `ValidatorFor<T>.Validate`
+  instead of a call on the sealed generated class. The valid path still allocates nothing.

@@ -35,13 +35,15 @@
     Inject assembly, the same reasoning ValidatorRegistrationEmitter.cs is shared into
     Options.Generator and AspNetCore.Generator: a reference would load the whole Inject
     assembly (and its own generator) into this one, and Roslyn would then also run
-    InjectGenerator from that copy. Shared so this generator's own accessibility decision
-    (issue #193 point 3) matches the one OptionsValidationEmitter, InjectGenerator and
-    AspNetCoreFilterEmitter each compute independently for the same model.
+    InjectGenerator from that copy.
   -->
   <ItemGroup>
     <Compile Include="..\ZeroAlloc.Validation.Inject\NestedValidatorAccessibility.cs"
              Link="Shared\NestedValidatorAccessibility.cs" />
+    <!-- ValidatorDependencies lists the validators the generated constructor takes, which
+         NestedValidatorAccessibility checks, issue #246. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\ValidatorDependencies.cs"
+             Link="Shared\ValidatorDependencies.cs" />
     <!-- GeneratedValidatorNames names the generated validator, issue #207. Shared so the
          Inject, Options and ASP.NET Core generators name the same class this one declares. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedValidatorNames.cs"

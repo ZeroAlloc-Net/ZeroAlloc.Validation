@@ -42,8 +42,8 @@ public class NestedValidatorFieldNameTests
 
         Assert.Empty(Errors(compilation));
         Assert.Contains(
-            "public ModelValidator(global::MyApp.ChildValidator addressValidator, "
-                + "global::MyApp.ChildValidator address3Validator, global::MyApp.ChildValidator address2Validator)",
+            "public ModelValidator(global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.Child> addressValidator, "
+                + "global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.Child> address3Validator, global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.Child> address2Validator)",
             validator, StringComparison.Ordinal);
         Assert.Contains("_addressValidator.Validate(instance.Address)", validator, StringComparison.Ordinal);
         Assert.Contains("_address3Validator.Validate(instance.address)", validator, StringComparison.Ordinal);
@@ -101,8 +101,8 @@ public class NestedValidatorFieldNameTests
 
         Assert.Empty(Errors(compilation));
         Assert.Contains(
-            "public ModelValidator(global::MyApp.ChildValidator addressValidator, "
-                + "global::MyApp.ChildValidator billingValidator, global::MyApp.ChildValidator linesValidator)",
+            "public ModelValidator(global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.Child> addressValidator, "
+                + "global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.Child> billingValidator, global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.Child> linesValidator)",
             validator, StringComparison.Ordinal);
         Assert.Contains(
             "/// <param name=\"billingValidator\">The validator for the nested <c>Billing</c> member.</param>",

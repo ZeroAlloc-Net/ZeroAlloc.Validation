@@ -42,7 +42,7 @@ public class LineItem
 }
 ```
 
-Because `LineItem` is annotated with `[Validate]`, the generator produces a `LineItemValidator` and injects it into `CartValidator` via constructor. No configuration is required on the `Items` property.
+Because `LineItem` is annotated with `[Validate]`, the generator produces a `LineItemValidator`, and `CartValidator` takes it through its constructor as `ValidatorFor<LineItem>`. No configuration is required on the `Items` property.
 
 ---
 
@@ -152,7 +152,7 @@ if (instance.Items is not null)
 }
 ```
 
-The element validator is injected via constructor, consistent with how nested object validators are wired.
+The element validator is injected via constructor as `ValidatorFor<LineItem>`, consistent with how nested object validators are wired, so `AddZeroAllocValidators()` resolves it and `new CartValidator(new LineItemValidator())` still works. See [Nested Validation](./nested-validation.md#di-registration).
 
 ---
 

@@ -28,7 +28,7 @@ builder.Services.AddZeroAllocAspNetCoreValidation();
 
 `AddZeroAllocAspNetCoreValidation()` is source-generated — it lives in the generated code, not in a library method. It:
 
-- Registers each discovered validator as `Singleton` via `TryAddSingleton<ValidatorFor<T>, TValidator>()`
+- Registers each discovered validator as `Singleton` via `TryAddSingleton<ValidatorFor<T>, TValidator>()`, together with every validator a composed one takes in its constructor — see [Composed validators](./inject.md#composed-validators)
 - Registers `ZeroAllocValidationActionFilter` as `Transient`
 - Adds `ZeroAllocValidationActionFilter` to `MvcOptions.Filters`
 
