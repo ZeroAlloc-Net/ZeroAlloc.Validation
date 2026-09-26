@@ -1,9 +1,1 @@
 #nullable enable
-abstract ZeroAlloc.Validation.ValidationAttribute<T>.IsValid(T value) -> bool
-ZeroAlloc.Validation.RuleMessageAttribute
-ZeroAlloc.Validation.RuleMessageAttribute.ErrorCode.get -> string?
-ZeroAlloc.Validation.RuleMessageAttribute.ErrorCode.set -> void
-ZeroAlloc.Validation.RuleMessageAttribute.Message.get -> string!
-ZeroAlloc.Validation.RuleMessageAttribute.RuleMessageAttribute(string! message) -> void
-ZeroAlloc.Validation.ValidationAttribute<T>
-ZeroAlloc.Validation.ValidationAttribute<T>.ValidationAttribute() -> void
