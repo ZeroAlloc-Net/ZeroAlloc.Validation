@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.0.0...v2.0.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **ci:** pack the local feed before testing in the release and rescue workflows ([#260](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/260)) ([862e6f5](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/862e6f5964e6240a237e58c465cb0c6c84b213da))
+
 ## [2.0.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.8...v2.0.0) (2026-09-26)
 
 
