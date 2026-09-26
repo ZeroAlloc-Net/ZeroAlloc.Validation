@@ -50,6 +50,15 @@ jobs:
         # one. See ZeroAlloc-Net/.github#26.
         run: dotnet build --configuration Release --no-restore -p:Version=${{ steps.version.outputs.version }}
 
+      - name: Pack ZA.Validation packages into local feed (for duplicate-generator test)
+        run: |
+          # The duplicate-generator tests restore these packages from artifacts/local. CI packs
+          # them before testing; without the same step here the release's tests fail and
+          # nothing is published.
+          for p in ZeroAlloc.Validation ZeroAlloc.Validation.Generator ZeroAlloc.Validation.AspNetCore; do
+            dotnet pack "src/$p/$p.csproj" -c Release --no-build -p:PackageVersion=${{ steps.version.outputs.version }} -o artifacts/local
+          done
+
       - name: Test
         run: dotnet test --configuration Release --no-build
 
