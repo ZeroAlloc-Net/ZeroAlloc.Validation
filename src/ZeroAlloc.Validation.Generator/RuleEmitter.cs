@@ -10,7 +10,6 @@ namespace ZeroAlloc.Validation.Generator;
 internal static class RuleEmitter
 {
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
-    private const string ValidateWithAttributeFqn = "ZeroAlloc.Validation.ValidateWithAttribute";
     private const string StopOnFirstFailureFqn = "ZeroAlloc.Validation.StopOnFirstFailureAttribute";
     private const string DisplayNameAttributeFqn = "ZeroAlloc.Validation.DisplayNameAttribute";
     private const string SkipWhenAttributeFqn = "ZeroAlloc.Validation.SkipWhenAttribute";
@@ -1383,17 +1382,8 @@ internal static class RuleEmitter
     private static string EscapeStringForInterpolation(string s) =>
         EscapeString(s).Replace("{", "{{").Replace("}", "}}");
 
-    private static INamedTypeSymbol? GetValidateWithType(IPropertySymbol prop)
-    {
-        foreach (var attr in prop.GetAttributes())
-        {
-            if (!string.Equals(attr.AttributeClass?.ToDisplayString(), ValidateWithAttributeFqn, StringComparison.Ordinal))
-                continue;
-            if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is INamedTypeSymbol t)
-                return t;
-        }
-        return null;
-    }
+    private static INamedTypeSymbol? GetValidateWithType(IPropertySymbol prop) =>
+        ValidatorDependencies.ValidateWithType(prop);
 
     private static IEnumerable<IPropertySymbol> GetNestedValidateProperties(INamedTypeSymbol classSymbol, Compilation compilation) =>
         MemberWalker.GetMembersIncludingBase(classSymbol, compilation)
@@ -1411,34 +1401,10 @@ internal static class RuleEmitter
     /// does not exist.
     /// </summary>
     private static bool HasValidateAttribute(INamedTypeSymbol typeSymbol, Compilation compilation) =>
-        typeSymbol.GetAttributes()
-            .Any(a => string.Equals(a.AttributeClass?.ToDisplayString(), ValidateAttributeFqn, StringComparison.Ordinal))
-        && GeneratedValidatorReach.HasGeneratedValidator(typeSymbol, compilation);
+        ValidatorDependencies.HasGeneratedValidator(typeSymbol, compilation);
 
-    private static ITypeSymbol? GetCollectionElementType(IPropertySymbol prop)
-    {
-        // T[]
-        if (prop.Type is IArrayTypeSymbol arr)
-            return arr.ElementType;
-
-        if (prop.Type is not INamedTypeSymbol named)
-            return null;
-
-        // IEnumerable<T> directly
-        if (named.IsGenericType && named.TypeArguments.Length == 1
-            && string.Equals(named.OriginalDefinition.ToDisplayString(), "System.Collections.Generic.IEnumerable<T>", StringComparison.Ordinal))
-            return named.TypeArguments[0];
-
-        // Any type implementing IEnumerable<T> (List<T>, IList<T>, ICollection<T>, etc.)
-        foreach (var iface in named.AllInterfaces)
-        {
-            if (iface.IsGenericType && iface.TypeArguments.Length == 1
-                && string.Equals(iface.OriginalDefinition.ToDisplayString(), "System.Collections.Generic.IEnumerable<T>", StringComparison.Ordinal))
-                return iface.TypeArguments[0];
-        }
-
-        return null;
-    }
+    private static ITypeSymbol? GetCollectionElementType(IPropertySymbol prop) =>
+        ValidatorDependencies.CollectionElementType(prop.Type);
 
     private static IEnumerable<(IPropertySymbol Property, INamedTypeSymbol ElementType)> GetCollectionValidateProperties(INamedTypeSymbol classSymbol, Compilation compilation) =>
         MemberWalker.GetMembersIncludingBase(classSymbol, compilation)
@@ -1492,6 +1458,16 @@ internal static class RuleEmitter
         validatorFields.TryGetValue(prop, out var field) ? field : $"_{CamelCase(prop.Name)}Validator";
 
     /// <summary>
+    /// <c>ValidatorFor&lt;TModel&gt;</c> for the nested <c>[Validate]</c> model <paramref name="model"/>,
+    /// fully qualified, the type the constructor takes its validator as. Not the model's generated
+    /// validator, issue #246: <c>ValidatorFor&lt;TModel&gt;</c> is the service type every generated
+    /// validator is registered under, so a container resolves it, and a caller can still pass the
+    /// generated validator itself, which converts to it.
+    /// </summary>
+    private static string ValidatorForParameterType(INamedTypeSymbol model) =>
+        $"global::ZeroAlloc.Validation.ValidatorFor<{model.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>";
+
+    /// <summary>
     /// One validator field and constructor parameter per nested or collection property, in
     /// declaration order. Each is named after the property in camel case, <c>_addressValidator</c>
     /// and <c>addressValidator</c>. Two properties whose names differ only in the case of the first
@@ -1505,33 +1481,16 @@ internal static class RuleEmitter
     private static List<(IPropertySymbol Property, string FieldName, string ParamName, string QualifiedValidatorType, string MemberDescription)>
         NestedValidatorFields(INamedTypeSymbol classSymbol, Compilation compilation)
     {
-        var properties = new List<(IPropertySymbol Property, string Camel, string QualifiedValidatorType)>();
-        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
+        // ValidatorDependencies decides which properties the constructor takes and as what, so the
+        // DI glue registers exactly these, issue #246. A [ValidateWith] validator is taken by its
+        // own type, fully qualified so one declared inside another type resolves too.
+        var dependencies = ValidatorDependencies.Of(classSymbol, compilation);
+        var properties = new List<(IPropertySymbol Property, string Camel, string QualifiedValidatorType)>(dependencies.Count);
+        foreach (var (prop, type, isValidateWith, _) in dependencies)
         {
-            if (member is not IPropertySymbol prop) continue;
-
-            string? qualifiedType = null;
-
-            // [ValidateWith] takes priority over auto-detect for both scalar and collection properties.
-            // For collections, the specified type is the element validator — GetCollectionElementType is not needed here.
-            var validateWithType = GetValidateWithType(prop);
-            if (validateWithType is not null)
-            {
-                // Fully qualified, so a validator declared inside another type resolves too.
-                qualifiedType = validateWithType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            }
-            // Single nested type with [Validate]
-            else if (prop.Type is INamedTypeSymbol nestedNamed && HasValidateAttribute(nestedNamed, compilation))
-            {
-                qualifiedType = GeneratedValidatorNames.QualifiedValidatorName(nestedNamed);
-            }
-            // Collection element type with [Validate]
-            else if (GetCollectionElementType(prop) is INamedTypeSymbol elemNamed && HasValidateAttribute(elemNamed, compilation))
-            {
-                qualifiedType = GeneratedValidatorNames.QualifiedValidatorName(elemNamed);
-            }
-
-            if (qualifiedType is null) continue;
+            var qualifiedType = isValidateWith
+                ? type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+                : ValidatorForParameterType(type);
             properties.Add((prop, CamelCase(prop.Name), qualifiedType));
         }
 

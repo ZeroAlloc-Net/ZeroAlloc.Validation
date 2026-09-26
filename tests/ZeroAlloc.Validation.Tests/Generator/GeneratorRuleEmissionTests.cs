@@ -197,7 +197,7 @@ public class GeneratorRuleEmissionTests
         var customerSource = RunGeneratorGetSources(source)
             .First(s => s.Contains("CustomerValidator", StringComparison.Ordinal));
 
-        Assert.Contains("AddressValidator", customerSource, StringComparison.Ordinal);
+        Assert.Contains("global::ZeroAlloc.Validation.ValidatorFor<global::TestModels.Address> addressValidator", customerSource, StringComparison.Ordinal);
         Assert.Contains("\"Address.\" +", customerSource, StringComparison.Ordinal);
         Assert.Contains("is not null", customerSource, StringComparison.Ordinal);
     }
@@ -221,7 +221,7 @@ public class GeneratorRuleEmissionTests
         var orderSource = RunGeneratorGetSources(source)
             .First(s => s.Contains("OrderValidator", StringComparison.Ordinal));
 
-        Assert.Contains("global::Models.Addresses.AddressValidator", orderSource, StringComparison.Ordinal);
+        Assert.Contains("global::ZeroAlloc.Validation.ValidatorFor<global::Models.Addresses.Address> shippingValidator", orderSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -293,7 +293,7 @@ public class GeneratorRuleEmissionTests
         var orderSource = RunGeneratorGetSources(source)
             .First(s => s.Contains("OrderValidator", StringComparison.Ordinal));
 
-        Assert.Contains("LineItemValidator", orderSource, StringComparison.Ordinal);
+        Assert.Contains("global::ZeroAlloc.Validation.ValidatorFor<global::TestModels.LineItem> itemsValidator", orderSource, StringComparison.Ordinal);
         Assert.Contains("\"Items[\" +", orderSource, StringComparison.Ordinal);
         Assert.Contains("is not null", orderSource, StringComparison.Ordinal);
         Assert.Contains("foreach", orderSource, StringComparison.Ordinal);
@@ -316,7 +316,7 @@ public class GeneratorRuleEmissionTests
         var articleSource = RunGeneratorGetSources(source)
             .First(s => s.Contains("ArticleValidator", StringComparison.Ordinal));
 
-        Assert.Contains("TagValidator", articleSource, StringComparison.Ordinal);
+        Assert.Contains("global::ZeroAlloc.Validation.ValidatorFor<global::TestModels.Tag> tagsValidator", articleSource, StringComparison.Ordinal);
         Assert.Contains("FailureBuffer", articleSource, StringComparison.Ordinal);
     }
 
@@ -824,7 +824,7 @@ public class GeneratorRuleEmissionTests
         var customerSource = RunGeneratorGetSources(source)
             .First(s => s.Contains("CustomerValidator", StringComparison.Ordinal));
 
-        Assert.Contains("AddressValidator homeValidator", customerSource, StringComparison.Ordinal);
+        Assert.Contains("global::ZeroAlloc.Validation.ValidatorFor<global::TestModels.Address> homeValidator", customerSource, StringComparison.Ordinal);
         Assert.Contains("_homeValidator", customerSource, StringComparison.Ordinal);
     }
 
@@ -842,7 +842,7 @@ public class GeneratorRuleEmissionTests
         var bagSource = RunGeneratorGetSources(source)
             .First(s => s.Contains("BagValidator", StringComparison.Ordinal));
 
-        Assert.Contains("ItemValidator thingsValidator", bagSource, StringComparison.Ordinal);
+        Assert.Contains("global::ZeroAlloc.Validation.ValidatorFor<global::TestModels.Item> thingsValidator", bagSource, StringComparison.Ordinal);
         Assert.Contains("_thingsValidator", bagSource, StringComparison.Ordinal);
     }
 
@@ -905,7 +905,8 @@ public class GeneratorRuleEmissionTests
         var invoiceSource = RunGeneratorGetSources(source)
             .First(s => s.Contains("InvoiceValidator", StringComparison.Ordinal));
 
-        Assert.Contains("MoneyValidator", invoiceSource, StringComparison.Ordinal);
+        // [ValidateWith] names one validator, so the constructor keeps that exact type.
+        Assert.Contains("global::TestModels.MoneyValidator totalValidator", invoiceSource, StringComparison.Ordinal);
         Assert.Contains("_totalValidator", invoiceSource, StringComparison.Ordinal);
         Assert.Contains("\"Total.\" +", invoiceSource, StringComparison.Ordinal);
     }
@@ -935,7 +936,7 @@ public class GeneratorRuleEmissionTests
         var articleSource = RunGeneratorGetSources(source)
             .First(s => s.Contains("ArticleValidator", StringComparison.Ordinal));
 
-        Assert.Contains("TagValidator", articleSource, StringComparison.Ordinal);
+        Assert.Contains("global::TestModels.TagValidator tagsValidator", articleSource, StringComparison.Ordinal);
         Assert.Contains("_tagsValidator", articleSource, StringComparison.Ordinal);
         Assert.Contains("\"Tags[\" +", articleSource, StringComparison.Ordinal);
     }

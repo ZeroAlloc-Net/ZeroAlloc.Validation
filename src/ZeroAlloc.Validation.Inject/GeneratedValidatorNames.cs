@@ -6,7 +6,7 @@ namespace ZeroAlloc.Validation.Generator.Shared;
 /// <summary>
 /// The one place that decides what the generated validator for a <c>[Validate]</c> model is
 /// called, shared by ValidatorGenerator, which declares it, and by the Inject, Options and
-/// ASP.NET Core generators and the nested-validator composition, which name it. Each of those
+/// ASP.NET Core generators, which register it. Each of those
 /// used to rebuild the name from <c>model.Name</c> on its own, which named a type that does
 /// not exist as soon as the model was nested in another type, issue #207.
 /// </summary>
@@ -66,6 +66,20 @@ internal static class GeneratedValidatorNames
         NamespaceName(model) is { } ns
             ? $"global::{ns}.{ValidatorName(model)}"
             : $"global::{ValidatorName(model)}";
+
+    /// <summary>
+    /// The validator's metadata name, for <c>GetTypeByMetadataName</c>, for example
+    /// <c>class.Models.Outer_RequestValidator</c>: namespace segments are never escaped there,
+    /// so a keyword namespace written <c>@class.Models</c> in code is looked up as
+    /// <c>class.Models</c>, issue #246.
+    /// </summary>
+    public static string MetadataName(INamedTypeSymbol model)
+    {
+        var ns = model.ContainingNamespace;
+        return ns is null || ns.IsGlobalNamespace
+            ? ValidatorName(model)
+            : $"{ns.ToDisplayString(HintNamespaceFormat)}.{ValidatorName(model)}";
+    }
 
     /// <summary>
     /// The hint name of the validator's generated file, for example

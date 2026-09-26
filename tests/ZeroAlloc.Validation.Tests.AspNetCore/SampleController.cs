@@ -21,6 +21,9 @@ public class SampleController : ControllerBase
     public IActionResult PostNestedReturn([FromBody] Returns.Inbound.Request model) =>
         Ok(new { model.Quantity });
 
+    [HttpPost("composed")]
+    public IActionResult PostComposed([FromBody] Shipment model) => Ok(new { model.Parcel.Weight });
+
     [HttpPost("unknown")]
     public IActionResult PostUnknown([FromBody] string raw) => Ok(raw);
 }

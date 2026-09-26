@@ -2,14 +2,20 @@ using Microsoft.CodeAnalysis;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 
-namespace ZeroAlloc.Validation.Generator;
+namespace ZeroAlloc.Validation.Generator.Shared;
 
 /// <summary>
 /// Enumerates the members a generated validator may act on, including those inherited from
 /// base types. <see cref="INamedTypeSymbol.GetMembers()"/> only returns members *declared* on
 /// the type, so every discovery pass in this generator goes through here instead.
 /// </summary>
-internal static class MemberWalker
+/// <remarks>
+/// Shared as source with the Inject, Options and ASP.NET Core generators, like the other files
+/// in this folder, so the validators they register are exactly the ones a generated constructor
+/// takes, issue #246. ValidatorGenerator adds the ZV0017 part, which needs its custom-rule
+/// recognition, in its own MemberWalker.InaccessibleBaseMembers.cs.
+/// </remarks>
+internal static partial class MemberWalker
 {
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
 
@@ -19,7 +25,7 @@ internal static class MemberWalker
     /// the derived type. A member hidden by a more-derived declaration (<c>new</c> or
     /// <c>override</c>) is yielded once, from the most-derived type that declares it.
     /// Base members the generated validator could not legally reference are skipped —
-    /// <see cref="GetInaccessibleBaseMembers"/> reports those separately as ZV0017. A property
+    /// ValidatorGenerator's <c>GetInaccessibleBaseMembers</c> reports those separately as ZV0017. A property
     /// the validator cannot read as <c>instance.Prop</c>, on any level, is skipped as well — see
     /// <see cref="GetUnreadableReason"/>; ZV0027 reports a rule placed on one.
     /// Returns only <paramref name="type"/>'s own members when
@@ -83,33 +89,6 @@ internal static class MemberWalker
                 builder.Add(level[k]);
         }
         return builder.ToImmutable();
-    }
-
-    /// <summary>
-    /// Base-type members that carry ZeroAlloc validation attributes but cannot be referenced
-    /// from the generated validator (a separate class), so their rules are silently dropped.
-    /// Reported as ZV0017 rather than emitting code that would not compile. A member that the
-    /// generation of a <c>[Validate]</c> base type reports instead is still returned; the caller
-    /// filters it with <see cref="MethodReachability.IsReportedByBaseValidator"/>, which knows
-    /// whether that base type walks the member's declaring type.
-    /// </summary>
-    public static IEnumerable<ISymbol> GetInaccessibleBaseMembers(INamedTypeSymbol type, Compilation compilation)
-    {
-        if (!IncludesBaseProperties(type)) yield break;
-
-        for (var current = type.BaseType; current is not null && current.SpecialType != SpecialType.System_Object; current = current.BaseType)
-        {
-            foreach (var member in current.GetMembers())
-            {
-                if (member is not IPropertySymbol && member is not IMethodSymbol) continue;
-                // A static, getter-less or indexer property cannot be read however accessible it
-                // is; that is ZV0027's case, reported at each rule, not an accessibility problem.
-                if (member is IPropertySymbol property && IsUnreadableByShape(GetUnreadableReason(property, compilation))) continue;
-                if (IsAccessibleFrom(member, compilation)) continue;
-                if (!HasZeroAllocValidationAttribute(member)) continue;
-                yield return member;
-            }
-        }
     }
 
     /// <summary>
@@ -249,16 +228,4 @@ internal static class MemberWalker
     /// </summary>
     private static bool IsAccessible(ISymbol member, Compilation compilation) =>
         compilation.IsSymbolAccessibleWithin(member, compilation.Assembly);
-
-    private static bool HasZeroAllocValidationAttribute(ISymbol member)
-    {
-        foreach (var attr in member.GetAttributes())
-        {
-            var ns = attr.AttributeClass?.ContainingNamespace?.ToDisplayString();
-            if (string.Equals(ns, "ZeroAlloc.Validation", StringComparison.Ordinal)
-                || CustomRules.IsCustomRule(attr))
-                return true;
-        }
-        return false;
-    }
 }

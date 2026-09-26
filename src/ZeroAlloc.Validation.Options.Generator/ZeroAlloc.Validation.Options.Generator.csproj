@@ -32,12 +32,16 @@
          property (issue #193). Shared the same way as ValidatorRegistrationEmitter above. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedAccessibilityOption.cs"
              Link="Shared\GeneratedAccessibilityOption.cs" />
-    <!-- NestedValidatorAccessibility decides whether a model's {Model}Validator would be
-         public (issue #193 point 3), so a model routes into ZeroAllocOptionsValidationExtensions
-         or InternalZeroAllocOptionsValidationExtensions consistently with what ValidatorGenerator
-         actually emits. Shared the same way as ValidatorRegistrationEmitter above. -->
-    <Compile Include="..\ZeroAlloc.Validation.Inject\NestedValidatorAccessibility.cs"
-             Link="Shared\NestedValidatorAccessibility.cs" />
+    <!-- ValidatorDependencies lists the validators a generated validator's constructor takes, so
+         ValidatorRegistrationEmitter can register them too, issue #246. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\ValidatorDependencies.cs"
+             Link="Shared\ValidatorDependencies.cs" />
+    <!-- MemberWalker decides which properties a generated validator walks, so the dependencies
+         listed are exactly the ones its constructor takes, issue #246. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\MemberWalker.cs"
+             Link="Shared\MemberWalker.cs" />
+    <Compile Include="..\ZeroAlloc.Validation.Inject\UnreadableReason.cs"
+             Link="Shared\UnreadableReason.cs" />
   </ItemGroup>
 
 </Project>

@@ -75,7 +75,8 @@ if (!validLetter.IsValid)
 // Fixture 2: Nested IReadOnlyList<[Validate] OrderItem> with per-item indexing.
 // Generator emits a foreach over Items, validating each via OrderItemValidator
 // and emitting failures with PropertyName "Items[N].Sku" — the indexed
-// PropertyName is the load-bearing invariant.
+// PropertyName is the load-bearing invariant. The constructor takes ValidatorFor<OrderItem>
+// and ValidatorFor<OrderTag>; the generated validators convert to them.
 var orderValidator = new OrderValidator(new OrderItemValidator(), new OrderTagValidator());
 
 // Invalid: one valid item at Items[0], one invalid item at Items[1],

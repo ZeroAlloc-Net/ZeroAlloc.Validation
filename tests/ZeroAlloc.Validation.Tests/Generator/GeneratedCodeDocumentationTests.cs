@@ -103,7 +103,7 @@ public class GeneratedCodeDocumentationTests
     {
         var xml = EmitXmlDocumentation(new ValidatorGenerator(), NestedValidateSource);
 
-        Assert.Contains("M:MyApp.CustomerValidator.#ctor(MyApp.AddressValidator)", xml, StringComparison.Ordinal);
+        Assert.Contains("M:MyApp.CustomerValidator.#ctor(ZeroAlloc.Validation.ValidatorFor{MyApp.Address})", xml, StringComparison.Ordinal);
         // The parameter is homeValidator; the documentation should name the Home property
         // rather than fall back to a generic description.
         Assert.Contains("""<param name="homeValidator">""", xml, StringComparison.Ordinal);

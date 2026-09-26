@@ -1,135 +1,77 @@
-using System.Collections.Generic;
-using System.Linq;
 using Microsoft.CodeAnalysis;
 
 namespace ZeroAlloc.Validation.Generator.Shared;
 
 /// <summary>
-/// Shared by ValidatorGenerator, InjectGenerator, AspNetCoreFilterEmitter and
-/// OptionsValidationEmitter to decide whether a <c>[Validate]</c> model's generated
-/// <c>{Model}Validator</c> would be emitted <c>public</c> when
-/// <c>ZeroAllocGeneratedAccessibility</c> is unset or <c>Public</c> (issue #193 point 3,
-/// extending the #184 rule): the model itself must be effectively public, AND every nested
-/// <c>[Validate]</c> model it takes as a constructor-injected validator dependency — a scalar
-/// property or a collection element, but not an explicit <c>[ValidateWith]</c> override, whose
-/// target type's accessibility is the caller's own responsibility, not ours — must itself
-/// resolve to a public validator too, computed transitively over the model graph. Without this,
-/// a public model with an internal nested <c>[Validate]</c> model's validator took an internal
-/// constructor parameter on a public constructor and failed with CS0051.
+/// Decides whether a <c>[Validate]</c> model's generated <c>{Model}Validator</c> is emitted
+/// <c>public</c> when <c>ZeroAllocGeneratedAccessibility</c> is unset or <c>Public</c>, issue #193
+/// point 3, extending the #184 rule: the model itself must be effectively public, AND every type
+/// the validator's public constructor takes must be too. Otherwise the constructor would take a
+/// less accessible parameter and fail with CS0051.
 /// </summary>
 /// <remarks>
-/// Walks a property's declaring type and its base chain without reproducing
-/// ValidatorGenerator.MemberWalker's hiding/<c>[Validate(IncludeBaseProperties = false)]</c>
-/// handling — that project is not referenced here, by design, to avoid loading an extra
-/// assembly into each of these four independent generators (the same reason
-/// ValidatorRegistrationEmitter.cs is shared as a linked file rather than referenced). Walking
-/// more properties than the real constructor actually injects only makes this check MORE
-/// conservative (occasionally Internal where Public would also have compiled); the one
-/// direction that must never happen is treating a validator as Public when its real generated
-/// constructor takes an Internal parameter, and walking fewer properties could cause that.
+/// <para>
+/// The constructor takes each nested or collection <c>[Validate]</c> model's validator as
+/// <c>ValidatorFor&lt;TModel&gt;</c>, issue #246, so that parameter is exactly as accessible as the
+/// nested model: whether the nested model's own validator is public does not matter. Before #246
+/// the parameter was the nested validator's own type, and the rule had to be computed
+/// transitively over the whole model graph; an internal model anywhere below made every
+/// validator above it internal.
+/// </para>
+/// <para>
+/// A <c>[ValidateWith(typeof(X))]</c> property is taken as <c>X</c> itself, so <c>X</c> must be
+/// effectively public too, type arguments included. Before #246 that case was left to the
+/// caller, and an internal <c>X</c> on a public model failed to compile with CS0051.
+/// </para>
+/// <para>
+/// <see cref="ValidatorDependencies"/> lists the parameters, the same routine the generated
+/// constructor is declared from, so a property the constructor does not take, such as a base
+/// property under <c>[Validate(IncludeBaseProperties = false)]</c>, does not count.
+/// </para>
 /// </remarks>
 public static class NestedValidatorAccessibility
 {
-    private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
-    private const string ValidateWithAttributeFqn = "ZeroAlloc.Validation.ValidateWithAttribute";
-
-    public static bool WouldBePublic(INamedTypeSymbol model, Compilation compilation) =>
-        WouldBePublic(model, compilation, new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default));
-
-    private static bool WouldBePublic(INamedTypeSymbol model, Compilation compilation, HashSet<INamedTypeSymbol> inProgress)
+    public static bool WouldBePublic(INamedTypeSymbol model, Compilation compilation)
     {
         if (!IsEffectivelyPublic(model))
             return false;
 
-        // Cycle guard: a model already being walked on this path is not re-evaluated — its own
-        // resolution does not depend on this particular recursive call reaching it again.
-        if (!inProgress.Add(model))
-            return true;
-
-        try
+        var dependencies = ValidatorDependencies.Of(model, compilation);
+        for (var i = 0; i < dependencies.Count; i++)
         {
-            foreach (var prop in AllProperties(model))
-            {
-                // [ValidateWith] overrides auto-compose; the specified validator type's own
-                // accessibility is the caller's responsibility, not something we compute here.
-                if (HasValidateWithAttribute(prop))
-                    continue;
-
-                if (prop.Type is INamedTypeSymbol nested && IsValidatorDependency(nested, compilation))
-                {
-                    if (!WouldBePublic(nested, compilation, inProgress)) return false;
-                    continue;
-                }
-
-                if (GetCollectionElementType(prop.Type) is INamedTypeSymbol element && IsValidatorDependency(element, compilation))
-                {
-                    if (!WouldBePublic(element, compilation, inProgress)) return false;
-                }
-            }
-
-            return true;
-        }
-        finally
-        {
-            inProgress.Remove(model);
-        }
-    }
-
-    private static IEnumerable<IPropertySymbol> AllProperties(INamedTypeSymbol type)
-    {
-        for (var t = type; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
-        {
-            foreach (var member in t.GetMembers())
-            {
-                if (member is IPropertySymbol { IsStatic: false } prop)
-                    yield return prop;
-            }
-        }
-    }
-
-    private static bool IsEffectivelyPublic(INamedTypeSymbol type)
-    {
-        for (INamedTypeSymbol? t = type; t is not null; t = t.ContainingType)
-        {
-            if (t.DeclaredAccessibility != Accessibility.Public)
+            if (!IsEffectivelyPublic(dependencies[i].Type))
                 return false;
         }
+
         return true;
     }
 
-    // A [Validate] type that gets no validator, one the generated validator cannot reach, ZV0025,
-    // or a generic one, ZV0029, is never a constructor dependency and must not make the outer
-    // validator internal, #216 and #219.
-    private static bool IsValidatorDependency(INamedTypeSymbol type, Compilation compilation) =>
-        HasValidateAttribute(type) && GeneratedValidatorReach.HasGeneratedValidator(type, compilation);
-
-    private static bool HasValidateAttribute(INamedTypeSymbol type) =>
-        type.GetAttributes().Any(a =>
-            string.Equals(a.AttributeClass?.ToDisplayString(), ValidateAttributeFqn, System.StringComparison.Ordinal));
-
-    private static bool HasValidateWithAttribute(IPropertySymbol prop) =>
-        prop.GetAttributes().Any(a =>
-            string.Equals(a.AttributeClass?.ToDisplayString(), ValidateWithAttributeFqn, System.StringComparison.Ordinal));
-
-    private static ITypeSymbol? GetCollectionElementType(ITypeSymbol type)
+    /// <summary>
+    /// Whether <paramref name="type"/>, every type containing it and every type argument it is
+    /// constructed with are public, so a public signature can name it.
+    /// </summary>
+    private static bool IsEffectivelyPublic(ITypeSymbol type)
     {
-        if (type is IArrayTypeSymbol arr)
-            return arr.ElementType;
-
-        if (type is not INamedTypeSymbol named)
-            return null;
-
-        if (named.IsGenericType && named.TypeArguments.Length == 1
-            && string.Equals(named.OriginalDefinition.ToDisplayString(), "System.Collections.Generic.IEnumerable<T>", System.StringComparison.Ordinal))
-            return named.TypeArguments[0];
-
-        foreach (var iface in named.AllInterfaces)
+        switch (type)
         {
-            if (iface.IsGenericType && iface.TypeArguments.Length == 1
-                && string.Equals(iface.OriginalDefinition.ToDisplayString(), "System.Collections.Generic.IEnumerable<T>", System.StringComparison.Ordinal))
-                return iface.TypeArguments[0];
+            case IArrayTypeSymbol array:
+                return IsEffectivelyPublic(array.ElementType);
+            case ITypeParameterSymbol:
+                return true;
+            case INamedTypeSymbol named:
+                for (INamedTypeSymbol? t = named; t is not null; t = t.ContainingType)
+                {
+                    if (t.DeclaredAccessibility != Accessibility.Public)
+                        return false;
+                    foreach (var argument in t.TypeArguments)
+                    {
+                        if (!IsEffectivelyPublic(argument))
+                            return false;
+                    }
+                }
+                return true;
+            default:
+                return type.DeclaredAccessibility == Accessibility.Public;
         }
-
-        return null;
     }
 }

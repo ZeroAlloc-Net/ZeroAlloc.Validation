@@ -603,11 +603,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // The validator follows the model's effective accessibility. A public validator over an
         // internal model fails with CS9338 and CS0051, issue #184. Extended for issue #193
         // point 3: the validator is public only if the model itself is effectively public AND
-        // every nested [Validate] model it takes as a constructor-injected validator dependency
-        // would itself resolve to a public validator, computed transitively — otherwise the
-        // outer validator's public constructor would take a less-accessible parameter and fail
-        // with CS0051, exactly the case point 3 reported. With
-        // ZeroAllocGeneratedAccessibility=Internal, every validator is internal regardless.
+        // every type its constructor takes is too: ValidatorFor<TNested> for each nested
+        // [Validate] model, issue #246, and each [ValidateWith] validator. Otherwise the public
+        // constructor would take a less-accessible parameter and fail with CS0051, exactly the
+        // case point 3 reported. With ZeroAllocGeneratedAccessibility=Internal, every validator
+        // is internal regardless.
         var accessibility = mode == GeneratedAccessibilityMode.Public && NestedValidatorAccessibility.WouldBePublic(classSymbol, compilation)
             ? "public"
             : "internal";
@@ -737,7 +737,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             if (validateWithAttr is null) continue;
 
             ReportZV0011IfApplicable(ctx, prop, member, validateWithAttr, compilation);
-            ReportZV0012IfApplicable(ctx, prop, member, validateWithAttr);
+            ReportZV0012IfApplicable(ctx, prop, member, validateWithAttr, compilation);
         }
         ReportCustomValidationDiagnostics(ctx, classSymbol, compilation);
         ReportInaccessibleBaseMemberDiagnostics(ctx, classSymbol, compilation);
@@ -1276,13 +1276,20 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         SourceProductionContext ctx,
         IPropertySymbol prop,
         ISymbol member,
-        AttributeData validateWithAttr)
+        AttributeData validateWithAttr,
+        Compilation compilation)
     {
         var specifiedType = validateWithAttr.ConstructorArguments.Length > 0
             ? validateWithAttr.ConstructorArguments[0].Value as INamedTypeSymbol
             : null;
 
         if (specifiedType is null) return;
+
+        // The model's own validator generated in this compilation is an error type here, since
+        // generator output is invisible to generators, so its base type cannot be checked. It is
+        // a ValidatorFor of the right model by construction, and the property takes the
+        // auto-composed path; ZV0011 already reports the redundant attribute, issue #246.
+        if (ValidatorDependencies.GeneratedValidatorNamedBy(prop, specifiedType, compilation) is not null) return;
 
         ITypeSymbol expectedModelType = RuleEmitter.GetCollectionElementTypePublic(prop) ?? prop.Type;
 

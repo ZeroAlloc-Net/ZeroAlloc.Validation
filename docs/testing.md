@@ -76,7 +76,7 @@ public class CreateOrderRequestValidatorTests
 
 ## Example test — nested model
 
-Nested validator instances are passed manually via constructor injection:
+Nested validator instances are passed manually via constructor injection. The constructor takes `ValidatorFor<Address>`, so the generated `AddressValidator` works, and so does any stub deriving from `ValidatorFor<Address>` when a test should isolate the outer validator:
 
 ```csharp
 public class OrderValidatorTests

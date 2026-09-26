@@ -37,12 +37,14 @@ public sealed class InjectGenerator : IIncrementalGenerator
         var collected = validateClasses.Collect();
         var isInternal = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => GeneratedAccessibilityOption.IsInternal(provider));
-        var combined = collected.Combine(isInternal);
+        // The compilation lets the registration follow each validator's constructor dependencies
+        // into referenced assemblies, issue #246.
+        var combined = collected.Combine(isInternal).Combine(context.CompilationProvider);
 #pragma warning restore EPS06
-        context.RegisterSourceOutput(combined, static (ctx, pair) => Emit(ctx, pair.Left, pair.Right));
+        context.RegisterSourceOutput(combined, static (ctx, pair) => Emit(ctx, pair.Left.Left, pair.Left.Right, pair.Right));
     }
 
-    private static void Emit(SourceProductionContext ctx, ImmutableArray<INamedTypeSymbol?> candidates, bool isInternal)
+    private static void Emit(SourceProductionContext ctx, ImmutableArray<INamedTypeSymbol?> candidates, bool isInternal, Compilation compilation)
     {
         var models = GeneratedValidatorReach.WithGeneratedValidator(candidates);
         if (models.IsDefaultOrEmpty) return;
@@ -72,7 +74,7 @@ public sealed class InjectGenerator : IIncrementalGenerator
         sb.AppendLine("    public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection AddZeroAllocValidators(");
         sb.AppendLine("        this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services)");
         sb.AppendLine("    {");
-        ValidatorRegistrationEmitter.EmitRegistrations(sb, models);
+        ValidatorRegistrationEmitter.EmitRegistrations(sb, models, compilation);
         sb.AppendLine("        return services;");
         sb.AppendLine("    }");
         sb.AppendLine("}");
