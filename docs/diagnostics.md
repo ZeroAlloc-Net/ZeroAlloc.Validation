@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0031 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0032 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -33,6 +33,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0029](#zv0029) | Error | [Validate] on a generic type |
 | [ZV0030](#zv0030) | Error | Validation method call that does not compile |
 | [ZV0031](#zv0031) | Error | Two [Validate] models whose validators would have the same name |
+| [ZV0032](#zv0032) | Warning | Validation call that raises a compiler warning in the generated validator |
 
 ---
 
@@ -701,7 +702,7 @@ The error is reported at the attribute. That rule is left out rather than emitte
 
 **A member that does not exist is not reported.** The check compiles against the generator's input, which does not contain what other source generators add to the compilation. When the call fails only because no member of that name exists (CS1061, CS0117, CS0103, or CS1929 for an extension method of that name that takes another receiver), another generator may add the method or an extension method. So the call is emitted as it was before 2.0, and the final compilation, which contains every generator's output, decides. If nothing adds the member, that final compilation fails with the compiler's own error in the generated file.
 
-Because the compiler decides, anything it binds keeps working: an overload chosen by C# overload resolution, a generic method whose type arguments are inferred, an extension method in scope of the generated file, a delegate-typed field or property, and a method whose result converts to `bool`. Warnings do not count. The generated file imports only `ZeroAlloc.Validation` and your global usings, and sits in the model's namespace. An extension method imported only by a `using` in the model's own file is therefore not in scope there. The call fails with CS1061, which is left to the final compilation as described above.
+Because the compiler decides, anything it binds keeps working: an overload chosen by C# overload resolution, a generic method whose type arguments are inferred, an extension method in scope of the generated file, a delegate-typed field or property, and a method whose result converts to `bool`. A call that compiles with a warning is not ZV0030: it is emitted, and the warning is reported as [ZV0032](#zv0032). The generated file imports only `ZeroAlloc.Validation` and your global usings, and sits in the model's namespace. An extension method imported only by a `using` in the model's own file is therefore not in scope there. The call fails with CS1061, which is left to the final compilation as described above.
 
 A `[CustomValidation]` method's signature is [ZV0013](#zv0013)'s to check, so it never reports ZV0030.
 
@@ -737,6 +738,66 @@ No validator is generated for any of them, so the build does not fail with a dup
 The generator does not pick another name for one of them: that would rename a validator existing code already refers to.
 
 **Fix:** Rename one of the types. The .NET naming guidelines rule out underscores in type names, so the type with the underscore is usually the one to rename.
+
+---
+
+## ZV0032
+
+**Severity:** Warning
+
+**Title:** Validation call that raises a compiler warning in the generated validator
+
+**When fired:** The generated validator makes calls for your rules: a `[Must]` predicate as `instance.Method(instance.Property)`, a `When`, `Unless` or `[SkipWhen]` method as `instance.Method()`, a `[CustomValidation]` method, and a custom rule as `IsValid(instance.Property)` on its rule instance. A call can compile and still make the compiler warn. Common cases are CS8604, when the argument may be null and the parameter does not accept null, and CS0612 or CS0618, when the method is `[Obsolete]`. In the generated file, that warning fails a `TreatWarningsAsErrors` build, and you can neither edit nor suppress it there. So the warning is reported as ZV0032 at the rule's attribute instead:
+
+```csharp
+[Validate]
+public class Order
+{
+    [Must(nameof(IsKnownCode))]                  // ZV0032 — CS8604, Code may be null
+    public string? Code { get; set; }
+
+    [NotNull]
+    [Must(nameof(IsKnownRegion))]                // ZV0032 — CS8604, see below
+    public string Region { get; set; } = "";
+
+    [NotEmpty(When = nameof(IsShipped))]         // ZV0032 — CS0612, IsShipped is obsolete
+    public string? TrackingNumber { get; set; }
+
+    public bool IsKnownCode(string code) => code.Length == 3;
+    public bool IsKnownRegion(string region) => region.Length == 2;
+    [Obsolete] public bool IsShipped() => true;
+}
+```
+
+> The generated validator's call '{0}', made for {1}, raises {2}: {3}
+
+The message quotes the call, the usage it is made for, and the compiler's warning ID and text, for example `The generated validator's call 'instance.IsKnownCode(instance.Code)', made for [Must] on 'Code', raises CS8604: Possible null reference argument for parameter 'code' in 'bool Order.IsKnownCode(string code)'.`
+
+**How warnings are found.** The compiler decides, as for [ZV0030](#zv0030). Whether a call warns can depend on the code before it in the generated `Validate` method, not only on the call itself:
+
+- a `[NotNull]`, `[NotEmpty]`, `[MinLength]` or similar rule tests the property for null. The compiler then treats the property as possibly null for the rules after it, even when it is declared non-nullable. At run time, a `Region` that is null does reach `IsKnownRegion` after `[NotNull]` fails. That is why `Region` above is reported.
+- under `[StopOnFirstFailure]`, a later rule runs only when the earlier ones pass, so after `[NotNull]` the property is known not to be null, and nothing is reported.
+- a `When` method with `[MemberNotNullWhen(true, nameof(Code))]` proves the property is not null for the call it guards, and nothing is reported.
+
+So the generator compiles the validator's own `Validate` body, emitted exactly as the generated file contains it, and reports the warnings the compiler gives inside each of these calls. A warning elsewhere in the generated file is not about one of your calls and is not reported here. A call whose shape leaves no room for a warning is not compiled: a plain predicate or custom rule whose parameter takes the property's type exactly, nullability included, with no attribute on the parameter, no `[Obsolete]`, `[Experimental]` or `System.Diagnostics.CodeAnalysis` attribute on the property or any property it overrides, and no earlier null test of that property; and a guard, `[SkipWhen]` or `[CustomValidation]` method without attributes.
+
+**Severity.** The warning takes the severity your project gives the compiler's ID, through `<NoWarn>`, `<WarningsAsErrors>`, `<TreatWarningsAsErrors>`, a `dotnet_diagnostic.<id>.severity` entry in `.editorconfig`, or a global analyzer config. A warning turned off, or set below a warning, is not reported, and its call gets no pragma. The generated file sits in your project beside the model, so the `.editorconfig` entries that apply to the file declaring the attribute are the ones used. A warning raised to an error, and a diagnostic that is an error by default, such as the one an `[Experimental]` API raises until you opt in, is reported as ZV0032 with severity Error, so the build still fails as it would have in the generated file. Suppressing that ZV0032 is how you opt in for that call.
+
+**In the generated file,** the call is still emitted, since it compiles, and the line holding it is wrapped in a pragma for exactly the warnings it raised:
+
+```csharp
+#pragma warning disable CS8604 // mirrored as ZV0032 at the attribute this call is made for
+        if (!instance.IsKnownCode(instance.Code))
+#pragma warning restore CS8604
+```
+
+That is the only pragma of this kind the generator writes, and a call that does not warn gets none. The `CS0612`/`CS0618` pragma around the field of an obsolete custom rule type, from [#196](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/196), is separate: it covers the field's initializer, where the compiler already warns at your attribute, not the call.
+
+A rule declared on a base type that is itself `[Validate]` is reported once, by that type, when the call warns there too.
+
+**Fix:** Change your code so the call no longer warns. For a nullability warning, let the method accept what it can receive, for example `IsKnownCode(string? code)`, or guard the rule with `When`, or use `[StopOnFirstFailure]` after `[NotNull]`. For an obsolete method or property, call its replacement. If the warning is expected, suppress ZV0032 where you can see it, with `#pragma warning disable ZV0032` around the attribute or `<NoWarn>$(NoWarn);ZV0032</NoWarn>` in the project. Under `TreatWarningsAsErrors`, ZV0032 is then the only thing left to deal with.
+
+---
 
 ## Release tracking
 

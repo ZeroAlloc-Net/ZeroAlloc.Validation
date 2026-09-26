@@ -343,7 +343,10 @@ public class MethodResolutionDiagnosticTests
 
         var (result, output) = RunGenerator(source);
 
-        Assert.DoesNotContain(result.Diagnostics, d => d.Id.StartsWith("ZV", StringComparison.Ordinal));
+        // Two of these bind with a warning, for IEnumerable<T> and for ref readonly, which is
+        // mirrored as ZV0032 rather than left in the generated file.
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id.StartsWith("ZV", StringComparison.Ordinal)
+            && !string.Equals(d.Id, "ZV0032", StringComparison.Ordinal));
         Assert.Equal(new[] { "Code", "Other" }, FailedProperties(output));
     }
 
@@ -507,6 +510,16 @@ public class MethodResolutionDiagnosticTests
     [InlineData("public bool Ok(string? value) => false;", "public new Func<string?, bool> Ok { get; } = _ => false;", true)]
     [InlineData("", "public bool? Ok(string? value) => false;", true)]
     [InlineData("", "public bool Ok(ref readonly string? value) => false;", true)]
+    // Calls that compile and warn, which the generator mirrors as ZV0032.
+    [InlineData("", "[Obsolete] public bool Ok(string? value) => false;", true)]
+    [InlineData("", "[Obsolete(\"x\")] public bool Ok(string? value) => false;", true)]
+    [InlineData("", "public bool Ok([System.Diagnostics.CodeAnalysis.DisallowNull] string? value) => false;", true)]
+    [InlineData("", "public bool Ok([System.Diagnostics.CodeAnalysis.AllowNull] string value) => false;", true)]
+    [InlineData("", "public bool Ok(string value) => false;", true, "string")]
+    [InlineData("", "public bool Ok(string? value) => false;", true, "string")]
+    [InlineData("", "public bool Ok(object value) => false;", true)]
+    [InlineData("", "[Obsolete] public bool Ok() => true;", false)]
+    [InlineData("", "[Obsolete] public bool Ok() => true; public bool Ok(int x = 0) => true;", false)]
     // When cases: no argument.
     [InlineData("public bool Ok() => true;", "public bool Ok(int value) => true;", false)]
     [InlineData("public bool Ok() => true;", "public static bool Ok(int x = 0) => true;", false)]
@@ -554,9 +567,13 @@ public class MethodResolutionDiagnosticTests
 
         // The fast path only ever accepts, so it must never accept a call the compiler rejects.
         var request = compiler.GetTypeByMetadataName("TestModels.Request")!;
-        var argumentType = isMust ? ((IPropertySymbol)request.GetMembers("Code")[0]).Type : null;
+        var code = (IPropertySymbol)request.GetMembers("Code")[0];
+        var argumentType = isMust ? code.Type : null;
         if (CertainCall.Condition(compiler, request, "Ok", argumentType) is not null)
             Assert.True(compilerBinds, "The fast path accepted a call the compiler rejects.");
+
+        if (compilerBinds)
+            AssertWarningsMirroredAsTheCompilerReports(compiler, request, isMust ? code : null, result, output);
         EmitSucceeds(output);
     }
 
@@ -593,6 +610,94 @@ public class MethodResolutionDiagnosticTests
         var argumentType = isMust ? ((IPropertySymbol)request.GetMembers("Code")[0]).Type : null;
 
         Assert.Equal(accepted, CertainCall.Condition(compilation, request, "Ok", argumentType) is not null);
+    }
+
+    [Theory]
+    [InlineData("public bool Ok(string? value) => false;", "", "string?", false, true)]
+    [InlineData("public bool Ok(string value) => false;", "", "string", false, true)]
+    // An earlier rule's null test leaves the property maybe-null.
+    [InlineData("public bool Ok(string value) => false;", "", "string", true, false)]
+    [InlineData("public bool Ok(string? value) => false;", "", "string?", true, false)]
+    // Nullability attributes on the parameter or the property.
+    [InlineData("public bool Ok([System.Diagnostics.CodeAnalysis.DisallowNull] string? value) => false;", "", "string?", false, false)]
+    [InlineData("public bool Ok([System.Diagnostics.CodeAnalysis.NotNull] string? value) => false;", "", "string?", false, false)]
+    [InlineData("public bool Ok(string value) => false;", "[System.Diagnostics.CodeAnalysis.MaybeNull]", "string", false, false)]
+    // Nullability that differs, and an obsolete method.
+    [InlineData("public bool Ok(string value) => false;", "", "string?", false, false)]
+    [InlineData("[Obsolete] public bool Ok(string? value) => false;", "", "string?", false, false)]
+    // Reading an obsolete property warns, CS0612, as does reading an override of one.
+    [InlineData("public bool Ok(string value) => false;", "[Obsolete]", "string", false, false)]
+    [InlineData("public bool Ok(string value) => false;", "", "string", false, false,
+        "override", "[Obsolete] public virtual string Code { get; set; } = \"\";")]
+    [InlineData("public bool Ok(string value) => false;", "", "string", false, true,
+        "override", "public virtual string Code { get; set; } = \"\";")]
+    // A nullability attribute on the overridden property.
+    [InlineData("public bool Ok(string value) => false;", "", "string", false, false,
+        "override", "[System.Diagnostics.CodeAnalysis.MaybeNull] public virtual string Code { get; set; } = \"\";")]
+    public void Fast_path_clears_only_calls_that_cannot_warn(
+        string members, string propertyAttributes, string codeType, bool nullTested, bool cleared,
+        string modifier = "", string baseMembers = "")
+    {
+        var source = Prelude + $$"""
+            public class RequestBase
+            {
+                {{baseMembers}}
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                {{propertyAttributes}} public {{modifier}} {{codeType}} Code { get; set; } = default!;
+
+                {{members}}
+            }
+            """;
+        var compilation = CSharpCompilation.Create(
+            "FastPathWarning_" + Guid.NewGuid().ToString("N"),
+            [CSharpSyntaxTree.ParseText(source)],
+            TrustedPlatformReferences(),
+            Options());
+        var request = compilation.GetTypeByMetadataName("TestModels.Request")!;
+        var code = (IPropertySymbol)request.GetMembers("Code")[0];
+
+        Assert.Equal(cleared, CertainCall.ConditionCannotWarn(compilation, request, "Ok", code, nullTested));
+    }
+
+    [Theory]
+    [InlineData("", "", true)]
+    [InlineData("[Obsolete]", "", false)]
+    [InlineData("[System.Diagnostics.CodeAnalysis.MaybeNull]", "", false)]
+    [InlineData("", "[Obsolete] public virtual string Code { get; set; } = \"\";", false)]
+    public void Fast_path_clears_a_custom_rule_call_only_when_it_cannot_warn(string propertyAttributes, string baseMembers, bool cleared)
+    {
+        var modifier = baseMembers.Length == 0 ? "" : "override";
+        var source = Prelude + $$"""
+            public sealed class NotBlankAttribute : ValidationAttribute<string>
+            {
+                public override bool IsValid(string value) => value.Trim().Length > 0;
+            }
+
+            public class RequestBase
+            {
+                {{baseMembers}}
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                {{propertyAttributes}} public {{modifier}} string Code { get; set; } = "";
+            }
+            """;
+        var compilation = CSharpCompilation.Create(
+            "FastPathRule_" + Guid.NewGuid().ToString("N"),
+            [CSharpSyntaxTree.ParseText(source)],
+            TrustedPlatformReferences(),
+            Options());
+        var rule = compilation.GetTypeByMetadataName("TestModels.NotBlankAttribute")!;
+        var code = (IPropertySymbol)compilation.GetTypeByMetadataName("TestModels.Request")!.GetMembers("Code")[0];
+        CustomRules.TryGetRuleValueType(rule, out var valueType);
+
+        Assert.Equal(cleared, CertainCall.RuleCallCannotWarn(rule, valueType, code, nullTested: false));
     }
 
     [Fact]
@@ -861,6 +966,40 @@ public class MethodResolutionDiagnosticTests
             if (diagnostic.Id is "CS1061" or "CS0117" or "CS1929") return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// A call that compiles is mirrored as ZV0032 exactly when the compiler warns on the same call
+    /// written by hand, the last tree of <paramref name="compiler"/>, and the generated file keeps
+    /// no warning of its own. The fast path clears a call only when the compiler agrees.
+    /// </summary>
+    private static void AssertWarningsMirroredAsTheCompilerReports(
+        Compilation compiler, INamedTypeSymbol request, IPropertySymbol? argument, GeneratorDriverRunResult result, Compilation output)
+    {
+        var compilerWarnings = WarningIds(compiler, compiler.SyntaxTrees.Last());
+        var mirrored = result.Diagnostics
+            .Where(d => string.Equals(d.Id, "ZV0032", StringComparison.Ordinal))
+            .Select(d => d.GetMessage(CultureInfo.InvariantCulture))
+            .ToArray();
+        Assert.Equal(compilerWarnings.Length, mirrored.Length);
+        foreach (var id in compilerWarnings)
+            Assert.Contains(mirrored, m => m.Contains($"raises {id}: ", StringComparison.Ordinal));
+        foreach (var tree in result.GeneratedTrees)
+            Assert.Empty(WarningIds(output, tree));
+
+        if (CertainCall.ConditionCannotWarn(compiler, request, "Ok", argument, argumentNullTested: false))
+            Assert.Empty(compilerWarnings);
+    }
+
+    private static string[] WarningIds(Compilation compilation, SyntaxTree tree)
+    {
+        var ids = new List<string>();
+        foreach (var diagnostic in compilation.GetDiagnostics())
+        {
+            if (diagnostic.Severity == DiagnosticSeverity.Warning && diagnostic.Location.SourceTree == tree)
+                ids.Add(diagnostic.Id);
+        }
+        return ids.ToArray();
     }
 
     private static bool HasError(Compilation compilation)

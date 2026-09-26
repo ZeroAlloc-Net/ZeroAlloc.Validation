@@ -153,6 +153,21 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             + "fails is reported with the compiler's error and left out. The rule is then skipped, or "
             + "for [SkipWhen] the model is always validated.");
 
+    private static readonly DiagnosticDescriptor ZV0032 = new DiagnosticDescriptor(
+        id: "ZV0032",
+        title: "Validation call that raises a compiler warning in the generated validator",
+        messageFormat: "The generated validator's call '{0}', made for {1}, raises {2}: {3}",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description:
+            "The generated validator calls [Must] predicates, When, Unless and [SkipWhen] methods, "
+            + "[CustomValidation] methods and custom rules for you. When the compiler warns on such a "
+            + "call, for example CS8604 for a possibly-null argument or CS0612 for an obsolete method, "
+            + "the warning is reported here, at the attribute, where it can be fixed or suppressed, "
+            + "and the generated call is wrapped in a pragma for exactly that warning. Otherwise it "
+            + "would fail a TreatWarningsAsErrors build in a file the user cannot edit.");
+
     private static readonly DiagnosticDescriptor ZV0029 = new DiagnosticDescriptor(
         id: "ZV0029",
         title: "[Validate] on a generic type",
@@ -390,69 +405,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         EmitValidateMethod(ctx, sb, classSymbol, compilation, modelName, syncBehaviors, fields);
         EmitValidateAsyncOverride(sb, classSymbol, compilation, modelName, asyncBehaviors, fields);
 
-        EmitMatchesRegexFields(sb, fields);
-        EmitRuleInstanceFields(sb, fields);
+        fields.AppendDeclarations(sb);
 
         sb.AppendLine("}");
 
         ctx.AddSource(GeneratedValidatorNames.HintName(classSymbol), sb.ToString());
-    }
-
-    /// <summary>
-    /// Emits one <c>private static readonly Regex</c> field per unique
-    /// <c>[Matches]</c>-decorated property collected during rule emission.
-    /// Initialised with <c>RegexOptions.Compiled</c> so the matcher is JIT'd
-    /// once and the per-call hot path is a direct method dispatch.
-    /// </summary>
-    /// <remarks>
-    /// Initial design called for <c>[GeneratedRegex]</c> partial methods, but
-    /// Roslyn source generators cannot see syntax trees added by other
-    /// generators in the same compilation pass — the .NET RegexGenerator
-    /// never sees our partial method declarations and never emits the
-    /// implementation half (CS8795). Static compiled-Regex fields give the
-    /// bulk of the perf win without the inter-generator visibility
-    /// dependency.
-    /// </remarks>
-    private static void EmitMatchesRegexFields(
-        System.Text.StringBuilder sb,
-        GeneratedFields fields)
-    {
-        foreach (var kvp in fields.RegexPatterns)
-        {
-            var fieldName = kvp.Key;
-            var pattern = kvp.Value;
-            sb.AppendLine();
-            sb.AppendLine($"    private static readonly global::System.Text.RegularExpressions.Regex {fieldName}");
-            sb.AppendLine($"        = new global::System.Text.RegularExpressions.Regex(\"{RuleEmitter.EscapeString(pattern)}\", global::System.Text.RegularExpressions.RegexOptions.Compiled);");
-        }
-    }
-
-    /// <summary>
-    /// Emits one <c>private static readonly</c> field per user-defined rule usage, holding the
-    /// attribute rebuilt from its constructor and named arguments. The instance is created once,
-    /// when the validator type initialises, so each validation call only invokes <c>IsValid</c>.
-    /// A declaration that names an <c>[Obsolete]</c> symbol is wrapped in a pragma for CS0618 and
-    /// CS0612. The compiler already warns at the usage in user code, where the user can act on
-    /// it; the repeat inside generated code cannot be suppressed by the user and would break a
-    /// <c>TreatWarningsAsErrors</c> build. Every other declaration is emitted without a pragma.
-    /// </summary>
-    private static void EmitRuleInstanceFields(
-        System.Text.StringBuilder sb,
-        GeneratedFields fields)
-    {
-        foreach (var kvp in fields.RuleInstances)
-        {
-            sb.AppendLine();
-            if (kvp.Value.IsObsolete)
-            {
-                sb.AppendLine("    // The rule's initializer names an obsolete symbol; the compiler already warns at the attribute usage in user code.");
-                sb.AppendLine("#pragma warning disable CS0618, CS0612");
-            }
-            sb.AppendLine($"    private static readonly {kvp.Value.TypeName} {kvp.Key}");
-            sb.AppendLine($"        = {kvp.Value.Initializer};");
-            if (kvp.Value.IsObsolete)
-                sb.AppendLine("#pragma warning restore CS0618, CS0612");
-        }
     }
 
     private static void EmitValidateMethod(
@@ -623,8 +580,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         if (nestedFields.Count == 0)
             return;
 
-        foreach (var (fieldName, _, qualifiedType, _) in nestedFields)
-            sb.AppendLine($"    private readonly {qualifiedType} {fieldName};");
+        RuleEmitter.AppendNestedValidatorFields(sb, nestedFields);
 
         sb.AppendLine();
 
@@ -742,6 +698,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         ReportCustomValidationDiagnostics(ctx, classSymbol, compilation);
         ReportInaccessibleBaseMemberDiagnostics(ctx, classSymbol, compilation);
         ReportSkipWhenDiagnostics(ctx, classSymbol, compilation);
+        ReportMirroredCallWarnings(ctx, classSymbol, compilation);
         ReportDuplicateRuleAttributeDiagnostics(ctx, classSymbol, compilation);
         ReportUnreadValidationAttributeDiagnostics(ctx, classSymbol, compilation);
     }
@@ -1218,6 +1175,71 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             return;
         }
         ReportUnreachableCall(ctx, classSymbol, in call, classSymbol, AttributeLocation(call.Attribute, classSymbol, classSymbol));
+    }
+
+    /// <summary>
+    /// ZV0032: a compiler warning on a call the generated validator makes for a rule, reported
+    /// at the rule's attribute. The generated call carries a pragma for that warning, so the
+    /// build fails, under <c>TreatWarningsAsErrors</c>, only if ZV0032 itself is not dealt with.
+    /// A usage a <c>[Validate]</c> base type's validator also emits is reported by that
+    /// validator when the call warns there too, so it is reported once.
+    /// </summary>
+    private static void ReportMirroredCallWarnings(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    {
+        if (MethodCallProbe.CallWarnings(compilation, classSymbol) is not { } warnings) return;
+
+        foreach (var call in warnings.Warned)
+        {
+            var reportingBase = MethodReachability.FindReportingBaseValidator(compilation, classSymbol, call.Site.DeclaringType);
+            foreach (var warning in call.Warnings)
+            {
+                if (reportingBase is not null && IsMirroredBy(compilation, reportingBase, call.Site, warning.Id)) continue;
+
+                // An error the generated call would raise stays an error, so the build still fails.
+                ctx.ReportDiagnostic(Diagnostic.Create(
+                    ZV0032,
+                    AttributeLocation(call.Site.Attribute, call.Site.Target, classSymbol),
+                    warning.IsError ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning,
+                    additionalLocations: null,
+                    properties: null,
+                    call.Site.Text,
+                    call.Site.Usage,
+                    warning.Id,
+                    warning.Message));
+            }
+        }
+    }
+
+    private static bool IsMirroredBy(Compilation compilation, INamedTypeSymbol reportingBase, CallSite site, string warningId)
+    {
+        if (MethodCallProbe.CallWarnings(compilation, reportingBase) is not { } fromBase) return false;
+
+        foreach (var call in fromBase.Warned)
+        {
+            if (!string.Equals(call.Site.Usage, site.Usage, StringComparison.Ordinal)
+                || !SameApplication(call.Site.Attribute, site.Attribute))
+                continue;
+            foreach (var warning in call.Warnings)
+            {
+                if (string.Equals(warning.Id, warningId, StringComparison.Ordinal)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Whether two attribute instances are the same usage in source. A member of a constructed
+    /// base type carries its own copies of the attributes, so they are compared by where they
+    /// are written.
+    /// </summary>
+    private static bool SameApplication(AttributeData a, AttributeData b)
+    {
+        if (a == b) return true;
+        var left = a.ApplicationSyntaxReference;
+        var right = b.ApplicationSyntaxReference;
+        return left is not null && right is not null
+            && left.SyntaxTree == right.SyntaxTree
+            && left.Span == right.Span;
     }
 
     /// <summary>
