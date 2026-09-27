@@ -42,13 +42,11 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
                         ? ValidatedModelInfo.From((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
                         : null);
 
-#pragma warning disable EPS06
         var collected = validateClasses.Collect()
             .Select(static (models, _) => ValidatedModelInfo.WithGeneratedValidator(models));
         var isInternalMode = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => GeneratedAccessibilityOption.IsInternal(provider));
         var combined = collected.Combine(isInternalMode).WithTrackingName(OutputTrackingName);
-#pragma warning restore EPS06
         context.RegisterSourceOutput(combined, static (ctx, pair) => Emit(ctx, pair.Left, pair.Right));
     }
 

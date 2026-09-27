@@ -49,18 +49,14 @@ bool letterHasPostcodePropertyName = false;
 foreach (ref readonly var f in emptyLetter.Failures)
 {
     letterFailureCount++;
-#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
     if (f.PropertyName.Contains("Postcode", System.StringComparison.Ordinal))
-#pragma warning restore EPS06
         letterHasPostcodePropertyName = true;
 }
 if (letterFailureCount != 1 || !letterHasPostcodePropertyName)
 {
     Console.Error.WriteLine($"AOT smoke: FAIL — Letter expected 1 failure with Postcode in PropertyName, got {letterFailureCount} failures (PostcodeMatch={letterHasPostcodePropertyName})");
     foreach (ref readonly var f in emptyLetter.Failures)
-#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
         Console.Error.WriteLine($"  failure: PropertyName='{f.PropertyName}', ErrorMessage='{f.ErrorMessage}'");
-#pragma warning restore EPS06
     return 1;
 }
 
@@ -109,20 +105,16 @@ bool mixedHasIndexedTagPropertyName = false;
 foreach (ref readonly var f in mixedOrder.Failures)
 {
     mixedFailureCount++;
-#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
     if (f.PropertyName.Contains("Items[1]", System.StringComparison.Ordinal))
         mixedHasIndexedItemPropertyName = true;
     if (f.PropertyName.Contains("Tags[0]", System.StringComparison.Ordinal))
         mixedHasIndexedTagPropertyName = true;
-#pragma warning restore EPS06
 }
 if (mixedFailureCount != 2 || !mixedHasIndexedItemPropertyName || !mixedHasIndexedTagPropertyName)
 {
     Console.Error.WriteLine($"AOT smoke: FAIL — Order expected 2 failures with 'Items[1]' + 'Tags[0]' in PropertyName, got {mixedFailureCount} failures (ItemsMatch={mixedHasIndexedItemPropertyName}, TagsMatch={mixedHasIndexedTagPropertyName})");
     foreach (ref readonly var f in mixedOrder.Failures)
-#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
         Console.Error.WriteLine($"  failure: PropertyName='{f.PropertyName}', ErrorMessage='{f.ErrorMessage}'");
-#pragma warning restore EPS06
     return 1;
 }
 
@@ -163,18 +155,14 @@ bool dateRangeHasEndDatePropertyName = false;
 foreach (ref readonly var f in badRange.Failures)
 {
     dateRangeFailureCount++;
-#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
     if (string.Equals(f.PropertyName, "EndDate", StringComparison.Ordinal))
-#pragma warning restore EPS06
         dateRangeHasEndDatePropertyName = true;
 }
 if (dateRangeFailureCount != 1 || !dateRangeHasEndDatePropertyName)
 {
     Console.Error.WriteLine($"AOT smoke: FAIL — DateRange expected 1 failure with PropertyName=='EndDate', got {dateRangeFailureCount} failures (EndDateMatch={dateRangeHasEndDatePropertyName})");
     foreach (ref readonly var f in badRange.Failures)
-#pragma warning disable EPS06 // False positive: ValidationFailure is a readonly struct
         Console.Error.WriteLine($"  failure: PropertyName='{f.PropertyName}', ErrorMessage='{f.ErrorMessage}'");
-#pragma warning restore EPS06
     return 1;
 }
 

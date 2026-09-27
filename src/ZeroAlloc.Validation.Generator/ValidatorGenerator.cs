@@ -298,13 +298,6 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // warning probe compiles every validator's calls together, issue #241. So it reruns for
         // every compilation, as the syntax provider's own transform does, and the output step is
         // cached whenever it produces the same validator and diagnostics again, issue #209.
-        //
-        // EPS06 false positive: `validateClasses` comes from SyntaxProvider.ForAttributeWithMetadataName,
-        // a method call rather than a plain provider property, so ErrorProne.NET treats every further
-        // chained call on it as a hidden copy of the IncrementalValuesProvider<T> struct, even though
-        // that struct is immutable and designed to be chained this way (tracked in #248; the pragma
-        // scope below is the narrowest that still compiles — every line inside it fails without it).
-#pragma warning disable EPS06
         var validators = validateClasses
             .Combine(behaviors)
             .Combine(accessibility.Select(static (result, _) => result.Mode))
@@ -312,7 +305,6 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             .Select(static (input, ct) =>
                 Generate(input.Left.Left.Left, input.Left.Left.Right, input.Left.Right, input.Right, ct))
             .WithTrackingName(ValidatorTrackingName);
-#pragma warning restore EPS06
 
         context.RegisterSourceOutput(validators, static (ctx, validator) =>
         {
@@ -327,11 +319,6 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     // misplaced one is reported even in a project with nothing to generate.
     private static void RegisterMisplacedRuleMessage(IncrementalGeneratorInitializationContext context)
     {
-        // EPS06 false positive, same cause as the Initialize pipeline above: every call chained
-        // onto SyntaxProvider.ForAttributeWithMetadataName's result is flagged as a hidden struct
-        // copy, because that provider comes from a method call rather than a plain property
-        // (tracked in #248). The whole chain needs the pragma — each step fails without it.
-#pragma warning disable EPS06
         var misplaced = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 RuleMessageFqn,
@@ -340,7 +327,6 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             .Where(static m => m is not null)
             .Select(static (m, _) => m!.Value)
             .WithTrackingName(MisplacedRuleMessageTrackingName);
-#pragma warning restore EPS06
 
         context.RegisterSourceOutput(misplaced, static (ctx, message) =>
             ctx.ReportDiagnostic(Diagnostic.Create(ZV0026, message.Location.ToLocation(), message.ClassName)));

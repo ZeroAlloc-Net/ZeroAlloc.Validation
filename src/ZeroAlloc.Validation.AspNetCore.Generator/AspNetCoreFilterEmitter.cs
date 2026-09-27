@@ -38,13 +38,11 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
                         ? ValidatedModelInfo.From((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
                         : null);
 
-#pragma warning disable EPS06 // Collect() on IncrementalValuesProvider<T> is intentional
         var collected = validateClasses.Collect()
             .Select(static (models, _) => ValidatedModelInfo.WithGeneratedValidator(models));
         var isInternal = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => GeneratedAccessibilityOption.IsInternal(provider));
         var combined = collected.Combine(isInternal).WithTrackingName(OutputTrackingName);
-#pragma warning restore EPS06
         context.RegisterSourceOutput(combined, static (ctx, pair) => EmitFiles(ctx, pair.Left, pair.Right));
     }
 
