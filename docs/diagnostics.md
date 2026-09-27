@@ -614,6 +614,20 @@ The generated validator lives in the model's assembly, so `internal` and `protec
 
 On a base type, a static method is reported the same way. A base method that is only inaccessible stays [ZV0017](#zv0017), a warning, because the base type may not be yours to change. The exception is `[SkipWhen]`: it is read from the model only, so the usage is always yours to change, and an inaccessible base method it names is ZV0028. A `[CustomValidation]` method with an invalid signature that is static, or inaccessible on the `[Validate]` type itself, is reported as [ZV0013](#zv0013) only; an inaccessible instance method on a base type is reported as ZV0017 only. A `[CustomValidation]` method on a base type from a referenced assembly is never reported, as for ZV0013.
 
+**Known limitation: still reported on a `partial` model.** Unlike [ZV0030](#zv0030)'s argument-error case, ZV0028 is reported even when the model, or the base type declaring the method, is `partial`, so another generator adding the instance overload the call would then bind to does not stop it:
+
+```csharp
+[Validate]
+public partial class Order
+{
+    [Must(nameof(Ok))] public string? Code { get; set; }   // ZV0028, even though Order is partial
+    public static bool Ok(string? v) => true;
+}
+// another generator: public partial class Order { public bool Ok(object? value) => false; }
+```
+
+Leaving this to the final compilation too would fix the rare case where a second generator supplies the overload, but it would also take ZV0028 away from the common mistake of a `private` or `static` rule method on a `partial` model, which would then fail with CS0122 or CS0176 inside the generated file instead of a clear diagnostic. That trade is not worth it; see [#262](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/262). Declare the overload yourself directly on the model so ZV0028 sees a method it can call, or validate the property with a hand-written validator via `[ValidateWith]` instead.
+
 **Fix:** Make the method a `public` or `internal` instance method.
 
 ---
@@ -705,6 +719,20 @@ The error is reported at the attribute. That rule is left out rather than emitte
 **An argument error on a `partial` model is not reported either.** When the model declares a method of that name that does not take the arguments, another generator can still add the overload that does to a `partial` model, and the call then compiles. So when no method of that name takes the arguments (CS1501, CS7036, CS1503, CS0411, CS0453 and similar) or the call is ambiguous between them (CS0121), and the model, or a base type in the same project, is `partial` in every declaration, as are the types containing it, the call is emitted and the final compilation decides, as for a member that does not exist. An ambiguity between the model's own methods is still reported when only a base type is `partial`, since an overload there would not be chosen over them. A call that binds but whose result is not a condition is still reported, on any model. If nothing adds the overload, the final compilation fails with the compiler's own error in the generated file.
 
 Because the compiler decides, anything it binds keeps working: an overload chosen by C# overload resolution, a generic method whose type arguments are inferred, an extension method in scope of the generated file, a delegate-typed field or property, and a method whose result converts to `bool`. A call that compiles with a warning is not ZV0030: it is emitted, and the warning is reported as [ZV0032](#zv0032). The generated file imports only `ZeroAlloc.Validation` and your global usings, and sits in the model's namespace. An extension method imported only by a `using` in the model's own file is therefore not in scope there. The call fails with CS1061, which is left to the final compilation as described above.
+
+**Known limitation: still reported beside a non-partial model's extension method.** The `partial`-model relaxation above only covers another generator adding an instance overload, so it does not apply here even though the outcome is the same. An extension method compiles for any model, `partial` or not, once no instance method is applicable:
+
+```csharp
+[Validate]
+public class Order
+{
+    [Must(nameof(Ok))] public string? Code { get; set; }   // ZV0030, even though an extension method binds
+    public bool Ok() => true;
+}
+// another generator: public static class OrderRules { public static bool Ok(this Order o, string? v) => false; }
+```
+
+Covering this case would mean never reporting an argument error on any model, `partial` or not, which would remove most of what ZV0030 reports; see [#262](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/262). Declare the overload yourself directly on the model so the generator's own probe can see it, or validate the property with a hand-written validator via `[ValidateWith]` instead.
 
 A `[CustomValidation]` method's signature is [ZV0013](#zv0013)'s to check, so it never reports ZV0030.
 
