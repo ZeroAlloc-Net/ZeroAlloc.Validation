@@ -61,6 +61,11 @@ public class MirroredCallWarningTests
     // An obsolete property read for a predicate or a custom rule, and an override of one.
     [InlineData("", "[Obsolete][Must(nameof(Ok))] public string Code { get; set; } = \"\";", "public bool Ok(string value) => true;", "Must(nameof(Ok))", "instance.Ok(instance.Code)", "[Must] on 'Code'", "CS0612")]
     [InlineData("", "[Obsolete][NotBlank] public string Code { get; set; } = \"\";", "", "NotBlank", "__Rule_Code_0.IsValid(instance.Code)", "[NotBlank] on 'Code'", "CS0612")]
+    // The same with a message, CS0618, issue #265: a warning-level obsolete argument keeps its
+    // pragma, and only an error-level one is left out.
+    [InlineData("", "[Obsolete(\"use another\")][Must(nameof(Ok))] public string Code { get; set; } = \"\";", "public bool Ok(string value) => true;", "Must(nameof(Ok))", "instance.Ok(instance.Code)", "[Must] on 'Code'", "CS0618")]
+    [InlineData("", "[Obsolete(\"use another\")][NotBlank] public string Code { get; set; } = \"\";", "", "NotBlank", "__Rule_Code_0.IsValid(instance.Code)", "[NotBlank] on 'Code'", "CS0618")]
+    [InlineData("", "[NotEmpty] public string? Code { get; set; }", "[Obsolete(\"use another\")][CustomValidation] public ValidationFailure[] Check() => Array.Empty<ValidationFailure>();", "CustomValidation", "instance.Check()", "[CustomValidation] on 'Check'", "CS0618")]
     [InlineData("", "[Must(nameof(Ok))] public override string Code { get; set; } = \"\";", "public bool Ok(string value) => true;", "Must(nameof(Ok))", "instance.Ok(instance.Code)", "[Must] on 'Code'", "CS0612", "[Obsolete] public virtual string Code { get; set; } = \"\";")]
     // A custom rule whose T is string, after a null test; ZV0021 already rejects it on a string?.
     [InlineData("", "[NotNull][NotBlank] public string Code { get; set; } = \"\";", "", "NotBlank", "__Rule_Code_1.IsValid(instance.Code)", "[NotBlank] on 'Code'", "CS8604")]
@@ -481,6 +486,147 @@ public class MirroredCallWarningTests
         var (result, output) = RunGenerator(source);
 
         SingleZV0032(result);
+        Assert.Empty(GeneratedWarnings(result, output));
+        EmitSucceeds(output);
+    }
+
+    /// <summary>
+    /// Issue #265: a <c>[Must]</c> predicate or a custom rule is given the property's value as its
+    /// argument, and reading an <c>[Obsolete(error: true)]</c> property there raises CS0619, which
+    /// pragma cannot suppress. The rule is left out of the generated file, and ZV0032 reports the
+    /// compiler's own message as an error at the rule's attribute. An error-level getter counts
+    /// the same as an error-level property.
+    /// </summary>
+    [Theory]
+    [InlineData("[Must(nameof(Ok))][Obsolete(\"gone\", error: true)] public string Code { get; set; } = \"\";",
+        "public bool Ok(string value) => true;", "Must(nameof(Ok))", "[Must] on 'Code'", "'Request.Code' is obsolete: 'gone'")]
+    [InlineData("[NotBlank][Obsolete(\"gone\", error: true)] public string Code { get; set; } = \"\";",
+        "", "NotBlank", "[NotBlank] on 'Code'", "'Request.Code' is obsolete: 'gone'")]
+    [InlineData("[Must(nameof(Ok))] public string Code { [Obsolete(\"gone\", error: true)] get; set; } = \"\";",
+        "public bool Ok(string value) => true;", "Must(nameof(Ok))", "[Must] on 'Code'", "'Request.Code.get' is obsolete: 'gone'")]
+    [InlineData("[NotBlank] public string Code { [Obsolete(\"gone\", error: true)] get; set; } = \"\";",
+        "", "NotBlank", "[NotBlank] on 'Code'", "'Request.Code.get' is obsolete: 'gone'")]
+    public void Obsolete_error_argument_of_a_predicate_or_custom_rule_never_reaches_the_generated_file(
+        string property, string members, string attribute, string usage, string compilerMessage)
+    {
+        var source = Model("", property, members);
+
+        var (result, output) = RunGenerator(source);
+
+        var zv0032 = SingleZV0032(result);
+        Assert.Equal(DiagnosticSeverity.Error, zv0032.Severity);
+        Assert.Equal(attribute, SpanText(zv0032));
+        Assert.Equal(
+            $"The generated validator's call 'instance.Code', made for {usage}, raises CS0619: {compilerMessage}",
+            zv0032.GetMessage(CultureInfo.InvariantCulture));
+        Assert.Equal(result.Diagnostics.Length, WithId(result, "ZV0032").Length);
+
+        var generated = GeneratedValidator(result);
+        Assert.DoesNotContain("instance.Code", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("#pragma warning disable CS", generated, StringComparison.Ordinal);
+        Assert.Empty(GeneratedWarnings(result, output));
+        Assert.DoesNotContain(FailedProperties(output), p => string.Equals(p, "Code", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Issue #265: a <c>[CustomValidation]</c> method that is itself <c>[Obsolete(error: true)]</c>
+    /// used to leak CS0619 into the generated file with no ZeroAlloc diagnostic at all. The probe
+    /// compile reports CS0619 on the call, so the call is left out of the generated file rather
+    /// than wrapped in a pragma that could not suppress it, and ZV0032 reports the compiler's own
+    /// message as an error at the attribute. Every other rule of the model is still emitted and
+    /// still runs, and so does a <c>[CustomValidation]</c> method that is not obsolete.
+    /// </summary>
+    [Theory]
+    [InlineData("ValidationFailure[]", "Array.Empty<ValidationFailure>()")]
+    [InlineData("IEnumerable<ValidationFailure>", "Array.Empty<ValidationFailure>()")]
+    // A span is walked by reference through a hoisted local; that local is left out too.
+    [InlineData("ReadOnlySpan<ValidationFailure>", "default")]
+    public void Obsolete_error_custom_validation_method_is_left_out_and_reported(string returnType, string body)
+    {
+        var source = Model("", "[NotEmpty] public string? Code { get; set; }", $$"""
+            [Obsolete("gone", error: true)][CustomValidation] public {{returnType}} Check() => {{body}};
+                [CustomValidation] public ValidationFailure[] Fine() => new[] { new ValidationFailure { PropertyName = "Fine", ErrorMessage = "fine" } };
+            """);
+
+        var (result, output) = RunGenerator(source);
+
+        var zv0032 = SingleZV0032(result);
+        Assert.Equal(DiagnosticSeverity.Error, zv0032.Severity);
+        Assert.Equal("CustomValidation", SpanText(zv0032));
+        Assert.Equal(
+            "The generated validator's call 'instance.Check()', made for [CustomValidation] on 'Check', "
+            + "raises CS0619: 'Request.Check()' is obsolete: 'gone'",
+            zv0032.GetMessage(CultureInfo.InvariantCulture));
+        Assert.Equal(result.Diagnostics.Length, WithId(result, "ZV0032").Length);
+
+        var generated = GeneratedValidator(result);
+        Assert.DoesNotContain("Check()", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("#pragma warning disable CS", generated, StringComparison.Ordinal);
+        Assert.Contains("instance.Fine()", generated, StringComparison.Ordinal);
+        Assert.Empty(GeneratedWarnings(result, output));
+        Assert.DoesNotContain(output.GetDiagnostics(), d => string.Equals(d.Id, "CS0619", StringComparison.Ordinal));
+        Assert.Equal(["Code", "Fine"], FailedProperties(output));
+    }
+
+    /// <summary>
+    /// Issue #265: an <c>[Obsolete(error: true)]</c> <c>[CustomValidation]</c> method on a
+    /// <c>[Validate]</c> base type is left out of both validators, and reported once, by the base
+    /// type's own validator.
+    /// </summary>
+    [Fact]
+    public void Obsolete_error_custom_validation_on_a_validated_base_is_reported_once()
+    {
+        var source = Prelude + """
+            [Validate]
+            public class RequestBase
+            {
+                [NotEmpty] public string? Code { get; set; }
+
+                [Obsolete("gone", error: true)]
+                [CustomValidation]
+                public ValidationFailure[] Check() => Array.Empty<ValidationFailure>();
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Equal(DiagnosticSeverity.Error, SingleZV0032(result).Severity);
+        Assert.Equal(result.Diagnostics.Length, WithId(result, "ZV0032").Length);
+        Assert.DoesNotContain("Check()", GeneratedValidator(result), StringComparison.Ordinal);
+        Assert.Empty(GeneratedWarnings(result, output));
+        Assert.Equal(["Code", "Other"], FailedProperties(output));
+    }
+
+    /// <summary>
+    /// Issue #265: a <c>[Must]</c> predicate, <c>When</c> guard or <c>[SkipWhen]</c> method that is
+    /// itself <c>[Obsolete(error: true)]</c> fails to compile as a call, which ZV0030 already
+    /// reports, and is left out: no CS0619 reaches the generated file, and no ZV0032 repeats it.
+    /// </summary>
+    [Theory]
+    [InlineData("", "[Must(nameof(Ok))] public string? Code { get; set; }", "[Obsolete(\"gone\", error: true)] public bool Ok(string? value) => true;", "Must(nameof(Ok))")]
+    [InlineData("", "[NotEmpty(When = nameof(Ok))] public string? Code { get; set; }", "[Obsolete(\"gone\", error: true)] public bool Ok() => true;", "NotEmpty(When = nameof(Ok))")]
+    [InlineData("[SkipWhen(nameof(Ok))]", "[NotEmpty] public string? Code { get; set; }", "[Obsolete(\"gone\", error: true)] public bool Ok() => true;", "SkipWhen(nameof(Ok))")]
+    public void Obsolete_error_rule_method_is_reported_as_ZV0030_and_left_out(
+        string classAttributes, string property, string members, string attribute)
+    {
+        var source = Model(classAttributes, property, members);
+
+        var (result, output) = RunGenerator(source);
+
+        var reported = WithId(result, "ZV0030");
+        Assert.True(reported.Length == 1, "Expected exactly one ZV0030, got: " + string.Join("; ", result.Diagnostics.Select(d => d.ToString())));
+        var zv0030 = reported[0];
+        Assert.Equal(DiagnosticSeverity.Error, zv0030.Severity);
+        Assert.Equal(attribute, SpanText(zv0030));
+        Assert.Contains("fails with CS0619: 'Request.Ok", zv0030.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Empty(WithId(result, "ZV0032"));
+        Assert.DoesNotContain("instance.Ok", GeneratedValidator(result), StringComparison.Ordinal);
         Assert.Empty(GeneratedWarnings(result, output));
         EmitSucceeds(output);
     }

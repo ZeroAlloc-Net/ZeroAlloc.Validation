@@ -87,11 +87,12 @@ internal static class RuleEmitter
         calls ??= CallLineWriter.Emitting(MethodCallProbe.CallWarnings(compilation, classSymbol));
 
         // A [SkipWhen] method the validator cannot call is reported, as ZV0017, ZV0028 or ZV0030,
-        // and left out, so the model is validated.
-        if (ResolveSkipWhen(compilation, classSymbol) is { Resolution.IsEmitted: true } skipWhen)
+        // and left out, so the model is validated. So is one whose call raises CS0619, which
+        // ZV0032 reports.
+        if (ResolveSkipWhen(compilation, classSymbol) is { Resolution.IsEmitted: true } skipWhen
+            && calls.TryAppendLine(sb, $"        if ({GeneratedCalls.SkipWhenCondition(modelParamName, skipWhen.MethodName)})",
+                new[] { SkipWhenSite(classSymbol, in skipWhen, modelParamName) }))
         {
-            calls.AppendLine(sb, $"        if ({GeneratedCalls.SkipWhenCondition(modelParamName, skipWhen.MethodName)})",
-                new[] { SkipWhenSite(classSymbol, in skipWhen, modelParamName) });
             sb.AppendLine($"            return new global::ZeroAlloc.Validation.ValidationResult(global::System.Array.Empty<global::ZeroAlloc.Validation.ValidationFailure>());");
             sb.AppendLine();
         }
@@ -198,18 +199,20 @@ internal static class RuleEmitter
         {
             var call = GeneratedCalls.CustomValidationCall(modelParamName, customMethods[i].Method.Name, customMethods[i].Receiver);
             var site = new[] { CustomValidationSite(customMethods[i], call) };
+            // A call that raises CS0619, which ZV0032 reports, is left out with the loop over
+            // its result.
             if (customMethods[i].ByRef)
             {
                 // A span is walked by reference to avoid copying each failure. The call is hoisted
                 // into a local because `ref readonly` iteration needs an addressable variable
                 // rather than a call expression. Arrays cannot be iterated this way — their foreach
                 // lowers to indexing — but they allocate nothing either way.
-                calls.AppendLine(sb, $"        var _cv{i} = {call};", site);
+                if (!calls.TryAppendLine(sb, $"        var _cv{i} = {call};", site)) continue;
                 sb.AppendLine($"        foreach (ref readonly var _cf in _cv{i})");
             }
-            else
+            else if (!calls.TryAppendLine(sb, $"        foreach (var _cf in {call})", site))
             {
-                calls.AppendLine(sb, $"        foreach (var _cf in {call})", site);
+                continue;
             }
             sb.AppendLine("            _buf.Add(_cf);");
             sb.AppendLine();
@@ -308,7 +311,9 @@ internal static class RuleEmitter
     /// the call. It is then made through the type that declares the method, or the virtual method
     /// it overrides, where <c>Check()</c> binds to it: any other overload applicable without
     /// arguments there needs a default value or is static, and loses to it. The call is still
-    /// virtual.
+    /// virtual. A call that binds to the method itself but still fails, as CS0619 does for an
+    /// <c>[Obsolete(error: true)]</c> method, is made on the model too: a cast would not change
+    /// what it binds to, and ZV0032 names the call as the user wrote it.
     /// </summary>
     private static string? CustomValidationReceiver(Compilation compilation, INamedTypeSymbol classSymbol, IMethodSymbol method)
     {
@@ -318,7 +323,7 @@ internal static class RuleEmitter
         if (CertainCall.CustomValidation(compilation, classSymbol, method)) return null;
 
         var resolution = MethodCallProbe.Resolve(compilation, classSymbol, method.Name, CustomValidationStatement(method));
-        if (resolution is { Reach: MethodReach.Callable, Method: { } bound }
+        if (resolution is { Reach: MethodReach.Callable or MethodReach.NotFound, Method: { } bound }
             && SymbolEqualityComparer.Default.Equals(bound.OriginalDefinition, root.OriginalDefinition))
             return null;
 
@@ -475,8 +480,10 @@ internal static class RuleEmitter
             var whenGuard    = whenMethod   is null ? "" : GeneratedCalls.WhenGuard(modelParamName, whenMethod);
             var unlessGuard  = unlessMethod is null ? "" : GeneratedCalls.UnlessGuard(modelParamName, unlessMethod);
 
-            calls.AppendLine(sb, $"{prefix} ({whenGuard}{unlessGuard}{condition})",
-                RuleCallSites(attr, prop, modelParamName, rawPropAccess, ruleIndex: i, condition));
+            // A condition whose call raises CS0619, which ZV0032 reports, is left out with its body.
+            if (!calls.TryAppendLine(sb, $"{prefix} ({whenGuard}{unlessGuard}{condition})",
+                RuleCallSites(attr, prop, modelParamName, rawPropAccess, ruleIndex: i, condition)))
+                continue;
             sb.AppendLine($"            _buf.Add({BuildFailureInitializer(propName, message, attr, ruleMessage, propertyValueExpr)});");
             emitted++;
         }
@@ -743,8 +750,10 @@ internal static class RuleEmitter
             var whenGuard    = whenMethod   is null ? "" : GeneratedCalls.WhenGuard(modelParamName, whenMethod);
             var unlessGuard  = unlessMethod is null ? "" : GeneratedCalls.UnlessGuard(modelParamName, unlessMethod);
 
-            calls.AppendLine(sb, $"{prefix} ({whenGuard}{unlessGuard}{condition})",
-                RuleCallSites(attr, prop, modelParamName, rawPropAccess, ruleIndex: i, condition));
+            // A condition whose call raises CS0619, which ZV0032 reports, is left out with its body.
+            if (!calls.TryAppendLine(sb, $"{prefix} ({whenGuard}{unlessGuard}{condition})",
+                RuleCallSites(attr, prop, modelParamName, rawPropAccess, ruleIndex: i, condition)))
+                continue;
             sb.AppendLine("        {");
             if (directReturn)
             {
