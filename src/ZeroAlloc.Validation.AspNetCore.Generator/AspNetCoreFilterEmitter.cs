@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -11,6 +10,9 @@ namespace ZeroAlloc.Validation.AspNetCore.Generator;
 public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
 {
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
+
+    /// <summary>Tracking name of the step the output is produced from, so tests can assert that it stays cached.</summary>
+    internal const string OutputTrackingName = "AspNetCoreValidationModels";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -26,33 +28,35 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
                 // A model that gets no validator is left out here too: one the generated validator
                 // cannot reach, ZV0025 and #216, or a generic one, ZV0029 and #219. Naming it would
                 // only add compiler errors in generated code.
-                // Null marks it; Emit drops it, so the provider chain needs no extra step.
+                // Null marks it, and the step after Collect drops it.
+                // The transform extracts everything the output needs into an equatable model, so
+                // the output step stays cached while nothing it was read from changes, issue #209.
+                // It reruns for every compilation, so the model still follows edits in other
+                // files, such as to a nested model, and into referenced assemblies, issue #246.
                 transform: static (ctx, _) =>
                     GeneratedValidatorReach.HasGeneratedValidator((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
-                        ? (INamedTypeSymbol)ctx.TargetSymbol
+                        ? ValidatedModelInfo.From((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
                         : null);
 
 #pragma warning disable EPS06 // Collect() on IncrementalValuesProvider<T> is intentional
-        var collected = validateClasses.Collect();
+        var collected = validateClasses.Collect()
+            .Select(static (models, _) => ValidatedModelInfo.WithGeneratedValidator(models));
         var isInternal = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => GeneratedAccessibilityOption.IsInternal(provider));
-        // The compilation lets the registration follow each validator's constructor dependencies
-        // into referenced assemblies, issue #246.
-        var combined = collected.Combine(isInternal).Combine(context.CompilationProvider);
+        var combined = collected.Combine(isInternal).WithTrackingName(OutputTrackingName);
 #pragma warning restore EPS06
-        context.RegisterSourceOutput(combined, static (ctx, pair) => EmitFiles(ctx, pair.Left.Left, pair.Left.Right, pair.Right));
+        context.RegisterSourceOutput(combined, static (ctx, pair) => EmitFiles(ctx, pair.Left, pair.Right));
     }
 
-    private static void EmitFiles(SourceProductionContext ctx, ImmutableArray<INamedTypeSymbol?> candidates, bool isInternal, Compilation compilation)
+    private static void EmitFiles(SourceProductionContext ctx, EquatableArray<ValidatedModelInfo> models, bool isInternal)
     {
-        var models = GeneratedValidatorReach.WithGeneratedValidator(candidates);
-        if (models.IsDefaultOrEmpty) return;
+        if (models.Count == 0) return;
 
         ctx.AddSource("ZeroAlloc.Validation.ZeroAllocValidationActionFilter.g.cs",                EmitFilter(models));
-        ctx.AddSource("ZeroAlloc.Validation.ZeroAllocValidationServiceCollectionExtensions.g.cs", EmitExtensions(models, isInternal, compilation));
+        ctx.AddSource("ZeroAlloc.Validation.ZeroAllocValidationServiceCollectionExtensions.g.cs", EmitExtensions(models, isInternal));
     }
 
-    private static string EmitFilter(ImmutableArray<INamedTypeSymbol> models)
+    private static string EmitFilter(EquatableArray<ValidatedModelInfo> models)
     {
         var sb = new StringBuilder();
         AppendFilterHeader(sb);
@@ -97,7 +101,7 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         sb.AppendLine();
     }
 
-    private static void AppendDispatchSwitch(StringBuilder sb, ImmutableArray<INamedTypeSymbol> models)
+    private static void AppendDispatchSwitch(StringBuilder sb, EquatableArray<ValidatedModelInfo> models)
     {
         sb.AppendLine("    private async global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult?> DispatchAsync(object? arg)");
         sb.AppendLine("    {");
@@ -106,7 +110,7 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
 
         foreach (var model in models)
         {
-            var fullName = model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var fullName = model.FullyQualifiedName;
             var varName = char.ToLowerInvariant(model.Name[0]).ToString() + model.Name.Substring(1) + "_arg";
             sb.AppendLine($"            case {fullName} {varName}:");
             sb.AppendLine($"                return await _services.GetRequiredService<global::ZeroAlloc.Validation.ValidatorFor<{fullName}>>().ValidateAsync({varName});");
@@ -118,7 +122,7 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         sb.AppendLine("}");
     }
 
-    private static string EmitExtensions(ImmutableArray<INamedTypeSymbol> models, bool isInternal, Compilation compilation)
+    private static string EmitExtensions(EquatableArray<ValidatedModelInfo> models, bool isInternal)
     {
         var sb = new StringBuilder();
         sb.AppendLine("// <auto-generated />");
@@ -149,7 +153,7 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         sb.AppendLine("        this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services)");
         sb.AppendLine("    {");
 
-        ValidatorRegistrationEmitter.EmitRegistrations(sb, models, compilation);
+        ValidatorRegistrationEmitter.AppendRegistrations(sb, models);
 
         sb.AppendLine("        services.TryAddTransient<ZeroAllocValidationActionFilter>();");
         sb.AppendLine("        services.Configure<global::Microsoft.AspNetCore.Mvc.MvcOptions>(o => o.Filters.Add<ZeroAllocValidationActionFilter>());");

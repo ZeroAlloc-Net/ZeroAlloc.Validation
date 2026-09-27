@@ -13,11 +13,30 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// <summary>
     /// Opaque wrapper so the IncrementalValueProvider type parameter does not reference
     /// ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo directly, which would force Roslyn
-    /// to load that assembly when JIT-compiling <see cref="Initialize"/>.
+    /// to load that assembly when JIT-compiling <see cref="Initialize"/>. The lists compare by
+    /// value, so the step stays unchanged while the behaviors do, issue #209.
     /// </summary>
     private sealed record BehaviorCache(
-        System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> Sync,
-        System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> Async);
+        EquatableArray<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> Sync,
+        EquatableArray<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> Async);
+
+    /// <summary>
+    /// A <c>[Validate]</c> declaration as the syntax provider finds it: its tree and span, from
+    /// which the generation step resolves the model in its own compilation. It holds no symbol, so
+    /// it compares equal while the file does not change, issue #209.
+    /// </summary>
+    private sealed record ValidatorTarget(SyntaxTree Tree, Microsoft.CodeAnalysis.Text.TextSpan Span);
+
+    /// <summary>
+    /// One model's generated validator, as the generation step produces it and the output step
+    /// adds it: the hint name and source, both <see langword="null"/> when the model gets no
+    /// validator, and the diagnostics found. Every part compares by value, so the output step is
+    /// cached while generating the model again produces the same result, issue #209.
+    /// </summary>
+    internal sealed record GeneratedValidator(string? HintName, string? Source, EquatableArray<DiagnosticInfo> Diagnostics);
+
+    /// <summary>Tracking name of the step that generates each validator, so tests can assert that it stays cached.</summary>
+    internal const string ValidatorTrackingName = "GeneratedValidator";
 
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
     private const string ValidateWithFqn      = "ZeroAlloc.Validation.ValidateWithAttribute";
@@ -195,30 +214,12 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             + "ASP.NET Core glue leave them out. Rename one of the types.");
 
     /// <summary>
-    /// ZV0026's model: a <c>[RuleMessage]</c> usage on a class that is not a custom rule. Plain
-    /// strings and spans only, so the step compares by value and stays cached across edits that
-    /// do not touch the class; the <see cref="Location"/> is rebuilt when the diagnostic is reported.
+    /// ZV0026's model: a <c>[RuleMessage]</c> usage on a class that is not a custom rule. The
+    /// location is the attribute's tree and span, so the step compares by value and stays cached
+    /// across edits that do not touch the file, and the diagnostic is reported in the tree itself,
+    /// where <c>#pragma warning disable</c> and per-file severity apply to it.
     /// </summary>
-    private readonly record struct MisplacedRuleMessage(
-        string ClassName,
-        string FilePath,
-        Microsoft.CodeAnalysis.Text.TextSpan Span,
-        Microsoft.CodeAnalysis.Text.LinePositionSpan LineSpan)
-    {
-        /// <summary>
-        /// A source location in the compilation's own tree, so <c>#pragma warning disable</c> and
-        /// per-file severity apply to the warning; a file-path location would bypass both.
-        /// </summary>
-        public Location ToLocation(Compilation compilation)
-        {
-            foreach (var tree in compilation.SyntaxTrees)
-            {
-                if (string.Equals(tree.FilePath, FilePath, StringComparison.Ordinal))
-                    return Location.Create(tree, Span);
-            }
-            return Location.Create(FilePath, Span, LineSpan);
-        }
-    }
+    private readonly record struct MisplacedRuleMessage(string ClassName, LocationInfo Location);
 
     private static readonly DiagnosticDescriptor ZV0027 = new DiagnosticDescriptor(
         id: "ZV0027",
@@ -242,9 +243,28 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
     private enum GeneratedAccessibilityMode { Public, Internal }
 
-    private readonly record struct GeneratedAccessibilityResult(GeneratedAccessibilityMode Mode, Diagnostic? Diagnostic);
+    private readonly record struct GeneratedAccessibilityResult(GeneratedAccessibilityMode Mode, DiagnosticInfo? Diagnostic);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
+    {
+        // ZV0019: read once per compilation, independent of whether any [Validate] class is
+        // present, so an invalid value is reported even in a project with nothing to generate.
+        var accessibility = context.AnalyzerConfigOptionsProvider
+            .Select(static (provider, _) => ParseGeneratedAccessibility(provider));
+
+        context.RegisterSourceOutput(accessibility, static (ctx, result) =>
+        {
+            if (result.Diagnostic is not null)
+                ctx.ReportDiagnostic(result.Diagnostic.ToDiagnostic());
+        });
+
+        RegisterValidators(context, accessibility);
+        RegisterMisplacedRuleMessage(context);
+    }
+
+    private static void RegisterValidators(
+        IncrementalGeneratorInitializationContext context,
+        IncrementalValueProvider<GeneratedAccessibilityResult> accessibility)
     {
         var validateClasses = context.SyntaxProvider
             .ForAttributeWithMetadataName(
@@ -258,46 +278,45 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                     node is ClassDeclarationSyntax
                          or RecordDeclarationSyntax
                          or StructDeclarationSyntax,
-                transform: static (ctx, _) => (INamedTypeSymbol)ctx.TargetSymbol);
+                transform: static (ctx, _) => new ValidatorTarget(ctx.TargetNode.SyntaxTree, ctx.TargetNode.Span));
 
         var behaviors = context.CompilationProvider
             .Select(static (compilation, _) =>
             {
                 var (sync, async_) = BehaviorDiscoverer.DiscoverAll(compilation);
-                return new BehaviorCache(sync, async_);
+                return new BehaviorCache(EquatableArray.From(sync), EquatableArray.From(async_));
             });
 
-        // ZV0019: read once per compilation, independent of whether any [Validate] class is
-        // present, so an invalid value is reported even in a project with nothing to generate.
-        var accessibility = context.AnalyzerConfigOptionsProvider
-            .Select(static (provider, _) => ParseGeneratedAccessibility(provider));
-
-        // The Compilation reaches Emit for the custom-rule checks, ZV0021's implicit-conversion
-        // test and ZV0023's accessibility test. It adds no invalidation of its own: the behavior
-        // cache above is already rebuilt from every new compilation.
+        // Each validator is generated here, against the compilation, into a GeneratedValidator
+        // that compares by value; the output step then only adds it. The generation depends on
+        // the whole compilation, not just the model's file: a base type, a nested model, a custom
+        // rule, a pipeline behavior or a referenced assembly can change what it produces, and the
+        // warning probe compiles every validator's calls together, issue #241. So it reruns for
+        // every compilation, as the syntax provider's own transform does, and the output step is
+        // cached whenever it produces the same validator and diagnostics again, issue #209.
         //
         // EPS06 false positive: `validateClasses` comes from SyntaxProvider.ForAttributeWithMetadataName,
         // a method call rather than a plain provider property, so ErrorProne.NET treats every further
         // chained call on it as a hidden copy of the IncrementalValuesProvider<T> struct, even though
-        // that struct is immutable and designed to be chained this way (tracked in #213; the pragma
+        // that struct is immutable and designed to be chained this way (tracked in #248; the pragma
         // scope below is the narrowest that still compiles — every line inside it fails without it).
 #pragma warning disable EPS06
-        var combinedWithMode = validateClasses
+        var validators = validateClasses
             .Combine(behaviors)
             .Combine(accessibility.Select(static (result, _) => result.Mode))
-            .Combine(context.CompilationProvider);
+            .Combine(context.CompilationProvider)
+            .Select(static (input, ct) =>
+                Generate(input.Left.Left.Left, input.Left.Left.Right, input.Left.Right, input.Right, ct))
+            .WithTrackingName(ValidatorTrackingName);
 #pragma warning restore EPS06
 
-        context.RegisterSourceOutput(accessibility, static (ctx, result) =>
+        context.RegisterSourceOutput(validators, static (ctx, validator) =>
         {
-            if (result.Diagnostic is not null)
-                ctx.ReportDiagnostic(result.Diagnostic);
+            foreach (var diagnostic in validator.Diagnostics)
+                ctx.ReportDiagnostic(diagnostic.ToDiagnostic());
+            if (validator.HintName is not null && validator.Source is not null)
+                ctx.AddSource(validator.HintName, validator.Source);
         });
-
-        context.RegisterSourceOutput(combinedWithMode, static (ctx, pair) =>
-            Emit(ctx, pair.Left.Left.Left, pair.Left.Left.Right, pair.Left.Right, pair.Right));
-
-        RegisterMisplacedRuleMessage(context);
     }
 
     // ZV0026: [RuleMessage] is read only for custom rules. Independent of [Validate], so a
@@ -307,24 +326,20 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // EPS06 false positive, same cause as the Initialize pipeline above: every call chained
         // onto SyntaxProvider.ForAttributeWithMetadataName's result is flagged as a hidden struct
         // copy, because that provider comes from a method call rather than a plain property
-        // (tracked in #213). The whole chain needs the pragma — each step fails without it.
-        //
-        // Joined with the Compilation only after the tracked step, which therefore stays cached;
-        // the Compilation serves just to turn the model back into a source location.
+        // (tracked in #248). The whole chain needs the pragma — each step fails without it.
 #pragma warning disable EPS06
-        var misplacedWithCompilation = context.SyntaxProvider
+        var misplaced = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 RuleMessageFqn,
                 predicate: static (node, _) => node is ClassDeclarationSyntax or RecordDeclarationSyntax,
                 transform: static (ctx, ct) => FindMisplacedRuleMessage(ctx, ct))
             .Where(static m => m is not null)
             .Select(static (m, _) => m!.Value)
-            .WithTrackingName(MisplacedRuleMessageTrackingName)
-            .Combine(context.CompilationProvider);
+            .WithTrackingName(MisplacedRuleMessageTrackingName);
 #pragma warning restore EPS06
 
-        context.RegisterSourceOutput(misplacedWithCompilation, static (ctx, pair) =>
-            ctx.ReportDiagnostic(Diagnostic.Create(ZV0026, pair.Left.ToLocation(pair.Right), pair.Left.ClassName)));
+        context.RegisterSourceOutput(misplaced, static (ctx, message) =>
+            ctx.ReportDiagnostic(Diagnostic.Create(ZV0026, message.Location.ToLocation(), message.ClassName)));
     }
 
     private static MisplacedRuleMessage? FindMisplacedRuleMessage(GeneratorAttributeSyntaxContext ctx, System.Threading.CancellationToken ct)
@@ -335,12 +350,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             || ctx.Attributes[0].ApplicationSyntaxReference?.GetSyntax(ct) is not { } syntax)
             return null;
 
-        var location = syntax.GetLocation();
-        return new MisplacedRuleMessage(
-            type.Name,
-            location.SourceTree?.FilePath ?? string.Empty,
-            location.SourceSpan,
-            location.GetLineSpan().Span);
+        return new MisplacedRuleMessage(type.Name, new LocationInfo(syntax.SyntaxTree, syntax.Span));
     }
 
     // ZV0019: "Public" and "Internal" are the only allowed values, compared case-insensitively;
@@ -357,23 +367,52 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         if (string.Equals(raw, "Internal", StringComparison.OrdinalIgnoreCase))
             return new GeneratedAccessibilityResult(GeneratedAccessibilityMode.Internal, null);
 
-        var diagnostic = Diagnostic.Create(ZV0019, Location.None, raw);
+        var diagnostic = DiagnosticInfo.Create(ZV0019, Location.None, ZV0019.DefaultSeverity, [raw]);
         return new GeneratedAccessibilityResult(GeneratedAccessibilityMode.Public, diagnostic);
     }
 
-    private static void Emit(SourceProductionContext ctx, INamedTypeSymbol classSymbol, BehaviorCache allBehaviors, GeneratedAccessibilityMode mode, Compilation compilation)
+    /// <summary>
+    /// Generates the validator for the <c>[Validate]</c> declaration at <paramref name="target"/>
+    /// in <paramref name="compilation"/>, with the diagnostics found, as a value that compares
+    /// equal whenever the same validator and diagnostics are produced again.
+    /// </summary>
+    private static GeneratedValidator Generate(
+        ValidatorTarget target, BehaviorCache allBehaviors, GeneratedAccessibilityMode mode,
+        Compilation compilation, System.Threading.CancellationToken ct)
+    {
+        var diagnostics = new DiagnosticSink();
+        var classSymbol = ResolveTarget(target, compilation, ct);
+        var output = classSymbol is null ? default : Emit(diagnostics, classSymbol, allBehaviors, mode, compilation);
+        return new GeneratedValidator(output.HintName, output.Source, diagnostics.ToEquatableArray());
+    }
+
+    /// <summary>
+    /// The type declared at <paramref name="target"/>. The tree belongs to
+    /// <paramref name="compilation"/>, since the syntax provider found the declaration in it.
+    /// </summary>
+    private static INamedTypeSymbol? ResolveTarget(ValidatorTarget target, Compilation compilation, System.Threading.CancellationToken ct)
+    {
+        var node = target.Tree.GetRoot(ct).FindNode(target.Span, getInnermostNodeForTie: true);
+        for (var current = node; current is not null; current = current.Parent)
+        {
+            if (current is BaseTypeDeclarationSyntax declaration && declaration.Span == target.Span)
+                return compilation.GetSemanticModel(target.Tree).GetDeclaredSymbol(declaration, ct) as INamedTypeSymbol;
+        }
+        return null;
+    }
+
+    private static (string? HintName, string? Source) Emit(DiagnosticSink ctx, INamedTypeSymbol classSymbol, BehaviorCache allBehaviors, GeneratedAccessibilityMode mode, Compilation compilation)
     {
         if (ReportModelWithoutValidator(ctx, classSymbol, compilation))
-            return;
+            return default;
 
         // ZV0014 — surface mutability hazard on non-readonly structs. Generator
         // still proceeds to emit the validator; the warning is informational.
         if (classSymbol.TypeKind == TypeKind.Struct && !classSymbol.IsReadOnly)
         {
-            ctx.ReportDiagnostic(Diagnostic.Create(
-                ZV0014,
+            ctx.Report(ZV0014,
                 classSymbol.Locations.FirstOrDefault() ?? Location.None,
-                classSymbol.ToDisplayString()));
+                classSymbol.ToDisplayString());
         }
 
         var modelFqn = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -409,11 +448,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
         sb.AppendLine("}");
 
-        ctx.AddSource(GeneratedValidatorNames.HintName(classSymbol), sb.ToString());
+        return (GeneratedValidatorNames.HintName(classSymbol), sb.ToString());
     }
 
     private static void EmitValidateMethod(
-        SourceProductionContext ctx,
+        DiagnosticSink ctx,
         System.Text.StringBuilder sb,
         INamedTypeSymbol classSymbol,
         Compilation compilation,
@@ -431,7 +470,6 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         else
         {
             var fullyQualifiedModel = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            var capturedCtx = ctx;
             var syncShape = new global::ZeroAlloc.Pipeline.Generators.PipelineShape
             {
                 TypeArguments           = new[] { fullyQualifiedModel },
@@ -441,7 +479,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 {
                     var paramName = depth == 0 ? "instance" : $"r{depth}";
                     return "{\n"
-                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, capturedCtx, fields)
+                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, ctx, fields)
                         + "        }";
                 }
             };
@@ -607,7 +645,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     }
 
     private static void ReportDuplicateOrderDiagnostics(
-        SourceProductionContext ctx,
+        DiagnosticSink ctx,
         Compilation compilation,
         INamedTypeSymbol classSymbol,
         List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> sync,
@@ -624,12 +662,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             var b = all[i];
             if (seen.TryGetValue(b.Order, out var first))
             {
-                ctx.ReportDiagnostic(Diagnostic.Create(
-                    ZV0015,
+                ctx.Report(ZV0015,
                     ResolveDuplicateOrderLocation(compilation, classSymbol, b),
                     b.Order.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     modelName,
-                    DescribeBehavior(first)));
+                    DescribeBehavior(first));
             }
             else
             {
@@ -643,7 +680,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// <c>[PipelineBehavior]</c> attribute when that can be recovered, otherwise the model's own
     /// <c>[Validate]</c> attribute — issue #247, so the diagnostic never reports at
     /// <see cref="Location.None"/>. Pure function of the compilation and the two symbols
-    /// involved, so it is unit-testable without a <see cref="SourceProductionContext"/>.
+    /// involved, so it is unit-testable without generating a validator.
     /// </summary>
     internal static Location ResolveDuplicateOrderLocation(
         Compilation compilation,
@@ -683,7 +720,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         return lastSeparator >= 0 ? name.Substring(lastSeparator + 1) : name;
     }
 
-    private static void ReportNestedDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    private static void ReportNestedDiagnostics(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
@@ -721,7 +758,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// A generic <c>[Validate]</c> base type gets no validator, ZV0029, so it reports nothing and
     /// the walk does not defer to it.
     /// </summary>
-    private static void ReportUnreadValidationAttributeDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    private static void ReportUnreadValidationAttributeDiagnostics(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         var includeBase = MemberWalker.IncludesBaseProperties(classSymbol);
         var hidden = new HashSet<string>(StringComparer.Ordinal);
@@ -765,20 +802,19 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         }
     }
 
-    private static void ReportUnreadValidationAttributes(SourceProductionContext ctx, ISymbol target, string targetName)
+    private static void ReportUnreadValidationAttributes(DiagnosticSink ctx, ISymbol target, string targetName)
     {
         foreach (var attr in target.GetAttributes())
         {
             if (attr.AttributeClass is not { } attrClass || !CustomRules.DerivesFromValidationAttribute(attrClass))
                 continue;
 
-            ctx.ReportDiagnostic(Diagnostic.Create(
-                ZV0024,
+            ctx.Report(ZV0024,
                 attr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
                     ?? target.Locations.FirstOrDefault(l => l.IsInSource)
                     ?? Location.None,
                 attrClass.Name,
-                targetName));
+                targetName);
         }
     }
 
@@ -797,35 +833,32 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// the user sees for it.
     /// </summary>
     /// <returns>Whether the model was reported, in which case nothing is generated for it.</returns>
-    private static bool ReportModelWithoutValidator(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    private static bool ReportModelWithoutValidator(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         var reported = false;
         if (!GeneratedValidatorReach.CanReach(classSymbol, compilation))
         {
-            ctx.ReportDiagnostic(Diagnostic.Create(
-                ZV0025,
+            ctx.Report(ZV0025,
                 FindValidateAttributeLocation(classSymbol),
-                classSymbol.ToDisplayString()));
+                classSymbol.ToDisplayString());
             reported = true;
         }
 
         if (GeneratedValidatorReach.IsGeneric(classSymbol))
         {
-            ctx.ReportDiagnostic(Diagnostic.Create(
-                ZV0029,
+            ctx.Report(ZV0029,
                 FindValidateAttributeLocation(classSymbol),
-                classSymbol.ToDisplayString()));
+                classSymbol.ToDisplayString());
             reported = true;
         }
 
         if (!reported && GeneratedValidatorReach.ValidatorNameClashes(classSymbol, compilation) is { Count: > 0 } clashes)
         {
-            ctx.ReportDiagnostic(Diagnostic.Create(
-                ZV0031,
+            ctx.Report(ZV0031,
                 FindValidateAttributeLocation(classSymbol),
                 classSymbol.ToDisplayString(),
                 GeneratedValidatorNames.ValidatorName(classSymbol),
-                string.Join(", ", clashes.Select(c => $"'{c.ToDisplayString()}'"))));
+                string.Join(", ", clashes.Select(c => $"'{c.ToDisplayString()}'")));
             reported = true;
         }
 
@@ -851,7 +884,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// base type, a property that is only inaccessible is ZV0017's case and is not reported again.
     /// </summary>
     private static void ReportUnreadablePropertyAttributes(
-        SourceProductionContext ctx, IPropertySymbol property, Compilation compilation, bool isBase)
+        DiagnosticSink ctx, IPropertySymbol property, Compilation compilation, bool isBase)
     {
         var reason = MemberWalker.GetUnreadableReason(property, compilation);
         if (reason == UnreadableReason.None) return;
@@ -864,14 +897,13 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 && !string.Equals(attrClass.ToDisplayString(), ValidateWithFqn, StringComparison.Ordinal))
                 continue;
 
-            ctx.ReportDiagnostic(Diagnostic.Create(
-                ZV0027,
+            ctx.Report(ZV0027,
                 attr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
                     ?? property.Locations.FirstOrDefault(l => l.IsInSource)
                     ?? Location.None,
                 attrClass.Name,
                 property.Name,
-                DescribeUnreadableReason(reason)));
+                DescribeUnreadableReason(reason));
         }
     }
 
@@ -900,7 +932,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// arguments. Repeating one with *identical* arguments is not: the rule runs twice and the
     /// same failure is reported twice. Only that exact-duplicate case is reported.
     /// </summary>
-    private static void ReportDuplicateRuleAttributeDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    private static void ReportDuplicateRuleAttributeDiagnostics(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
@@ -915,12 +947,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
                 if (seen.Add(DescribeAttribute(attr))) continue;
 
-                ctx.ReportDiagnostic(Diagnostic.Create(
-                    ZV0018,
+                ctx.Report(ZV0018,
                     attr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
                         ?? prop.Locations.FirstOrDefault(),
                     prop.Name,
-                    attr.AttributeClass?.Name));
+                    attr.AttributeClass?.Name);
             }
         }
     }
@@ -974,7 +1005,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// declared on a <c>[Validate]</c> base type is left to that type's own generation when the
     /// call fails there too, so it is reported once and under one ID.
     /// </summary>
-    private static void ReportInaccessibleBaseMemberDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    private static void ReportInaccessibleBaseMemberDiagnostics(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         foreach (var member in MemberWalker.GetInaccessibleBaseMembers(classSymbol, compilation))
         {
@@ -990,12 +1021,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
             // A member of a base type from a referenced assembly has no source location, so it is
             // reported at the model's [Validate] attribute.
-            ctx.ReportDiagnostic(Diagnostic.Create(
-                ZV0017,
+            ctx.Report(ZV0017,
                 member.Locations.FirstOrDefault(l => l.IsInSource) ?? FindValidateAttributeLocation(classSymbol),
                 member.ContainingType?.ToDisplayString(),
                 member.Name,
-                classSymbol.ToDisplayString()));
+                classSymbol.ToDisplayString());
         }
 
         // A reachable property can still carry a rule that calls a method the validator cannot.
@@ -1042,7 +1072,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// A method on a base type from a referenced assembly is not reported, as for ZV0024 and ZV0027;
     /// an override declared in source that inherits the attribute from one is reported at the override.
     /// </summary>
-    private static void ReportCustomValidationDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    private static void ReportCustomValidationDiagnostics(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         // GetMembersIncludingBase leaves out inaccessible base members; the static ones among
         // them are reported here rather than as ZV0017.
@@ -1072,10 +1102,10 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
             if (!validSignature)
             {
-                ctx.ReportDiagnostic(Diagnostic.Create(ZV0013,
+                ctx.Report(ZV0013,
                     attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation()
                         ?? member.Locations.FirstOrDefault(),
-                    method.Name));
+                    method.Name);
                 continue;
             }
 
@@ -1096,15 +1126,14 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// been left out of the generated code.
     /// </summary>
     private static void ReportZV0028(
-        SourceProductionContext ctx, INamedTypeSymbol classSymbol, AttributeData attr, ISymbol target,
+        DiagnosticSink ctx, INamedTypeSymbol classSymbol, AttributeData attr, ISymbol target,
         string methodName, string usage, MethodReach reach)
     {
-        ctx.ReportDiagnostic(Diagnostic.Create(
-            ZV0028,
+        ctx.Report(ZV0028,
             AttributeLocation(attr, target, classSymbol),
             methodName,
             usage,
-            reach == MethodReach.Static ? "is static" : "is not accessible from it"));
+            reach == MethodReach.Static ? "is static" : "is not accessible from it");
     }
 
     /// <summary>
@@ -1119,7 +1148,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// The message names the method and the member the rule is on.
     /// </summary>
     private static void ReportUnreachableCall(
-        SourceProductionContext ctx, INamedTypeSymbol classSymbol, in ResolvedMethodCall call, ISymbol target, Location? fallbackLocation)
+        DiagnosticSink ctx, INamedTypeSymbol classSymbol, in ResolvedMethodCall call, ISymbol target, Location? fallbackLocation)
     {
         switch (call.Resolution.Reach)
         {
@@ -1127,20 +1156,18 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             case MethodReach.MissingFromInput:
                 return;
             case MethodReach.InaccessibleOnBase:
-                ctx.ReportDiagnostic(Diagnostic.Create(
-                    ZV0017,
+                ctx.Report(ZV0017,
                     fallbackLocation is { IsInSource: true } ? fallbackLocation : FindValidateAttributeLocation(classSymbol),
                     call.Resolution.Method?.ContainingType?.ToDisplayString(),
                     call.MethodName,
-                    classSymbol.ToDisplayString()));
+                    classSymbol.ToDisplayString());
                 return;
             case MethodReach.NotFound:
-                ctx.ReportDiagnostic(Diagnostic.Create(
-                    ZV0030,
+                ctx.Report(ZV0030,
                     AttributeLocation(call.Attribute, target, classSymbol),
                     call.MethodName,
                     call.Usage,
-                    call.Resolution.Reason));
+                    call.Resolution.Reason);
                 return;
             default:
                 ReportZV0028(ctx, classSymbol, call.Attribute, target, call.MethodName, call.Usage, call.Resolution.Reach);
@@ -1166,7 +1193,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// type is ZV0028 too, not ZV0017: <c>[SkipWhen]</c> is read from the model only, so the usage
     /// is always the model author's to change, and what is dropped is the skip, not a rule.
     /// </summary>
-    private static void ReportSkipWhenDiagnostics(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    private static void ReportSkipWhenDiagnostics(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         if (RuleEmitter.ResolveSkipWhen(compilation, classSymbol) is not { } call) return;
 
@@ -1185,7 +1212,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// A usage a <c>[Validate]</c> base type's validator also emits is reported by that
     /// validator when the call warns there too, so it is reported once.
     /// </summary>
-    private static void ReportMirroredCallWarnings(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    private static void ReportMirroredCallWarnings(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         if (MethodCallProbe.CallWarnings(compilation, classSymbol) is not { } warnings) return;
 
@@ -1197,16 +1224,13 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 if (reportingBase is not null && IsMirroredBy(compilation, reportingBase, call.Site, warning.Id)) continue;
 
                 // An error the generated call would raise stays an error, so the build still fails.
-                ctx.ReportDiagnostic(Diagnostic.Create(
-                    ZV0032,
+                ctx.ReportWithSeverity(ZV0032,
                     AttributeLocation(call.Site.Attribute, call.Site.Target, classSymbol),
                     warning.IsError ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning,
-                    additionalLocations: null,
-                    properties: null,
                     call.Site.Text,
                     call.Site.Usage,
                     warning.Id,
-                    warning.Message));
+                    warning.Message);
             }
         }
     }
@@ -1219,22 +1243,19 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// error, at the rule's attribute. A usage a <c>[Validate]</c> base type's validator also
     /// emits is reported by that validator, so it is reported once.
     /// </summary>
-    private static void ReportObsoleteErrorRuleReads(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    private static void ReportObsoleteErrorRuleReads(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         foreach (var (attr, prop, rawAccess, usage) in RuleEmitter.ObsoleteErrorRules(classSymbol, compilation))
         {
             if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, prop.ContainingType)) continue;
 
-            ctx.ReportDiagnostic(Diagnostic.Create(
-                ZV0032,
+            ctx.ReportWithSeverity(ZV0032,
                 AttributeLocation(attr, prop, classSymbol),
                 DiagnosticSeverity.Error,
-                additionalLocations: null,
-                properties: null,
                 rawAccess,
                 usage,
                 "CS0619",
-                MethodCallProbe.ObsoleteErrorMessage(compilation, prop)));
+                MethodCallProbe.ObsoleteErrorMessage(compilation, prop));
         }
     }
 
@@ -1300,7 +1321,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// auto-generated validator to switch to, so <c>[ValidateWith]</c> is the way to validate it.
     /// </summary>
     private static void ReportZV0011IfApplicable(
-        SourceProductionContext ctx,
+        DiagnosticSink ctx,
         IPropertySymbol prop,
         ISymbol member,
         AttributeData validateWithAttr,
@@ -1313,17 +1334,17 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         {
             if (string.Equals(a.AttributeClass?.ToDisplayString(), ValidateAttributeFqn, StringComparison.Ordinal))
             {
-                ctx.ReportDiagnostic(Diagnostic.Create(ZV0011,
+                ctx.Report(ZV0011,
                     validateWithAttr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
                         ?? member.Locations.FirstOrDefault(),
-                    prop.Name, prop.Type.Name));
+                    prop.Name, prop.Type.Name);
                 return;
             }
         }
     }
 
     private static void ReportZV0012IfApplicable(
-        SourceProductionContext ctx,
+        DiagnosticSink ctx,
         IPropertySymbol prop,
         ISymbol member,
         AttributeData validateWithAttr,
@@ -1345,10 +1366,10 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
         if (!ImplementsValidatorFor(specifiedType, expectedModelType))
         {
-            ctx.ReportDiagnostic(Diagnostic.Create(ZV0012,
+            ctx.Report(ZV0012,
                 validateWithAttr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
                     ?? member.Locations.FirstOrDefault(),
-                specifiedType.Name, prop.Name, expectedModelType.Name));
+                specifiedType.Name, prop.Name, expectedModelType.Name);
         }
     }
 
