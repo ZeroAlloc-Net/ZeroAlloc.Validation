@@ -67,6 +67,16 @@ public class MirroredCallWarningTests
     // [SkipWhen] and [CustomValidation].
     [InlineData("[SkipWhen(nameof(Skip))]", "[NotEmpty] public string? Code { get; set; }", "[Obsolete] public bool Skip() => false;", "SkipWhen(nameof(Skip))", "instance.Skip()", "[SkipWhen] on 'Request'", "CS0612")]
     [InlineData("", "[NotEmpty] public string? Code { get; set; }", "[Obsolete][CustomValidation] public ValidationFailure[] Check() => Array.Empty<ValidationFailure>();", "CustomValidation", "instance.Check()", "[CustomValidation] on 'Check'", "CS0612")]
+    // A built-in rule makes no call of its own: it reads the property directly in its
+    // condition, e.g. "instance.Code is null", and that read alone can warn — issue #255.
+    [InlineData("", "[NotEmpty][Obsolete] public string? Code { get; set; }", "", "NotEmpty", "string.IsNullOrEmpty(instance.Code)", "[NotEmpty] on 'Code'", "CS0612")]
+    [InlineData("", "[NotEmpty][Obsolete(\"use another\")] public string? Code { get; set; }", "", "NotEmpty", "string.IsNullOrEmpty(instance.Code)", "[NotEmpty] on 'Code'", "CS0618")]
+    // A condition that reads the property more than once, such as a length check's null guard,
+    // is covered by one site for the whole condition, not matched piecemeal.
+    [InlineData("", "[MinLength(1)][Obsolete] public string? Code { get; set; }", "", "MinLength(1)",
+        "instance.Code is not null && (instance.Code.Length < 1)", "[MinLength] on 'Code'", "CS0612")]
+    // An override of an obsolete property.
+    [InlineData("", "[NotEmpty] public override string? Code { get; set; }", "", "NotEmpty", "string.IsNullOrEmpty(instance.Code)", "[NotEmpty] on 'Code'", "CS0612", "[Obsolete] public virtual string? Code { get; set; }")]
     public void Warning_on_a_generated_call_is_mirrored_as_ZV0032_at_the_attribute(
         string classAttributes, string property, string members, string attribute, string call, string usage, string warningId,
         string baseMembers = "")
@@ -104,6 +114,9 @@ public class MirroredCallWarningTests
         "public bool Ok(string value) => true; [System.Diagnostics.CodeAnalysis.MemberNotNullWhen(true, nameof(Code))] public bool HasCode() => Code is not null;")]
     // A predicate that accepts null, after a null test.
     [InlineData("[NotNull][Must(nameof(Ok))] public string Code { get; set; } = \"\";", "public bool Ok(string? value) => true;")]
+    // A plain built-in rule on an ordinary property makes no call and reads nothing obsolete.
+    [InlineData("[NotEmpty] public string? Code { get; set; }", "")]
+    [InlineData("[MinLength(1)][MaxLength(10)] public string? Code { get; set; }", "")]
     public void Call_that_does_not_warn_gets_no_ZV0032_and_no_pragma(string property, string members)
     {
         var source = Model("", property, members);
@@ -380,6 +393,116 @@ public class MirroredCallWarningTests
 
         SingleZV0032(result);
         Assert.Empty(GeneratedWarnings(result, output));
+    }
+
+    /// <summary>
+    /// Built-in-rule reads, issue #255: a null-check-style built-in rule reads the property twice
+    /// in one condition, so both readings are covered by the one site the whole condition gives,
+    /// with exactly one pragma around the whole line.
+    /// </summary>
+    [Fact]
+    public void Built_in_rule_condition_that_reads_the_property_twice_gets_one_pragma_for_the_whole_line()
+    {
+        var source = Model("", "[MinLength(1)][Obsolete] public string? Code { get; set; }", "");
+
+        var (result, output) = RunGenerator(source);
+
+        SingleZV0032(result);
+        var generated = GeneratedValidator(result);
+        Assert.Contains(
+            "#pragma warning disable CS0612 // mirrored as ZV0032 at the attribute this call is made for",
+            generated, StringComparison.Ordinal);
+        Assert.Contains("instance.Code is not null && (instance.Code.Length < 1)", generated, StringComparison.Ordinal);
+        Assert.Equal(1, generated.Split("#pragma warning disable CS").Length - 1);
+        Assert.Empty(GeneratedWarnings(result, output));
+        FailedProperties(output);
+    }
+
+    /// <summary>
+    /// Issue #255: an <c>[Obsolete(error: true)]</c> property's read raises CS0619, which, unlike
+    /// CS0612 and CS0618, pragma cannot suppress. The rule is left out of the generated file
+    /// entirely — not even as "if (false)", which the compiler would flag as CS0162 unreachable
+    /// code there — and ZV0032 reports the compiler's own message as an error at the rule's
+    /// attribute instead of leaking CS0619 (or CS0162) into the generated file.
+    /// </summary>
+    [Fact]
+    public void Obsolete_error_property_never_reaches_the_generated_file()
+    {
+        var source = Model("", "[NotEmpty][Obsolete(\"gone\", error: true)] public string? Code { get; set; }", "");
+
+        var (result, output) = RunGenerator(source);
+
+        var zv0032 = SingleZV0032(result);
+        Assert.Equal(DiagnosticSeverity.Error, zv0032.Severity);
+        Assert.Equal("NotEmpty", SpanText(zv0032));
+        Assert.StartsWith(
+            "The generated validator's call 'instance.Code', made for [NotEmpty] on 'Code', raises CS0619: ",
+            zv0032.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Contains("'gone'", zv0032.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+
+        var generated = GeneratedValidator(result);
+        Assert.DoesNotContain("instance.Code", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("if (false)", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("#pragma", generated, StringComparison.Ordinal);
+
+        // The compilation itself, generated code included, has no CS0619 or CS0162 left anywhere.
+        Assert.Empty(GeneratedWarnings(result, output));
+        var outputDiagnostics = output.GetDiagnostics().ToList();
+        Assert.DoesNotContain(outputDiagnostics, d => string.Equals(d.Id, "CS0619", StringComparison.Ordinal));
+        EmitSucceeds(output);
+
+        // The rule never fires, since it is never emitted: no failure for Code.
+        Assert.DoesNotContain(FailedProperties(output), p => string.Equals(p, "Code", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Issue #255: the same read reported once, by the base type's own validator, when the base
+    /// type is also <c>[Validate]</c>.
+    /// </summary>
+    [Fact]
+    public void Obsolete_error_base_usage_is_reported_once_by_the_base_validator()
+    {
+        var source = Prelude + """
+            [Validate]
+            public class RequestBase
+            {
+                [NotEmpty]
+                [Obsolete("gone", error: true)]
+                public string? Code { get; set; }
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        SingleZV0032(result);
+        Assert.Empty(GeneratedWarnings(result, output));
+        EmitSucceeds(output);
+    }
+
+    /// <summary>
+    /// Issue #255: a model with no obsolete member at all takes exactly the path it did before —
+    /// no ZV0032, no pragma, no literal <c>false</c> condition.
+    /// </summary>
+    [Fact]
+    public void Model_with_no_obsolete_member_is_unaffected()
+    {
+        var source = Model("", "[NotEmpty] public string? Code { get; set; }", "");
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Empty(result.Diagnostics);
+        var generated = GeneratedValidator(result);
+        Assert.DoesNotContain("#pragma", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("if (false)", generated, StringComparison.Ordinal);
+        Assert.Contains("if (string.IsNullOrEmpty(instance.Code))", generated, StringComparison.Ordinal);
+        Assert.Empty(GeneratedWarnings(result, output));
+        FailedProperties(output);
     }
 
     private static string Model(string classAttributes, string property, string members, string baseMembers = "") => Prelude + $$"""

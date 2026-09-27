@@ -747,7 +747,7 @@ The generator does not pick another name for one of them: that would rename a va
 
 **Title:** Validation call that raises a compiler warning in the generated validator
 
-**When fired:** The generated validator makes calls for your rules: a `[Must]` predicate as `instance.Method(instance.Property)`, a `When`, `Unless` or `[SkipWhen]` method as `instance.Method()`, a `[CustomValidation]` method, and a custom rule as `IsValid(instance.Property)` on its rule instance. A call can compile and still make the compiler warn. Common cases are CS8604, when the argument may be null and the parameter does not accept null, and CS0612 or CS0618, when the method is `[Obsolete]`. In the generated file, that warning fails a `TreatWarningsAsErrors` build, and you can neither edit nor suppress it there. So the warning is reported as ZV0032 at the rule's attribute instead:
+**When fired:** The generated validator makes calls for your rules: a `[Must]` predicate as `instance.Method(instance.Property)`, a `When`, `Unless` or `[SkipWhen]` method as `instance.Method()`, a `[CustomValidation]` method, and a custom rule as `IsValid(instance.Property)` on its rule instance. A built-in rule such as `[NotNull]` or `[NotEmpty]` makes no call of its own, but its condition still reads the property directly, e.g. `instance.Code is null`, and that read is covered the same way. A call, or a built-in rule's read, can compile and still make the compiler warn. Common cases are CS8604, when the argument may be null and the parameter does not accept null, and CS0612 or CS0618, when the method or property is `[Obsolete]`. In the generated file, that warning fails a `TreatWarningsAsErrors` build, and you can neither edit nor suppress it there. So the warning is reported as ZV0032 at the rule's attribute instead:
 
 ```csharp
 [Validate]
@@ -762,6 +762,10 @@ public class Order
 
     [NotEmpty(When = nameof(IsShipped))]         // ZV0032 — CS0612, IsShipped is obsolete
     public string? TrackingNumber { get; set; }
+
+    [NotEmpty]                                   // ZV0032 — CS0612, the read of Notes is obsolete
+    [Obsolete]
+    public string? Notes { get; set; }
 
     public bool IsKnownCode(string code) => code.Length == 3;
     public bool IsKnownRegion(string region) => region.Length == 2;
@@ -792,6 +796,8 @@ So the generator compiles the validator's own `Validate` body, emitted exactly a
 ```
 
 That is the only pragma of this kind the generator writes, and a call that does not warn gets none. The `CS0612`/`CS0618` pragma around the field of an obsolete custom rule type, from [#196](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/196), is separate: it covers the field's initializer, where the compiler already warns at your attribute, not the call.
+
+**`[Obsolete(..., error: true)]` is different.** Reading a property whose read raises CS0619 is not a warning at all: pragma cannot suppress it, unlike CS0612 and CS0618. So the rule is left out of the generated file entirely — not emitted, not even as `if (false)`, which the compiler would flag as unreachable code there — and ZV0032 reports the compiler's own CS0619 message as an error at the rule's attribute instead.
 
 A rule declared on a base type that is itself `[Validate]` is reported once, by that type, when the call warns there too.
 

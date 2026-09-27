@@ -43,7 +43,15 @@ internal static class MethodCallProbe
 
     private const string ProbeClass = "__ZeroAllocValidationMethodCallProbe";
     private const string WarningProbeClass = "__ZeroAllocValidationCallWarningProbe";
+    private const string ObsoleteErrorProbeClass = "__ZeroAllocValidationObsoleteErrorProbe";
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
+
+    /// <summary>
+    /// <see cref="ObsoleteErrorMessage"/>'s results, keyed by property within the compilation
+    /// that asked. <c>[Obsolete(error: true)]</c> is rare, so this is a plain cache rather than a
+    /// batched probe like <see cref="CallWarnings"/>: it is only ever paid for by a model that has one.
+    /// </summary>
+    private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<string, string>> ObsoleteErrorMessages = new();
 
     /// <summary>
     /// Errors that mean the input compilation has no member of that name for the call: another
@@ -153,6 +161,55 @@ internal static class MethodCallProbe
         foreach (var entry in ProbeWarnings(compilation, new[] { model }))
             warnings.TryAdd(entry.Key, entry.Value);
         return warnings[key];
+    }
+
+    /// <summary>
+    /// The compiler's own message for reading <paramref name="property"/>, which
+    /// <see cref="CertainCall.IsObsoleteError"/> has already found <c>[Obsolete(error: true)]</c>.
+    /// Pragma cannot suppress the CS0619 that read raises, unlike CS0612 and CS0618, so no rule
+    /// the generated validator emits for <paramref name="property"/> ever reads it; ZV0032
+    /// reports this message as an error at the rule's attribute instead. Asked for in a
+    /// throwaway probe, once per property, so the wording is exactly what the generated file
+    /// would have said.
+    /// </summary>
+    public static string ObsoleteErrorMessage(Compilation compilation, IPropertySymbol property)
+    {
+        var cache = ObsoleteErrorMessages.GetValue(compilation, static _ => new ConcurrentDictionary<string, string>(System.StringComparer.Ordinal));
+        var key = property.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        if (cache.TryGetValue(key, out var found)) return found;
+
+        var message = ProbeObsoleteErrorMessage(compilation, property);
+        cache.TryAdd(key, message);
+        return message;
+    }
+
+    private static string ProbeObsoleteErrorMessage(Compilation compilation, IPropertySymbol property)
+    {
+        var text = new StringBuilder();
+        GeneratedCalls.AppendHeader(text);
+        var ns = GeneratedCalls.NamespaceOf(property.ContainingType);
+        if (ns is not null) text.AppendLine($"namespace {ns}").AppendLine("{");
+        text.AppendLine($"internal static class {ObsoleteErrorProbeClass}");
+        text.AppendLine("{");
+        var modelName = property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        text.AppendLine($"    private static void Read({modelName} {Model})");
+        text.AppendLine("    {");
+        text.AppendLine($"        _ = {GeneratedCalls.RawPropertyAccess(Model, property)};");
+        text.AppendLine("    }");
+        text.AppendLine("}");
+        if (ns is not null) text.AppendLine("}");
+
+        var tree = CSharpSyntaxTree.ParseText(text.ToString(), FirstParseOptions(compilation));
+        var semanticModel = compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
+        foreach (var diagnostic in semanticModel.GetDiagnostics())
+        {
+            if (string.Equals(diagnostic.Id, "CS0619", System.StringComparison.Ordinal))
+                return diagnostic.GetMessage(CultureInfo.InvariantCulture);
+        }
+
+        // CertainCall.IsObsoleteError already found the attribute; this is only a fallback for
+        // an ObsoleteAttribute shape the probe could not reproduce.
+        return $"'{property.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat)}' is obsolete.";
     }
 
     /// <summary>
