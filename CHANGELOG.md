@@ -1,5 +1,32 @@
 # Changelog
 
+## [2.0.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.0.0...v2.0.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* **ci:** pack the local feed before testing in the release and rescue workflows ([#260](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/260)) ([862e6f5](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/862e6f5964e6240a237e58c465cb0c6c84b213da))
+* **generator:** leave argument errors on partial models to the final compilation ([#263](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/263)) ([f5cadc3](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/f5cadc371ef49752a471d0727d2240df0d8d78ea))
+* **generator:** leave out obsolete-as-error nested and collection properties ([#270](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/270)) ([9f19c7f](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/9f19c7fbc7b1de4909e1c8fe45bf61811bedf778)), closes [#267](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/267)
+* **generator:** leave out rule calls that raise CS0619 instead of leaking it ([#268](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/268)) ([f229a2d](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/f229a2d914f4aa9188921d0a5674af84682f7834)), closes [#265](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/265)
+* **generator:** mirror obsolete-property warnings from built-in rules too ([#264](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/264)) ([3ad85dd](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/3ad85dd2eb0dad4644d8aceca8b9123ec6526411))
+
+
+### Performance Improvements
+
+* **generator:** keep generator pipelines equatable so unchanged validators stay cached ([#266](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/266)) ([4318368](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/43183688c906abdff81af1b560c1989a2d1d9ace)), closes [#209](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/209)
+* **generator:** read no-argument call warnings from the per-call probe ([#273](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/273)) ([5e304ee](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/5e304eef568a8c7c9efab57863b116f75e709bb3)), closes [#256](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/256)
+
+
+### Code Refactoring
+
+* replace ErrorProne.NET with the readonly-struct IDE rules ([#272](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/272)) ([2c2c75d](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/2c2c75d82959ef7a44d2ec55454bbe8c1d44247b)), closes [#248](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/248)
+
+
+### Documentation
+
+* **generator:** document ZV0028/ZV0030 cross-generator limits from [#262](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/262) ([#269](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/269)) ([06af586](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/06af5869a5b28cc8f1b153ba31f62b612e183ea1))
+
 ## [2.0.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v1.7.8...v2.0.0) (2026-09-26)
 
 
