@@ -47,11 +47,15 @@ jobs:
       - name: Build
         run: dotnet build --no-restore -c Release -p:Version=${{ steps.gitversion.outputs.version }}
 
+      # --no-build and the build's version, as in release-please.yml. A plain `dotnet pack` here
+      # rebuilt these projects at the default 1.0.0 over the Build step's output, so the tests and
+      # the Pack step below ran against assemblies stamped 1.0.0. The version guard in
+      # Directory.Build.props now fails such a pack; see ZeroAlloc-Net/.github#36.
       - name: Pack ZA.Validation packages into local feed (for duplicate-generator test)
         run: |
-          dotnet pack src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj -c Release -o artifacts/local
-          dotnet pack src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj -c Release -o artifacts/local
-          dotnet pack src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj -c Release -o artifacts/local
+          dotnet pack src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj --no-build -c Release -p:Version=${{ steps.gitversion.outputs.version }} -o artifacts/local
+          dotnet pack src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj --no-build -c Release -p:Version=${{ steps.gitversion.outputs.version }} -o artifacts/local
+          dotnet pack src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj --no-build -c Release -p:Version=${{ steps.gitversion.outputs.version }} -o artifacts/local
 
       - name: Test
         run: dotnet test --no-build -c Release --verbosity normal
