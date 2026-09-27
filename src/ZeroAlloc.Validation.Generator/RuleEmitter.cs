@@ -1000,16 +1000,27 @@ internal static class RuleEmitter
     }
 
     /// <summary>
-    /// Whether any call the validator for <paramref name="classSymbol"/> makes might raise a
-    /// compiler warning, so <see cref="MethodCallProbe.CallWarnings"/> compiles its body.
-    /// <see cref="CertainCall"/> clears the calls that cannot warn: a plain <c>[Must]</c>
-    /// predicate or custom rule whose parameter takes the property's type exactly, a guard or
-    /// <c>[SkipWhen]</c> method without attributes, and a plain <c>[CustomValidation]</c>
-    /// method. A predicate or custom rule after a rule that tests the same property for null,
-    /// such as <c>[NotNull]</c>, is not cleared: that test leaves the property maybe-null.
+    /// How <see cref="MethodCallProbe.CallWarnings"/> finds the warnings on the calls the
+    /// validator for <paramref name="classSymbol"/> makes. <see cref="CertainCall"/> clears the
+    /// calls that cannot warn: a plain <c>[Must]</c> predicate or custom rule whose parameter
+    /// takes the property's type exactly, a guard or <c>[SkipWhen]</c> method without
+    /// attributes, and a plain <c>[CustomValidation]</c> method. A predicate or custom rule after
+    /// a rule that tests the same property for null, such as <c>[NotNull]</c>, is not cleared:
+    /// that test leaves the property maybe-null.
+    /// <para>
+    /// Of the calls that are not cleared, only a predicate or custom rule, which takes the
+    /// property's value, or a rule's read of the property can warn differently depending on the
+    /// code before it, so only they need the whole body compiled: <see cref="CallWarningProbe.Body"/>.
+    /// A guard, <c>[SkipWhen]</c> or <c>[CustomValidation]</c> call takes no argument, and an
+    /// attribute on a guard can only remove a nullability warning from a later call, never add
+    /// one, so the per-call probe's warnings are its warnings: <see cref="CallWarningProbe.Calls"/>,
+    /// issue #256. A <c>[CustomValidation]</c> call made through a cast is the exception, since
+    /// the per-call probe compiles it on the model.
+    /// </para>
     /// </summary>
-    public static bool HasCallThatMayWarn(INamedTypeSymbol classSymbol, Compilation compilation)
+    public static CallWarningProbe CallWarningProbeFor(INamedTypeSymbol classSymbol, Compilation compilation)
     {
+        bool noArgumentCallMayWarn = false;
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             // A property that is [Obsolete(error: true)] gets no rule emitted for it at all: its
@@ -1024,33 +1035,36 @@ internal static class RuleEmitter
                 foreach (var (_, name, _, argumentType) in MethodCallsOf(attr, prop))
                 {
                     var argument = argumentType is null ? null : prop;
-                    if (!CertainCall.ConditionCannotWarn(compilation, classSymbol, name, argument, nullTested))
-                        return true;
+                    if (CertainCall.ConditionCannotWarn(compilation, classSymbol, name, argument, nullTested)) continue;
+                    if (argument is not null) return CallWarningProbe.Body;
+                    noArgumentCallMayWarn = true;
                 }
 
                 bool isCustomRule = CustomRules.TryGetRuleValueType(attr.AttributeClass!, out var valueType);
                 if (isCustomRule && !CertainCall.RuleCallCannotWarn(attr.AttributeClass!, valueType, prop, nullTested))
-                    return true;
+                    return CallWarningProbe.Body;
                 if (!isCustomRule && !IsMust(attr))
                 {
                     nullTested = true;
                     // A plain built-in rule makes no call of its own, but its condition still
                     // reads the property directly, e.g. "instance.Code is null", and that read
                     // alone can warn just as an argument or a guard's can.
-                    if (CertainCall.ReadMayWarn(prop)) return true;
+                    if (CertainCall.ReadMayWarn(prop)) return CallWarningProbe.Body;
                 }
             }
         }
 
         if (SkipWhenName(classSymbol) is { } skipWhen
             && !CertainCall.ConditionCannotWarn(compilation, classSymbol, skipWhen.Name, argument: null, argumentNullTested: false))
-            return true;
+            noArgumentCallMayWarn = true;
 
         foreach (var (method, _) in CustomValidationMethods(classSymbol, compilation))
         {
-            if (!CertainCall.CustomValidation(compilation, classSymbol, method)) return true;
+            if (CertainCall.CustomValidation(compilation, classSymbol, method)) continue;
+            if (CustomValidationReceiver(compilation, classSymbol, method) is not null) return CallWarningProbe.Body;
+            noArgumentCallMayWarn = true;
         }
-        return false;
+        return noArgumentCallMayWarn ? CallWarningProbe.Calls : CallWarningProbe.None;
     }
 
     /// <summary>

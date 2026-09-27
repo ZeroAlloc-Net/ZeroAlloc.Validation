@@ -24,8 +24,9 @@ namespace ZeroAlloc.Validation.Generator;
 /// </para>
 /// <para>
 /// A call that compiles can still warn, and a warning in the generated validator is mirrored
-/// as ZV0032, so <see cref="MethodCallProbe.CallWarnings"/> compiles the validator's body
-/// unless every call in it certainly cannot warn. <see cref="ConditionCannotWarn"/>,
+/// as ZV0032, so <see cref="MethodCallProbe.CallWarnings"/> looks for warnings unless every
+/// call in the validator certainly cannot warn: <see cref="RuleEmitter.CallWarningProbeFor"/>.
+/// <see cref="ConditionCannotWarn"/>,
 /// <see cref="RuleCallCannotWarn"/> and <see cref="CustomValidation"/> decide that for each
 /// call, on top of the checks above: an attribute on the parameter, an obsolete, experimental
 /// or nullability attribute on the property or a property it overrides,

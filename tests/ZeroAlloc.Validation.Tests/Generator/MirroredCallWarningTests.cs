@@ -810,6 +810,123 @@ public class MirroredCallWarningTests
         FailedProperties(output);
     }
 
+    /// <summary>
+    /// Issue #256: a <c>When</c> or <c>Unless</c> guard, a <c>[SkipWhen]</c> method and a
+    /// <c>[CustomValidation]</c> method take no argument, so the code before their call cannot
+    /// change what it warns. Their warnings come from the per-call probe that already decides
+    /// whether they compile, and the model's whole <c>Validate</c> body is not compiled for them.
+    /// What is mirrored, and the generated body, must be exactly what that compile gives.
+    /// </summary>
+    [Theory]
+    [InlineData("", "[NotEmpty(When = nameof(Ok))] public string? Code { get; set; }", "[Obsolete] public bool Ok() => true;", "CS0612", 0)]
+    [InlineData("", "[NotEmpty(Unless = nameof(Ok))] public string? Code { get; set; }", "[Obsolete(\"use another\")] public bool Ok() => false;", "CS0618", 0)]
+    [InlineData("[SkipWhen(nameof(Skip))]", "[NotEmpty] public string? Code { get; set; }", "[Obsolete] public bool Skip() => false;", "CS0612", 0)]
+    [InlineData("", "[NotEmpty] public string? Code { get; set; }", "[Obsolete][CustomValidation] public ValidationFailure[] Check() => Array.Empty<ValidationFailure>();", "CS0612", 0)]
+    [InlineData("", "[NotEmpty] public string? Code { get; set; }", "[Obsolete(\"use another\")][CustomValidation] public IEnumerable<ValidationFailure> Check() => Array.Empty<ValidationFailure>();", "CS0618", 0)]
+    // CS0619 leaves the call, and the loop over its result, out of the generated body.
+    [InlineData("", "[NotEmpty] public string? Code { get; set; }", "[Obsolete(\"gone\", error: true)][CustomValidation] public ReadOnlySpan<ValidationFailure> Check() => default;", "CS0619", 0)]
+    // A guard on the same line as a predicate that cannot warn.
+    [InlineData("", "[Must(nameof(Fine), When = nameof(Ok))] public string? Code { get; set; }", "[Obsolete] public bool Ok() => true; public bool Fine(string? value) => true;", "CS0612", 0)]
+    // A guard that proves a property not null can only remove a warning from the predicate after it.
+    [InlineData("", "[Must(nameof(Fine), When = nameof(Ok))] public string? Code { get; set; }",
+        "[Obsolete][System.Diagnostics.CodeAnalysis.MemberNotNullWhen(true, nameof(Code))] public bool Ok() => Code is not null; public bool Fine(string? value) => true;", "CS0612", 0)]
+    // An [Experimental] guard's diagnostic is an error unless the user opts in.
+    [InlineData("", "[NotEmpty(When = nameof(Ok))] public string? Code { get; set; }", "[System.Diagnostics.CodeAnalysis.Experimental(\"ZX001\")] public bool Ok() => true;", "ZX001", 0)]
+    // Every warning raised to an error, and the warning raised to an error for the model's file.
+    [InlineData("", "[NotEmpty(When = nameof(Ok))] public string? Code { get; set; }", "[Obsolete] public bool Ok() => true;", "CS0612", 1)]
+    [InlineData("[SkipWhen(nameof(Skip))]", "[NotEmpty] public string? Code { get; set; }", "[Obsolete] public bool Skip() => false;", "CS0612", 2)]
+    public void No_argument_call_is_mirrored_from_the_per_call_probe(
+        string classAttributes, string property, string members, string warningId, int severity)
+    {
+        var options = severity switch
+        {
+            1 => Options().WithGeneralDiagnosticOption(ReportDiagnostic.Error),
+            2 => Options().WithSyntaxTreeOptionsProvider(new ConfiguredSeverities(perTreeId: warningId, perTree: ReportDiagnostic.Error)),
+            _ => Options(),
+        };
+        var compilation = Compile(Model(classAttributes, property, members), options);
+        var model = compilation.GetTypeByMetadataName("TestModels.Request")!;
+
+        Assert.Equal(CallWarningProbe.Calls, RuleEmitter.CallWarningProbeFor(model, compilation));
+        var fromCalls = MethodCallProbe.CallWarnings(compilation, model);
+        var fromBody = MethodCallProbe.BodyCallWarnings(compilation, model);
+
+        Assert.NotNull(fromCalls);
+        Assert.Contains(fromCalls!.Warned, c => c.Warnings.Any(w => string.Equals(w.Id, warningId, StringComparison.Ordinal)));
+        Assert.Equal(Describe(fromBody), Describe(fromCalls));
+        Assert.Equal(EmittedBody(compilation, model, fromBody), EmittedBody(compilation, model, fromCalls));
+
+        // And the generator reports it, with a warning-free generated file.
+        var (result, output) = RunGenerator(Model(classAttributes, property, members), options);
+        SingleZV0032(result);
+        Assert.Empty(GeneratedWarnings(result, output));
+    }
+
+    /// <summary>
+    /// Issue #256: a warning turned off for the model's file is not mirrored by the per-call
+    /// probe either, and neither probe finds anything to mirror.
+    /// </summary>
+    [Fact]
+    public void No_argument_call_warning_turned_off_is_not_mirrored_from_the_per_call_probe()
+    {
+        var options = Options().WithSyntaxTreeOptionsProvider(new ConfiguredSeverities(perTreeId: "CS0612", perTree: ReportDiagnostic.Suppress));
+        var compilation = Compile(Model("", "[NotEmpty(When = nameof(Ok))] public string? Code { get; set; }", "[Obsolete] public bool Ok() => true;"), options);
+        var model = compilation.GetTypeByMetadataName("TestModels.Request")!;
+
+        Assert.Equal(CallWarningProbe.Calls, RuleEmitter.CallWarningProbeFor(model, compilation));
+        Assert.Null(MethodCallProbe.CallWarnings(compilation, model));
+        Assert.Null(MethodCallProbe.BodyCallWarnings(compilation, model));
+    }
+
+    /// <summary>
+    /// Issue #256: the whole body is still compiled when a call's warnings can depend on the code
+    /// before it, a predicate or custom rule that takes the property's value, or a property read
+    /// that may warn, and when a <c>[CustomValidation]</c> call is made through a cast, which the
+    /// per-call probe does not compile. A model none of whose calls can warn compiles neither.
+    /// </summary>
+    [Theory]
+    [InlineData("[NotEmpty(When = nameof(Ok))] public string? Code { get; set; } [Must(nameof(Bad))] public string? Name { get; set; }",
+        "[Obsolete] public bool Ok() => true; public bool Bad(string value) => true;", "", "Body")]
+    [InlineData("[NotNull][NotBlank] public string Code { get; set; } = \"\";", "", "", "Body")]
+    [InlineData("[NotEmpty][Obsolete] public string? Code { get; set; }", "", "", "Body")]
+    [InlineData("[NotEmpty] public string? Code { get; set; }", "public int Check(int x = 0) => 0;",
+        "[Obsolete][CustomValidation] public ValidationFailure[] Check() => Array.Empty<ValidationFailure>();", "Body")]
+    [InlineData("[Must(nameof(Fine), When = nameof(Ok))] public string? Code { get; set; }",
+        "public bool Ok() => true; public bool Fine(string? value) => true;", "", "None")]
+    public void Call_whose_warnings_may_depend_on_the_body_still_compiles_the_body(
+        string property, string members, string baseMembers, string expected)
+    {
+        var compilation = Compile(Model("", property, members, baseMembers), Options());
+        var model = compilation.GetTypeByMetadataName("TestModels.Request")!;
+
+        Assert.Equal(expected, RuleEmitter.CallWarningProbeFor(model, compilation).ToString());
+        if (string.Equals(expected, "Body", StringComparison.Ordinal))
+            Assert.Equal(Describe(MethodCallProbe.BodyCallWarnings(compilation, model)), Describe(MethodCallProbe.CallWarnings(compilation, model)));
+        else
+            Assert.Null(MethodCallProbe.CallWarnings(compilation, model));
+    }
+
+    private static CSharpCompilation Compile(string source, CSharpCompilationOptions options) =>
+        CSharpCompilation.Create(
+            "MirroredCallWarningTests_" + Guid.NewGuid().ToString("N"),
+            [CSharpSyntaxTree.ParseText(source, path: "Request.cs")],
+            TrustedPlatformReferences(),
+            options);
+
+    private static string Describe(ModelCallWarnings? warnings) =>
+        warnings is null
+            ? "<none>"
+            : string.Join("\n", warnings.Warned.Select(c =>
+                $"{c.Site.Text} | {c.Site.Usage} | {c.Site.Attribute.ApplicationSyntaxReference?.Span} | "
+                + string.Join("; ", c.Warnings.Select(w => $"{w.Id} {w.IsError} {w.LeavesCallOut} {w.Message}"))));
+
+    private static string EmittedBody(Compilation compilation, INamedTypeSymbol model, ModelCallWarnings? warnings)
+    {
+        var sb = new System.Text.StringBuilder();
+        RuleEmitter.EmitValidateBody(sb, model, compilation, calls: CallLineWriter.Emitting(warnings));
+        return sb.ToString();
+    }
+
     private static string Model(string classAttributes, string property, string members, string baseMembers = "") => Prelude + $$"""
         public class RequestBase
         {

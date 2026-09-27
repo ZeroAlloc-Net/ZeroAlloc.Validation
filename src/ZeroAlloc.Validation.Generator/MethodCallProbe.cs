@@ -35,7 +35,9 @@ namespace ZeroAlloc.Validation.Generator;
 /// <see cref="RuleEmitter.EmitValidateBody"/> exactly as the generated file has it, once the
 /// calls that do not compile are left out: <see cref="CallWarnings"/>. Only models with a call
 /// <see cref="CertainCall"/> cannot prove warning-free are compiled, all in one second probe
-/// file per compilation.
+/// file per compilation, and of those only models with such a call that takes an argument or
+/// reads a property: a call that takes no argument warns the same wherever it is, so its
+/// warnings are read from the first probe, <see cref="RuleEmitter.CallWarningProbeFor"/>.
 /// </para>
 /// </summary>
 internal static class MethodCallProbe
@@ -85,18 +87,34 @@ internal static class MethodCallProbe
         public ProbeResults(Compilation compilation)
         {
             Verdicts = new Lazy<ConcurrentDictionary<string, MethodResolution>>(
-                () => ProbeAll(compilation), LazyThreadSafetyMode.ExecutionAndPublication);
+                () => ProbeAll(compilation, NoArgumentCallWarnings), LazyThreadSafetyMode.ExecutionAndPublication);
             // Emitting the bodies resolves their calls, so this runs after Verdicts, never inside it.
             Warnings = new Lazy<ConcurrentDictionary<string, ModelCallWarnings?>>(
                 () => new ConcurrentDictionary<string, ModelCallWarnings?>(
-                    ProbeWarnings(compilation, ValidatedTypes(compilation.Assembly.GlobalNamespace, compilation)),
+                    ProbeWarnings(compilation, ValidatedTypes(compilation.Assembly.GlobalNamespace, compilation), alwaysCompileBody: false),
                     System.StringComparer.Ordinal),
                 LazyThreadSafetyMode.ExecutionAndPublication);
         }
 
         public Lazy<ConcurrentDictionary<string, MethodResolution>> Verdicts { get; }
 
+        /// <summary>
+        /// The warnings the per-call probe finds inside each call that takes no argument, keyed by
+        /// model and call text, filled in with <see cref="Verdicts"/>: <see cref="CallProbeWarnings"/>.
+        /// </summary>
+        public ConcurrentDictionary<string, ProbedWarning[]> NoArgumentCallWarnings { get; } = new(System.StringComparer.Ordinal);
+
         public Lazy<ConcurrentDictionary<string, ModelCallWarnings?>> Warnings { get; }
+    }
+
+    /// <summary>
+    /// A diagnostic the compiler reports inside a call that <see cref="IsMirrorable"/> accepts,
+    /// with just what <see cref="ToCallWarning"/> needs, so the probe compilation is not kept alive.
+    /// </summary>
+    internal readonly record struct ProbedWarning(string Id, string Message, DiagnosticSeverity Severity)
+    {
+        public static ProbedWarning From(Diagnostic diagnostic) =>
+            new(diagnostic.Id, diagnostic.GetMessage(CultureInfo.InvariantCulture), diagnostic.Severity);
     }
 
     private static ProbeResults ResultsFor(Compilation compilation) =>
@@ -145,7 +163,7 @@ internal static class MethodCallProbe
 
         // The whole-compilation probe covers every [Validate] type the compilation declares. A
         // model it did not find is probed on its own, once, and stored with the rest.
-        foreach (var entry in Probe(compilation, new[] { model }))
+        foreach (var entry in Probe(compilation, new[] { model }, ResultsFor(compilation).NoArgumentCallWarnings))
             verdicts.TryAdd(entry.Key, entry.Value);
         return verdicts[key];
     }
@@ -166,10 +184,18 @@ internal static class MethodCallProbe
         if (warnings.TryGetValue(key, out var found)) return found;
 
         // A model the whole-compilation probe did not find is probed on its own, once.
-        foreach (var entry in ProbeWarnings(compilation, new[] { model }))
+        foreach (var entry in ProbeWarnings(compilation, new[] { model }, alwaysCompileBody: false))
             warnings.TryAdd(entry.Key, entry.Value);
         return warnings[key];
     }
+
+    /// <summary>
+    /// The warnings compiling <paramref name="model"/>'s whole <c>Validate</c> body finds,
+    /// whatever <see cref="RuleEmitter.CallWarningProbeFor"/> says, uncached. Tests compare it
+    /// with <see cref="CallWarnings"/>.
+    /// </summary>
+    internal static ModelCallWarnings? BodyCallWarnings(Compilation compilation, INamedTypeSymbol model) =>
+        ProbeWarnings(compilation, new[] { model }, alwaysCompileBody: true)[ModelKey(model)];
 
     /// <summary>
     /// The compiler's own message for reading <paramref name="property"/>, which
@@ -223,12 +249,18 @@ internal static class MethodCallProbe
     }
 
     /// <summary>
-    /// Compiles, in one probe file and one copy of the compilation, the <c>Validate</c> body of
-    /// every model in <paramref name="models"/> that <see cref="RuleEmitter.HasCallThatMayWarn"/>
-    /// selects, and maps each warning the compiler reports inside a call back to that call. A
-    /// warning elsewhere in the body is not about a rule's call and is not mirrored.
+    /// The warnings on the calls of every model in <paramref name="models"/>, found as
+    /// <see cref="RuleEmitter.CallWarningProbeFor"/> says. For a model whose calls that may warn
+    /// all take no argument, <see cref="CallWarningProbe.Calls"/>, they are read from the per-call
+    /// probe: <see cref="CallProbeWarnings"/>. The <c>Validate</c> bodies of the rest,
+    /// <see cref="CallWarningProbe.Body"/>, are compiled in one probe file and one copy of the
+    /// compilation, and each warning the compiler reports inside a call is mapped back to that
+    /// call. A warning elsewhere in the body is not about a rule's call and is not mirrored.
+    /// <paramref name="alwaysCompileBody"/> compiles the body of every model with a call that may
+    /// warn, so tests can compare the two.
     /// </summary>
-    private static Dictionary<string, ModelCallWarnings?> ProbeWarnings(Compilation compilation, IEnumerable<INamedTypeSymbol> models)
+    private static Dictionary<string, ModelCallWarnings?> ProbeWarnings(
+        Compilation compilation, IEnumerable<INamedTypeSymbol> models, bool alwaysCompileBody)
     {
         var result = new Dictionary<string, ModelCallWarnings?>(System.StringComparer.Ordinal);
         var probed = new List<(string Key, IReadOnlyList<List<(Microsoft.CodeAnalysis.Text.TextSpan Span, CallSite Site)>> Lines)>();
@@ -240,7 +272,13 @@ internal static class MethodCallProbe
             var key = ModelKey(model);
             if (result.ContainsKey(key)) continue;
             result[key] = null;
-            if (!RuleEmitter.HasCallThatMayWarn(model, compilation)) continue;
+            var probe = RuleEmitter.CallWarningProbeFor(model, compilation);
+            if (probe == CallWarningProbe.None) continue;
+            if (probe == CallWarningProbe.Calls && !alwaysCompileBody)
+            {
+                result[key] = CallProbeWarnings(compilation, model);
+                continue;
+            }
 
             var className = WarningProbeClass + probed.Count.ToString(CultureInfo.InvariantCulture);
             probed.Add((key, RuleEmitter.EmitWarningProbe(text, model, compilation, className)));
@@ -284,30 +322,82 @@ internal static class MethodCallProbe
         var semanticModel = compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
         foreach (var diagnostic in semanticModel.GetDiagnostics())
         {
-            // A warning, including one the project raises to an error, or CS0619.
-            bool leavesCallOut = string.Equals(diagnostic.Id, ObsoleteErrorId, System.StringComparison.Ordinal);
-            if (!leavesCallOut && diagnostic.Severity != DiagnosticSeverity.Warning && !diagnostic.IsWarningAsError) continue;
+            if (!IsMirrorable(diagnostic)) continue;
             if (FindSite(sites, diagnostic.Location.SourceSpan) is not { } site) continue;
 
-            bool isError = leavesCallOut;
-            if (!leavesCallOut)
-            {
-                var configured = ConfiguredSeverity(compilation, diagnostic.Id, probed[site.Model].Lines[site.Line][site.Call].Site);
-                // Turned off, or below a warning, for the project: the generated call does not warn.
-                if (configured is ReportDiagnostic.Suppress or ReportDiagnostic.Hidden or ReportDiagnostic.Info) continue;
-                isError = configured == ReportDiagnostic.Error || diagnostic.Severity == DiagnosticSeverity.Error;
-            }
-
-            var key = (site.Model, site.Line, site.Call);
-            if (!perCall.TryGetValue(key, out var list))
-            {
-                list = new List<CallWarning>();
-                perCall[key] = list;
-            }
-            var warning = new CallWarning(diagnostic.Id, diagnostic.GetMessage(CultureInfo.InvariantCulture), isError, leavesCallOut);
-            if (!list.Contains(warning)) list.Add(warning);
+            var callSite = probed[site.Model].Lines[site.Line][site.Call].Site;
+            if (ToCallWarning(compilation, ProbedWarning.From(diagnostic), callSite) is { } warning)
+                Add(perCall, (site.Model, site.Line, site.Call), warning);
         }
         return perCall;
+    }
+
+    /// <summary>
+    /// The warnings on <paramref name="model"/>'s calls when every call that may warn takes no
+    /// argument, read from the per-call probe, issue #256. The code before such a call cannot
+    /// change what it warns, so what the per-call probe found inside it is what compiling the
+    /// body finds. The body is emitted, but not compiled, only to number its lines as
+    /// <see cref="CallLineWriter"/> does.
+    /// </summary>
+    private static ModelCallWarnings? CallProbeWarnings(Compilation compilation, INamedTypeSymbol model)
+    {
+        var calls = CallLineWriter.Recording();
+        RuleEmitter.EmitValidateBody(new StringBuilder(), model, compilation, Model, ctx: null, new GeneratedFields(), calls);
+
+        // Emitting the body resolved each of its calls, so the per-call probe has covered them.
+        var found = ResultsFor(compilation).NoArgumentCallWarnings;
+        var prefix = ModelKey(model) + "\n";
+        var perCall = new Dictionary<(int Model, int Line, int Call), List<CallWarning>>();
+        for (int l = 0; l < calls.Recorded.Count; l++)
+        {
+            var line = calls.Recorded[l];
+            for (int c = 0; c < line.Count; c++)
+            {
+                var site = line[c].Site;
+                if (!found.TryGetValue(prefix + site.Text, out var probedWarnings)) continue;
+                foreach (var probedWarning in probedWarnings)
+                {
+                    if (ToCallWarning(compilation, probedWarning, site) is { } warning)
+                        Add(perCall, (0, l, c), warning);
+                }
+            }
+        }
+        return Mirrored(calls.Recorded, 0, perCall);
+    }
+
+    /// <summary>A warning, including one the project raises to an error, or CS0619.</summary>
+    private static bool IsMirrorable(Diagnostic diagnostic) =>
+        string.Equals(diagnostic.Id, ObsoleteErrorId, System.StringComparison.Ordinal)
+        || diagnostic.Severity == DiagnosticSeverity.Warning
+        || diagnostic.IsWarningAsError;
+
+    /// <summary>
+    /// <paramref name="warning"/>, found inside the call made for <paramref name="site"/>, as
+    /// ZV0032 mirrors it, or <see langword="null"/> when the project turns it off or below a
+    /// warning, so the generated call does not warn.
+    /// </summary>
+    private static CallWarning? ToCallWarning(Compilation compilation, ProbedWarning warning, CallSite site)
+    {
+        bool leavesCallOut = string.Equals(warning.Id, ObsoleteErrorId, System.StringComparison.Ordinal);
+        bool isError = leavesCallOut;
+        if (!leavesCallOut)
+        {
+            var configured = ConfiguredSeverity(compilation, warning.Id, site);
+            if (configured is ReportDiagnostic.Suppress or ReportDiagnostic.Hidden or ReportDiagnostic.Info) return null;
+            isError = configured == ReportDiagnostic.Error || warning.Severity == DiagnosticSeverity.Error;
+        }
+        return new CallWarning(warning.Id, warning.Message, isError, leavesCallOut);
+    }
+
+    private static void Add(
+        Dictionary<(int Model, int Line, int Call), List<CallWarning>> perCall, (int Model, int Line, int Call) key, CallWarning warning)
+    {
+        if (!perCall.TryGetValue(key, out var list))
+        {
+            list = new List<CallWarning>();
+            perCall[key] = list;
+        }
+        if (!list.Contains(warning)) list.Add(warning);
     }
 
     /// <summary>
@@ -380,8 +470,10 @@ internal static class MethodCallProbe
         return at >= 0 && sites[at].Span.Contains(span) ? sites[at] : null;
     }
 
-    private static ConcurrentDictionary<string, MethodResolution> ProbeAll(Compilation compilation) =>
-        new(Probe(compilation, ValidatedTypes(compilation.Assembly.GlobalNamespace, compilation)), System.StringComparer.Ordinal);
+    private static ConcurrentDictionary<string, MethodResolution> ProbeAll(
+        Compilation compilation, ConcurrentDictionary<string, ProbedWarning[]> noArgumentCallWarnings) =>
+        new(Probe(compilation, ValidatedTypes(compilation.Assembly.GlobalNamespace, compilation), noArgumentCallWarnings),
+            System.StringComparer.Ordinal);
 
     /// <summary>
     /// The types in <paramref name="ns"/> and below that get a generated validator: declared
@@ -428,9 +520,12 @@ internal static class MethodCallProbe
     /// <summary>
     /// Compiles every call of <paramref name="models"/> that <see cref="CertainCall"/> does not
     /// accept in one probe file, in one copy of the compilation, and returns the verdicts. No
-    /// copy is made when there is nothing to probe.
+    /// copy is made when there is nothing to probe. The warnings found inside each call that
+    /// takes no argument go into <paramref name="noArgumentCallWarnings"/>, keyed by model and
+    /// call text, for <see cref="CallProbeWarnings"/>.
     /// </summary>
-    private static Dictionary<string, MethodResolution> Probe(Compilation compilation, IEnumerable<INamedTypeSymbol> models)
+    private static Dictionary<string, MethodResolution> Probe(
+        Compilation compilation, IEnumerable<INamedTypeSymbol> models, ConcurrentDictionary<string, ProbedWarning[]> noArgumentCallWarnings)
     {
         var verdicts = new Dictionary<string, MethodResolution>(System.StringComparer.Ordinal);
         var probed = CollectCalls(compilation, models, out var byNamespace);
@@ -445,6 +540,8 @@ internal static class MethodCallProbe
             if (node is not MethodDeclarationSyntax declaration) continue;
             var call = probed[CallIndex(declaration)];
             verdicts[call.Key] = Verdict(compilation, semanticModel, call.Model, declaration, diagnostics);
+            if (FirstInvocation(declaration) is { ArgumentList.Arguments.Count: 0 } invocation)
+                noArgumentCallWarnings[ModelKey(call.Model) + "\n" + invocation.ToString()] = WarningsInside(invocation, diagnostics);
         }
         System.Diagnostics.Debug.Assert(verdicts.Count == probed.Count, "Every probed call has a method in the probe file.");
         return verdicts;
@@ -523,6 +620,29 @@ internal static class MethodCallProbe
         return null;
     }
 
+    /// <summary>The call a probe method makes: the first invocation in it.</summary>
+    private static InvocationExpressionSyntax? FirstInvocation(MethodDeclarationSyntax declaration)
+    {
+        foreach (var node in declaration.DescendantNodes())
+        {
+            if (node is InvocationExpressionSyntax invocation) return invocation;
+        }
+        return null;
+    }
+
+    /// <summary>The diagnostics inside <paramref name="call"/> that <see cref="IsMirrorable"/> accepts.</summary>
+    private static ProbedWarning[] WarningsInside(
+        InvocationExpressionSyntax call, System.Collections.Immutable.ImmutableArray<Diagnostic> diagnostics)
+    {
+        List<ProbedWarning>? found = null;
+        foreach (var diagnostic in diagnostics)
+        {
+            if (!IsMirrorable(diagnostic) || !call.Span.Contains(diagnostic.Location.SourceSpan)) continue;
+            (found ??= new List<ProbedWarning>()).Add(ProbedWarning.From(diagnostic));
+        }
+        return found is null ? System.Array.Empty<ProbedWarning>() : found.ToArray();
+    }
+
     private static MethodResolution Verdict(
         Compilation compilation,
         SemanticModel semanticModel,
@@ -530,16 +650,7 @@ internal static class MethodCallProbe
         MethodDeclarationSyntax declaration,
         System.Collections.Immutable.ImmutableArray<Diagnostic> diagnostics)
     {
-        InvocationExpressionSyntax? call = null;
-        foreach (var node in declaration.DescendantNodes())
-        {
-            if (node is InvocationExpressionSyntax invocation)
-            {
-                call = invocation;
-                break;
-            }
-        }
-
+        var call = FirstInvocation(declaration);
         var symbolInfo = call is null ? default : semanticModel.GetSymbolInfo(call);
         var method = InOriginal(symbolInfo.Symbol as IMethodSymbol ?? FirstMethod(symbolInfo.CandidateSymbols), compilation);
 
