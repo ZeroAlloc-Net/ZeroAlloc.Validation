@@ -22,7 +22,9 @@ namespace ZeroAlloc.Validation.Generator;
 /// <para>
 /// The probe sees the generator's input compilation, which does not contain what other source
 /// generators add. A call whose member is not found at all may be completed by one of them, so
-/// it is not reported: it is emitted, and the final compilation decides, as it always did.
+/// it is not reported: it is emitted, and the final compilation decides, as it always did. So is
+/// a call no method of that name takes the arguments of, when one of them can add an overload to
+/// a <c>partial</c> type in the model's hierarchy.
 /// </para>
 /// <para>
 /// A call that compiles can still warn, and whether it does can depend on the code before it:
@@ -482,11 +484,80 @@ internal static class MethodCallProbe
 
         if (error is null)
             return new MethodResolution(MethodReach.Callable, method, null);
-        if (MemberNotFound.Contains(error.Id))
+        if (MemberNotFound.Contains(error.Id)
+            || (semanticModel.GetDeclaredSymbol(declaration) is { Parameters.Length: 1 } probe
+                && OverloadMayBeAdded(symbolInfo, probe.Parameters[0].Type, ambiguous: string.Equals(error.Id, "CS0121", System.StringComparison.Ordinal))))
             return new MethodResolution(MethodReach.MissingFromInput, null, null);
 
         return new MethodResolution(MethodReach.NotFound, method,
             $"'{call}' fails with {error.Id}: {error.GetMessage(CultureInfo.InvariantCulture)}");
+    }
+
+    /// <summary>
+    /// Whether another generator may add an overload that makes the call compile, issue #243.
+    /// The compiler found methods of that name but could choose none of them: none takes the
+    /// arguments, or the call is ambiguous between them. A generator can add a method to a
+    /// <c>partial</c> type in the model's hierarchy, and an overload that takes the arguments is
+    /// then chosen, so the final compilation decides, as for a member that is not found at all.
+    /// An ambiguity between methods of one type is not settled by an overload on a type above it,
+    /// since overload resolution prefers the most derived type's applicable methods. A call that
+    /// binds to a method whose result is not a condition, or to a delegate-typed member, is not
+    /// an argument error and is still reported.
+    /// <paramref name="model"/> is the model's type as the probe compilation sees it, and
+    /// <paramref name="ambiguous"/> whether the call fails with CS0121. The compiler reports an
+    /// ambiguous call as an overload resolution failure too, so the error tells them apart.
+    /// </summary>
+    private static bool OverloadMayBeAdded(SymbolInfo symbolInfo, ITypeSymbol model, bool ambiguous)
+    {
+        if (symbolInfo.Symbol is not null
+            || symbolInfo.CandidateReason is not (CandidateReason.OverloadResolutionFailure or CandidateReason.Ambiguous)
+            || symbolInfo.CandidateSymbols.IsDefaultOrEmpty)
+            return false;
+
+        foreach (var candidate in symbolInfo.CandidateSymbols)
+        {
+            if (candidate is not IMethodSymbol { MethodKind: MethodKind.Ordinary or MethodKind.ReducedExtension })
+                return false;
+        }
+
+        for (var type = model as INamedTypeSymbol; type is not null; type = type.BaseType)
+        {
+            if (GeneratorCanAddMembers(type)) return true;
+            if (ambiguous && DeclaresCandidate(type, symbolInfo.CandidateSymbols))
+                return false;
+        }
+        return false;
+    }
+
+    private static bool DeclaresCandidate(INamedTypeSymbol type, System.Collections.Immutable.ImmutableArray<ISymbol> candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            if (candidate is IMethodSymbol { ReducedFrom: null } method
+                && SymbolEqualityComparer.Default.Equals(method.ContainingType.OriginalDefinition, type.OriginalDefinition))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Whether a generator can declare another part of <paramref name="type"/>: it is declared
+    /// in source, and it and every type containing it are <c>partial</c> in each declaration.
+    /// </summary>
+    private static bool GeneratorCanAddMembers(INamedTypeSymbol type)
+    {
+        for (var current = type.OriginalDefinition; current is not null; current = current.ContainingType)
+        {
+            var references = current.DeclaringSyntaxReferences;
+            if (references.IsDefaultOrEmpty) return false;
+            foreach (var reference in references)
+            {
+                if (reference.GetSyntax() is not TypeDeclarationSyntax declaration
+                    || !declaration.Modifiers.Any(SyntaxKind.PartialKeyword))
+                    return false;
+            }
+        }
+        return true;
     }
 
     /// <summary>

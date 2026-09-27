@@ -16,9 +16,10 @@ internal enum MethodReach
     NotFound,
 
     /// <summary>
-    /// The generator's input compilation has no member of that name for the call. Another
-    /// source generator may add one, which only the final compilation contains, so the call is
-    /// emitted and the final compilation decides. Not reported.
+    /// The generator's input compilation has no member of that name for the call, or none of its
+    /// methods of that name takes the arguments and the model's hierarchy has a <c>partial</c>
+    /// type. Another source generator may add the member or the overload, which only the final
+    /// compilation contains, so the call is emitted and the final compilation decides. Not reported.
     /// </summary>
     MissingFromInput,
 
