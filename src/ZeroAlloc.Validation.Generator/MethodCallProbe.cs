@@ -49,6 +49,12 @@ internal static class MethodCallProbe
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
 
     /// <summary>
+    /// A use of an <c>[Obsolete(error: true)]</c> member: a genuine compiler error, which pragma
+    /// cannot suppress, unlike CS0612 and CS0618.
+    /// </summary>
+    private const string ObsoleteErrorId = "CS0619";
+
+    /// <summary>
     /// <see cref="ObsoleteErrorMessage"/>'s results, keyed by property within the compilation
     /// that asked. <c>[Obsolete(error: true)]</c> is rare, so this is a plain cache rather than a
     /// batched probe like <see cref="CallWarnings"/>: it is only ever paid for by a model that has one.
@@ -205,7 +211,7 @@ internal static class MethodCallProbe
         var semanticModel = compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
         foreach (var diagnostic in semanticModel.GetDiagnostics())
         {
-            if (string.Equals(diagnostic.Id, "CS0619", System.StringComparison.Ordinal))
+            if (string.Equals(diagnostic.Id, ObsoleteErrorId, System.StringComparison.Ordinal))
                 return diagnostic.GetMessage(CultureInfo.InvariantCulture);
         }
 
@@ -247,7 +253,10 @@ internal static class MethodCallProbe
 
     /// <summary>
     /// Compiles <paramref name="text"/>, the probe file, and returns the warnings the compiler
-    /// reports inside each recorded call, keyed by model, line and call index.
+    /// reports inside each recorded call, keyed by model, line and call index. CS0619, a use of
+    /// an <c>[Obsolete(error: true)]</c> member, is an error rather than a warning, but it is
+    /// returned too: pragma cannot suppress it, so the call is left out of the generated file,
+    /// as <see cref="CallWarning.LeavesCallOut"/> says, and ZV0032 reports it as an error.
     /// </summary>
     private static Dictionary<(int Model, int Line, int Call), List<CallWarning>> WarningsByCall(
         Compilation compilation,
@@ -273,14 +282,19 @@ internal static class MethodCallProbe
         var semanticModel = compilation.AddSyntaxTrees(tree).GetSemanticModel(tree);
         foreach (var diagnostic in semanticModel.GetDiagnostics())
         {
-            // A warning, including one the project raises to an error.
-            if (diagnostic.Severity != DiagnosticSeverity.Warning && !diagnostic.IsWarningAsError) continue;
+            // A warning, including one the project raises to an error, or CS0619.
+            bool leavesCallOut = string.Equals(diagnostic.Id, ObsoleteErrorId, System.StringComparison.Ordinal);
+            if (!leavesCallOut && diagnostic.Severity != DiagnosticSeverity.Warning && !diagnostic.IsWarningAsError) continue;
             if (FindSite(sites, diagnostic.Location.SourceSpan) is not { } site) continue;
 
-            var configured = ConfiguredSeverity(compilation, diagnostic.Id, probed[site.Model].Lines[site.Line][site.Call].Site);
-            // Turned off, or below a warning, for the project: the generated call does not warn.
-            if (configured is ReportDiagnostic.Suppress or ReportDiagnostic.Hidden or ReportDiagnostic.Info) continue;
-            bool isError = configured == ReportDiagnostic.Error || diagnostic.Severity == DiagnosticSeverity.Error;
+            bool isError = leavesCallOut;
+            if (!leavesCallOut)
+            {
+                var configured = ConfiguredSeverity(compilation, diagnostic.Id, probed[site.Model].Lines[site.Line][site.Call].Site);
+                // Turned off, or below a warning, for the project: the generated call does not warn.
+                if (configured is ReportDiagnostic.Suppress or ReportDiagnostic.Hidden or ReportDiagnostic.Info) continue;
+                isError = configured == ReportDiagnostic.Error || diagnostic.Severity == DiagnosticSeverity.Error;
+            }
 
             var key = (site.Model, site.Line, site.Call);
             if (!perCall.TryGetValue(key, out var list))
@@ -288,7 +302,7 @@ internal static class MethodCallProbe
                 list = new List<CallWarning>();
                 perCall[key] = list;
             }
-            var warning = new CallWarning(diagnostic.Id, diagnostic.GetMessage(CultureInfo.InvariantCulture), isError);
+            var warning = new CallWarning(diagnostic.Id, diagnostic.GetMessage(CultureInfo.InvariantCulture), isError, leavesCallOut);
             if (!list.Contains(warning)) list.Add(warning);
         }
         return perCall;

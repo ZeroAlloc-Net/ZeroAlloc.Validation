@@ -185,7 +185,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             + "call, for example CS8604 for a possibly-null argument or CS0612 for an obsolete method, "
             + "the warning is reported here, at the attribute, where it can be fixed or suppressed, "
             + "and the generated call is wrapped in a pragma for exactly that warning. Otherwise it "
-            + "would fail a TreatWarningsAsErrors build in a file the user cannot edit.");
+            + "would fail a TreatWarningsAsErrors build in a file the user cannot edit. CS0619, the "
+            + "use of an [Obsolete(error: true)] member, is an error that pragma cannot suppress, so "
+            + "that call is left out of the generated validator and reported here as an error.");
 
     private static readonly DiagnosticDescriptor ZV0029 = new DiagnosticDescriptor(
         id: "ZV0029",

@@ -799,7 +799,31 @@ So the generator compiles the validator's own `Validate` body, emitted exactly a
 
 That is the only pragma of this kind the generator writes, and a call that does not warn gets none. The `CS0612`/`CS0618` pragma around the field of an obsolete custom rule type, from [#196](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/196), is separate: it covers the field's initializer, where the compiler already warns at your attribute, not the call.
 
-**`[Obsolete(..., error: true)]` is different.** Reading a property whose read raises CS0619 is not a warning at all: pragma cannot suppress it, unlike CS0612 and CS0618. So the rule is left out of the generated file entirely — not emitted, not even as `if (false)`, which the compiler would flag as unreachable code there — and ZV0032 reports the compiler's own CS0619 message as an error at the rule's attribute instead.
+**`[Obsolete(..., error: true)]` is different.** Using a member marked this way raises CS0619, which is not a warning at all: pragma cannot suppress it, unlike CS0612 and CS0618. So the call is left out of the generated file entirely, together with the statement it opens, and ZV0032 reports the compiler's own CS0619 message as an error at the attribute instead. It is not emitted even as `if (false)`, which the compiler would flag as unreachable code there. This covers:
+
+- a property marked `[Obsolete(..., error: true)]`, or whose getter or overridden property is. Every rule on it is left out: a built-in rule that reads it in its condition, a `[Must]` predicate and a custom rule that are given its value as their argument.
+- a `[CustomValidation]` method marked `[Obsolete(..., error: true)]`. Its call and the loop over its failures are left out, and the model's other rules and `[CustomValidation]` methods still run.
+- any other call the generated validator makes for a rule that the compiler reports CS0619 on.
+
+A `[Must]` predicate, `When`, `Unless` or `[SkipWhen]` method that is itself `[Obsolete(..., error: true)]` does not compile as a call, so it is reported as [ZV0030](#zv0030) and left out, not as ZV0032.
+
+```csharp
+[Validate]
+public class Order
+{
+    [Must(nameof(IsKnownCode))]                  // ZV0032, Error — CS0619, Code is obsolete as an error
+    [Obsolete("Use Sku.", error: true)]
+    public string Code { get; set; } = "";
+
+    [CustomValidation]                           // ZV0032, Error — CS0619, Check is obsolete as an error
+    [Obsolete("Use CheckAll.", error: true)]
+    public ValidationFailure[] Check() => [];
+
+    public bool IsKnownCode(string code) => code.Length == 3;
+}
+```
+
+The fix is to stop validating the obsolete member: move the rule to its replacement, or remove it.
 
 A rule declared on a base type that is itself `[Validate]` is reported once, by that type, when the call warns there too.
 

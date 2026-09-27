@@ -43,4 +43,21 @@ internal sealed class ModelCallWarnings
         }
         return ids;
     }
+
+    /// <summary>
+    /// Whether a call on line <paramref name="ordinal"/> raises an error pragma cannot suppress,
+    /// CS0619, so the line is left out of the generated file: <see cref="CallWarning.LeavesCallOut"/>.
+    /// </summary>
+    public bool LeavesOut(int ordinal)
+    {
+        if (ordinal >= _lines.Count) return false;
+        foreach (var call in _lines[ordinal])
+        {
+            foreach (var warning in call.Warnings)
+            {
+                if (warning.LeavesCallOut) return true;
+            }
+        }
+        return false;
+    }
 }
