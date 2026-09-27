@@ -168,7 +168,7 @@ public sealed class DuplicateGeneratorDiagnosticTests
         var repoRoot = LocateRepoRoot();
         var feed     = Path.Combine(repoRoot, "artifacts", "local");
         Assert.True(Directory.Exists(feed),
-            $"Local nupkg feed not found at {feed}. Run `dotnet pack -c Release -o artifacts/local` " +
+            $"Local nupkg feed not found at {feed}. Run `dotnet pack -c Release -p:Version=0.0.0-dev -o artifacts/local` " +
             "for ZeroAlloc.Validation, ZeroAlloc.Validation.Generator, and ZeroAlloc.Validation.AspNetCore first.");
         return feed;
     }
