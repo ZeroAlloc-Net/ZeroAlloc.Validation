@@ -163,7 +163,8 @@ attribute instead, quoting the compiler's error. It validates the rest of the mo
 Only calls that already failed to compile are reported, and not every one of them: a call whose
 member does not exist in the generator's input, CS1061 and the like, is still emitted, because
 another source generator may add that member. The final compilation then reports the missing
-member as it did in 1.x. Everything that compiled in 1.x, including extension methods,
+member as it did in 1.x. The same holds for a call no method of that name takes the arguments of
+when the model or a base type is `partial`, since another generator may add the overload. Everything that compiled in 1.x, including extension methods,
 delegate-typed members and results that convert to `bool`, and members other generators add,
 keeps working unchanged.
 

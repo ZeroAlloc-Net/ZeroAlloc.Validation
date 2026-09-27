@@ -192,11 +192,15 @@ public class MethodResolutionDiagnosticTests
         Assert.Equal(new[] { "Code", "Other" }, FailedProperties(output));
     }
 
-    /// <summary>A second generator that adds members the model's rules call.</summary>
+    /// <summary>
+    /// A second generator that adds members the model's rules call. It adds them as source
+    /// output, which other generators do not see. Post-initialization output would not do: every
+    /// generator's input contains it, so the probe would find the members.
+    /// </summary>
     private sealed class AddsMembersGenerator : IIncrementalGenerator
     {
         public void Initialize(IncrementalGeneratorInitializationContext context) =>
-            context.RegisterPostInitializationOutput(static ctx => ctx.AddSource("Added.g.cs", """
+            context.RegisterSourceOutput(context.CompilationProvider, static (ctx, _) => ctx.AddSource("Added.g.cs", """
                 namespace TestModels;
 
                 public partial class Request
@@ -210,6 +214,170 @@ public class MethodResolutionDiagnosticTests
                     public static bool IsOkExtension(this Request request, string? value) => false;
                 }
                 """));
+    }
+
+    [Theory]
+    // An overload beside the model's own method, and an extension method of that name.
+    [InlineData("partial ", "[Must(\"Ok\")] public string? Code { get; set; }", "")]
+    [InlineData("partial ", "[NotEmpty(When = \"On\")] public string? Code { get; set; }", "")]
+    [InlineData("partial ", "[NotEmpty(Unless = \"Off\")] public string? Code { get; set; }", "")]
+    [InlineData("partial ", "[Must(\"Ext\")] public string? Code { get; set; }", "")]
+    // An overload added to a partial base type, beside the base type's own method.
+    [InlineData("", "[Must(\"BaseOk\")] public string? Code { get; set; }", "")]
+    // [SkipWhen]: the added overload skips the model, so nothing fails.
+    [InlineData("partial ", "[NotEmpty] public string? Code { get; set; }", "[SkipWhen(\"On\")]")]
+    public void Overload_added_by_another_generator_beside_an_existing_method_is_called(
+        string modelModifier, string member, string classAttributes)
+    {
+        // Issue #243. The input declares a method of that name that does not take the
+        // arguments, so the probe fails with an argument error. Another generator adds the
+        // overload or extension method that does, which only the final compilation contains.
+        // The model, or its base type, is partial, so a generator can add to it: the call is
+        // emitted, compiles and runs.
+        var source = Prelude + $$"""
+            public partial class RequestBase
+            {
+                public bool BaseOk() => true;
+            }
+
+            [Validate]
+            {{classAttributes}}
+            public {{modelModifier}}class Request : RequestBase
+            {
+                {{member}}
+
+                public bool Ok() => true;
+                public bool On(int value) => false;
+                public bool Off(int value) => true;
+                public bool Ext() => true;
+
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source, new AddsOverloadsGenerator(modelModifier.Length > 0));
+
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id.StartsWith("ZV", StringComparison.Ordinal));
+        var expected = classAttributes.Length > 0 ? Array.Empty<string>() : new[] { "Code", "Other" };
+        Assert.Equal(expected, FailedProperties(output));
+    }
+
+    /// <summary>
+    /// A second generator that adds overloads beside methods the model and its base type
+    /// already declare, and an extension method of a name the model declares. Source output, as
+    /// for <see cref="AddsMembersGenerator"/>, so the probe does not see them.
+    /// </summary>
+    private sealed class AddsOverloadsGenerator(bool toModel) : IIncrementalGenerator
+    {
+        public void Initialize(IncrementalGeneratorInitializationContext context) =>
+            context.RegisterSourceOutput(context.CompilationProvider, (ctx, _) => ctx.AddSource("Overloads.g.cs", """
+                namespace TestModels;
+
+                public partial class RequestBase
+                {
+                    public bool BaseOk(string? value) => false;
+                }
+
+                public static class RequestOverloadExtensions
+                {
+                    public static bool Ext(this Request request, string? value) => false;
+                }
+                """ + (toModel ? """
+
+                public partial class Request
+                {
+                    public bool Ok(string? value) => false;
+                    public bool On() => true;
+                    public bool Off() => false;
+                }
+                """ : "")));
+    }
+
+    [Theory]
+    [InlineData("[Must(nameof(Ok))]", "public bool Ok() => false;", "CS1501")]
+    [InlineData("[Must(nameof(Ok))]", "public bool Ok(int value) => false;", "CS1503")]
+    [InlineData("[Must(nameof(Ok))]", "public bool Ok(IComparable? value) => false; public bool Ok(IConvertible? value) => false;", "CS0121")]
+    [InlineData("[Must(nameof(Ok))]", "public bool Ok<T>(List<T> value) => false;", "CS0411")]
+    [InlineData("[Must(nameof(Ok))]", "public bool Ok<T>(T value) where T : struct => false;", "CS0453")]
+    [InlineData("[NotEmpty(When = nameof(Ok))]", "public bool Ok(int value) => true;", "CS7036")]
+    public void Argument_error_on_a_partial_model_is_left_to_the_final_compilation(string rule, string members, string errorId)
+    {
+        // Another generator may add an overload to a partial model that takes the arguments, as
+        // above. So the call is emitted, not reported, and when nothing adds one the final
+        // compilation fails with the compiler's own error in the generated file.
+        var source = Prelude + $$"""
+            [Validate]
+            public partial class Request
+            {
+                {{rule}} public string? Code { get; set; }
+
+                {{members}}
+
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.DoesNotContain(result.Diagnostics, d => d.Id.StartsWith("ZV", StringComparison.Ordinal));
+        Assert.Contains(output.GetDiagnostics(), d =>
+            string.Equals(d.Id, errorId, StringComparison.Ordinal)
+            && d.Location.SourceTree is { } tree
+            && tree.FilePath.EndsWith("RequestValidator.g.cs", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    // No generator can add a member to a type that is not partial, or whose containing type is not.
+    [InlineData("public class Request", "", "public bool Ok() => false;", "CS1501")]
+    [InlineData("public partial class Request", "public class Outer", "public bool Ok() => false;", "CS1501")]
+    // The call binds, and its result is not a condition: an added overload is not an argument fix.
+    [InlineData("public partial class Request", "", "public bool? Ok(string? value) => false;", "CS0266")]
+    // A delegate-typed member: a method of the same name added beside it does not compile.
+    [InlineData("public partial class Request", "", "public Func<int, bool> Ok { get; } = _ => true;", "CS1503")]
+    public void Argument_error_no_generator_can_fix_is_still_reported(
+        string declaration, string outer, string members, string errorId)
+    {
+        var model = $$"""
+            [Validate]
+            {{declaration}}
+            {
+                [Must("Ok")] public string? Code { get; set; }
+
+                {{members}}
+
+                [NotEmpty] public string? Other { get; set; }
+            }
+            """;
+        var source = Prelude + (outer.Length == 0 ? model : outer + "\n{\n" + model + "\n}\n");
+
+        var (result, _) = RunGenerator(source);
+
+        var zv0030 = SingleDiagnostic(result, "ZV0030");
+        Assert.Contains($"fails with {errorId}: ", zv0030.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ambiguity_on_the_model_is_still_reported_when_only_its_base_type_is_partial()
+    {
+        // Overload resolution prefers the most derived type's applicable methods, so an overload
+        // another generator adds to the partial base type cannot settle the model's ambiguity.
+        var source = Prelude + """
+            public partial class RequestBase { }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                [Must("Ok")] public string? Code { get; set; }
+
+                public bool Ok(IComparable? value) => false;
+                public bool Ok(IConvertible? value) => false;
+            }
+            """;
+
+        var (result, _) = RunGenerator(source);
+
+        var zv0030 = SingleDiagnostic(result, "ZV0030");
+        Assert.Contains("fails with CS0121: ", zv0030.GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
     [Fact]
