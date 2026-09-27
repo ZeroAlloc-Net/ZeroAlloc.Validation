@@ -448,14 +448,23 @@ internal static class RuleEmitter
         var propAccess = BuildPropertyAccess(modelParamName, prop);
         var rawPropAccess = GeneratedCalls.RawPropertyAccess(modelParamName, prop);
         var stopMode = HasStopOnFirstFailure(prop, classSymbol);
+        var obsoleteError = CertainCall.IsObsoleteError(prop);
 
         ReportZV0016IfApplicable(ctx, prop, rules);
 
+        // A rule on an [Obsolete(error: true)] property is never emitted at all — not even as
+        // "if (false)", which the compiler would flag as CS0162 unreachable code in the
+        // generated file. ObsoleteErrorRules reports it as ZV0032 instead. emitted counts only
+        // the rules this loop does emit, so a later rule's "else if" chains onto the last one
+        // actually written, not onto the position it held in the attribute list.
+        int emitted = 0;
         for (int i = 0; i < rules.Count; i++)
         {
+            if (obsoleteError) continue;
+
             var attr = rules[i];
             var fqn = attr.AttributeClass!.ToDisplayString();
-            var prefix = (stopMode && i > 0) ? "        else if" : "        if";
+            var prefix = (stopMode && emitted > 0) ? "        else if" : "        if";
             var ruleMessage = FindCustomRuleMessage(attr);
             var message = ResolveRuleMessage(attr, fqn, displayName, prop, ruleMessage, ctx);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
@@ -467,8 +476,9 @@ internal static class RuleEmitter
             var unlessGuard  = unlessMethod is null ? "" : GeneratedCalls.UnlessGuard(modelParamName, unlessMethod);
 
             calls.AppendLine(sb, $"{prefix} ({whenGuard}{unlessGuard}{condition})",
-                RuleCallSites(attr, prop, modelParamName, rawPropAccess, ruleIndex: i));
+                RuleCallSites(attr, prop, modelParamName, rawPropAccess, ruleIndex: i, condition));
             sb.AppendLine($"            _buf.Add({BuildFailureInitializer(propName, message, attr, ruleMessage, propertyValueExpr)});");
+            emitted++;
         }
         sb.AppendLine();
     }
@@ -708,14 +718,21 @@ internal static class RuleEmitter
         var propAccess = BuildPropertyAccess(modelParamName, prop);
         var rawPropAccess = GeneratedCalls.RawPropertyAccess(modelParamName, prop);
         var stopMode = HasStopOnFirstFailure(prop, classSymbol);
+        var obsoleteError = CertainCall.IsObsoleteError(prop);
 
         ReportZV0016IfApplicable(ctx, prop, rules);
 
+        // See EmitPropertyRulesForProp: a rule on an [Obsolete(error: true)] property is left
+        // out entirely, never emitted as "if (false)", and emitted tracks the "else if" chain
+        // across whatever rules that leaves.
+        int emitted = 0;
         for (int i = 0; i < rules.Count; i++)
         {
+            if (obsoleteError) continue;
+
             var attr = rules[i];
             var fqn = attr.AttributeClass!.ToDisplayString();
-            var prefix = (stopMode && i > 0) ? "        else if" : "        if";
+            var prefix = (stopMode && emitted > 0) ? "        else if" : "        if";
             var ruleMessage = FindCustomRuleMessage(attr);
             var message = ResolveRuleMessage(attr, fqn, displayName, prop, ruleMessage, ctx);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
@@ -727,7 +744,7 @@ internal static class RuleEmitter
             var unlessGuard  = unlessMethod is null ? "" : GeneratedCalls.UnlessGuard(modelParamName, unlessMethod);
 
             calls.AppendLine(sb, $"{prefix} ({whenGuard}{unlessGuard}{condition})",
-                RuleCallSites(attr, prop, modelParamName, rawPropAccess, ruleIndex: i));
+                RuleCallSites(attr, prop, modelParamName, rawPropAccess, ruleIndex: i, condition));
             sb.AppendLine("        {");
             if (directReturn)
             {
@@ -741,6 +758,7 @@ internal static class RuleEmitter
                 sb.AppendLine($"            _buf.Add({BuildFailureInitializer(propName, message, attr, ruleMessage, propertyValueExpr)});");
             }
             sb.AppendLine("        }");
+            emitted++;
         }
     }
 
@@ -985,7 +1003,9 @@ internal static class RuleEmitter
     {
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
-            if (member is not IPropertySymbol prop) continue;
+            // A property that is [Obsolete(error: true)] gets no rule emitted for it at all: its
+            // condition becomes the literal false, so nothing about it is ever probed.
+            if (member is not IPropertySymbol prop || CertainCall.IsObsoleteError(prop)) continue;
 
             // Only [Must] and custom rules emit no null test of their own; every other rule may.
             bool nullTested = false;
@@ -1003,7 +1023,13 @@ internal static class RuleEmitter
                 if (isCustomRule && !CertainCall.RuleCallCannotWarn(attr.AttributeClass!, valueType, prop, nullTested))
                     return true;
                 if (!isCustomRule && !IsMust(attr))
+                {
                     nullTested = true;
+                    // A plain built-in rule makes no call of its own, but its condition still
+                    // reads the property directly, e.g. "instance.Code is null", and that read
+                    // alone can warn just as an argument or a guard's can.
+                    if (CertainCall.ReadMayWarn(prop)) return true;
+                }
             }
         }
 
@@ -1046,10 +1072,16 @@ internal static class RuleEmitter
 
     /// <summary>
     /// The calls on one rule's condition line, in the order they appear on it: its <c>When</c>
-    /// and <c>Unless</c> guards, then its <c>[Must]</c> predicate or custom rule call. The
-    /// usages read as <see cref="MethodCallsOf"/> writes them.
+    /// and <c>Unless</c> guards, then its <c>[Must]</c> predicate or custom rule call, or, for a
+    /// plain built-in rule that makes none of those, the condition itself — it still reads the
+    /// property directly, e.g. <c>instance.Code is null</c>, and that read alone can warn. The
+    /// whole condition is used, rather than just the property access within it, so a condition
+    /// that reads the property more than once, such as a length check's null guard, is covered
+    /// by one site and not matched piecemeal. The usages read as <see cref="MethodCallsOf"/>
+    /// writes them.
     /// </summary>
-    private static List<CallSite> RuleCallSites(AttributeData attr, IPropertySymbol prop, string modelParamName, string rawAccess, int ruleIndex)
+    private static List<CallSite> RuleCallSites(
+        AttributeData attr, IPropertySymbol prop, string modelParamName, string rawAccess, int ruleIndex, string condition)
     {
         var rule = ShortAttributeName(attr);
         var declaringType = prop.ContainingType;
@@ -1070,7 +1102,35 @@ internal static class RuleEmitter
             sites.Add(new CallSite(GeneratedCalls.MethodCall(modelParamName, GetStringArg(attr, 0), rawAccess),
                 attr, prop, declaringType, $"[{rule}] on '{prop.Name}'"));
         }
+        else if (CertainCall.ReadMayWarn(prop))
+        {
+            sites.Add(new CallSite(condition, attr, prop, declaringType, $"[{rule}] on '{prop.Name}'"));
+        }
         return sites;
+    }
+
+    /// <summary>
+    /// Every rule of <paramref name="classSymbol"/> whose property
+    /// <see cref="CertainCall.IsObsoleteError"/> finds <c>[Obsolete(error: true)]</c>: pragma
+    /// cannot suppress the CS0619 a read of it would raise, unlike CS0612 and CS0618, so
+    /// <see cref="EmitPropertyRulesForProp"/> and <see cref="EmitFlatPathPropertyRules"/> never
+    /// emit a rule for it at all, and this is reported as ZV0032 instead, an error, at the
+    /// rule's attribute.
+    /// </summary>
+    public static IEnumerable<(AttributeData Attribute, IPropertySymbol Property, string RawAccess, string Usage)> ObsoleteErrorRules(
+        INamedTypeSymbol classSymbol, Compilation compilation)
+    {
+        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
+        {
+            if (member is not IPropertySymbol prop || !CertainCall.IsObsoleteError(prop)) continue;
+
+            foreach (var attr in prop.GetAttributes())
+            {
+                if (!IsRuleAttribute(attr)) continue;
+                var rule = ShortAttributeName(attr);
+                yield return (attr, prop, GeneratedCalls.RawPropertyAccess(MethodCallProbe.Model, prop), $"[{rule}] on '{prop.Name}'");
+            }
+        }
     }
 
     private static CallSite SkipWhenSite(INamedTypeSymbol classSymbol, in ResolvedMethodCall skipWhen, string modelParamName) =>

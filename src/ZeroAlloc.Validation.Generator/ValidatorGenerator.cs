@@ -699,6 +699,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         ReportInaccessibleBaseMemberDiagnostics(ctx, classSymbol, compilation);
         ReportSkipWhenDiagnostics(ctx, classSymbol, compilation);
         ReportMirroredCallWarnings(ctx, classSymbol, compilation);
+        ReportObsoleteErrorRuleReads(ctx, classSymbol, compilation);
         ReportDuplicateRuleAttributeDiagnostics(ctx, classSymbol, compilation);
         ReportUnreadValidationAttributeDiagnostics(ctx, classSymbol, compilation);
     }
@@ -1207,6 +1208,33 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                     warning.Id,
                     warning.Message));
             }
+        }
+    }
+
+    /// <summary>
+    /// ZV0032 for a rule whose property is <c>[Obsolete(error: true)]</c>, from
+    /// <see cref="RuleEmitter.ObsoleteErrorRules"/>. Pragma cannot suppress the CS0619 a read of
+    /// it would raise, unlike CS0612 and CS0618, so the generated validator leaves the rule out
+    /// entirely, and the compiler's own message for the read is reported here instead, as an
+    /// error, at the rule's attribute. A usage a <c>[Validate]</c> base type's validator also
+    /// emits is reported by that validator, so it is reported once.
+    /// </summary>
+    private static void ReportObsoleteErrorRuleReads(SourceProductionContext ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    {
+        foreach (var (attr, prop, rawAccess, usage) in RuleEmitter.ObsoleteErrorRules(classSymbol, compilation))
+        {
+            if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, prop.ContainingType)) continue;
+
+            ctx.ReportDiagnostic(Diagnostic.Create(
+                ZV0032,
+                AttributeLocation(attr, prop, classSymbol),
+                DiagnosticSeverity.Error,
+                additionalLocations: null,
+                properties: null,
+                rawAccess,
+                usage,
+                "CS0619",
+                MethodCallProbe.ObsoleteErrorMessage(compilation, prop)));
         }
     }
 
