@@ -82,7 +82,7 @@ internal static class RuleEmitter
     /// ZV0032 mirrors at the attribute. <see cref="MethodCallProbe"/> passes a recording one to
     /// compile this same body.
     /// </summary>
-    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName = "instance", SourceProductionContext? ctx = null, GeneratedFields? fields = null, CallLineWriter? calls = null)
+    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName = "instance", DiagnosticSink? ctx = null, GeneratedFields? fields = null, CallLineWriter? calls = null)
     {
         calls ??= CallLineWriter.Emitting(MethodCallProbe.CallWarnings(compilation, classSymbol));
 
@@ -127,7 +127,7 @@ internal static class RuleEmitter
     private static List<(IPropertySymbol Property, List<AttributeData> Rules)> CollectPropertyRules(
         INamedTypeSymbol classSymbol,
         Compilation compilation,
-        SourceProductionContext? ctx)
+        DiagnosticSink? ctx)
     {
         var byProperty = new List<(IPropertySymbol Property, List<AttributeData> Rules)>();
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
@@ -166,7 +166,7 @@ internal static class RuleEmitter
         string modelParamName,
         bool validatorStop,
         int totalDirectRules,
-        SourceProductionContext? ctx,
+        DiagnosticSink? ctx,
         CallLineWriter calls,
         GeneratedFields? fields = null)
     {
@@ -334,7 +334,7 @@ internal static class RuleEmitter
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
         Dictionary<IPropertySymbol, string> validatorFields,
         string modelParamName,
-        SourceProductionContext? ctx,
+        DiagnosticSink? ctx,
         CallLineWriter calls,
         GeneratedFields? fields = null)
     {
@@ -422,7 +422,7 @@ internal static class RuleEmitter
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         INamedTypeSymbol? classSymbol,
         string modelParamName,
-        SourceProductionContext? ctx,
+        DiagnosticSink? ctx,
         CallLineWriter calls,
         GeneratedFields? fields = null)
     {
@@ -439,7 +439,7 @@ internal static class RuleEmitter
         List<AttributeData> rules,
         INamedTypeSymbol? classSymbol,
         string modelParamName,
-        SourceProductionContext? ctx,
+        DiagnosticSink? ctx,
         CallLineWriter calls,
         GeneratedFields? fields = null)
     {
@@ -646,7 +646,7 @@ internal static class RuleEmitter
         int totalDirectRules,
         string modelParamName,
         bool validatorStop,
-        SourceProductionContext? ctx,
+        DiagnosticSink? ctx,
         CallLineWriter calls,
         GeneratedFields? fields = null)
     {
@@ -707,7 +707,7 @@ internal static class RuleEmitter
         List<AttributeData> rules,
         int totalDirectRules,
         string modelParamName,
-        SourceProductionContext? ctx,
+        DiagnosticSink? ctx,
         CallLineWriter calls,
         GeneratedFields? fields = null,
         bool directReturn = false,
@@ -781,7 +781,7 @@ internal static class RuleEmitter
         string displayName,
         IPropertySymbol prop,
         (string Message, string? ErrorCode)? ruleMessage,
-        SourceProductionContext? ctx)
+        DiagnosticSink? ctx)
     {
         if (!CustomRules.IsCustomRule(attr))
             return ResolveMessage(attr, fqn, displayName)
@@ -796,10 +796,10 @@ internal static class RuleEmitter
         {
             foreach (var name in unknown)
             {
-                ctx.Value.ReportDiagnostic(Diagnostic.Create(
+                ctx.Report(
                     ZV0022,
                     AttributeLocation(attr, prop),
-                    name, attr.AttributeClass!.Name, prop.Name));
+                    name, attr.AttributeClass!.Name, prop.Name);
             }
         }
 
@@ -1739,7 +1739,7 @@ internal static class RuleEmitter
     /// Returns the Validate method body as a string (multi-statement block WITHOUT outer braces),
     /// using <paramref name="modelParamName"/> as the instance variable.
     /// </summary>
-    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName, SourceProductionContext? ctx = null, GeneratedFields? fields = null)
+    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName, DiagnosticSink? ctx = null, GeneratedFields? fields = null)
     {
         var sb = new System.Text.StringBuilder();
         EmitValidateBody(sb, classSymbol, compilation, modelParamName, ctx, fields);
@@ -1859,12 +1859,12 @@ internal static class RuleEmitter
     /// way to evaluate it, so without this error the property would silently go unvalidated.
     /// The caller has already established that <paramref name="attr"/> is not a rule attribute.
     /// </summary>
-    private static void ReportZV0020IfApplicable(SourceProductionContext? ctx, IPropertySymbol prop, AttributeData attr)
+    private static void ReportZV0020IfApplicable(DiagnosticSink? ctx, IPropertySymbol prop, AttributeData attr)
     {
         if (ctx is null) return;
         if (attr.AttributeClass is not { } attrClass || !CustomRules.DerivesFromValidationAttribute(attrClass)) return;
 
-        ctx.Value.ReportDiagnostic(Diagnostic.Create(ZV0020, AttributeLocation(attr, prop), attrClass.Name));
+        ctx.Report(ZV0020, AttributeLocation(attr, prop), attrClass.Name);
     }
 
     /// <summary>
@@ -1873,7 +1873,7 @@ internal static class RuleEmitter
     /// validator (ZV0023) or when the property type has no implicit conversion to the rule's
     /// <c>T</c> (ZV0021). Either would otherwise surface as a compiler error in generated code.
     /// </summary>
-    private static bool CanEmitCustomRule(Compilation compilation, IPropertySymbol prop, AttributeData attr, SourceProductionContext? ctx)
+    private static bool CanEmitCustomRule(Compilation compilation, IPropertySymbol prop, AttributeData attr, DiagnosticSink? ctx)
     {
         var attrClass = attr.AttributeClass!;
         CustomRules.TryGetRuleValueType(attrClass, out var valueType);
@@ -1893,15 +1893,15 @@ internal static class RuleEmitter
         {
             var location = AttributeLocation(attr, prop);
             if (inaccessible is not null)
-                ctx.Value.ReportDiagnostic(Diagnostic.Create(ZV0023, location, attrClass.Name, inaccessible.ToDisplayString()));
+                ctx.Report(ZV0023, location, attrClass.Name, inaccessible.ToDisplayString());
             if (!convertible && !unresolved)
             {
                 var hint = nullMismatch
                     ? $". Declare the rule as ValidationAttribute<{valueType.WithNullableAnnotation(NullableAnnotation.Annotated).ToDisplayString()}> to accept null."
                     : "";
-                ctx.Value.ReportDiagnostic(Diagnostic.Create(
+                ctx.Report(
                     ZV0021, location,
-                    attrClass.Name, valueType.ToDisplayString(), prop.Name, prop.Type.ToDisplayString(), hint));
+                    attrClass.Name, valueType.ToDisplayString(), prop.Name, prop.Type.ToDisplayString(), hint);
             }
         }
 
@@ -1957,7 +1957,7 @@ internal static class RuleEmitter
     /// handled by <see cref="BuildPropertyAccess"/>; primitives/class types are
     /// emitted as-is.
     /// </summary>
-    private static void ReportZV0016IfApplicable(SourceProductionContext? ctx, IPropertySymbol prop, List<AttributeData> rules)
+    private static void ReportZV0016IfApplicable(DiagnosticSink? ctx, IPropertySymbol prop, List<AttributeData> rules)
     {
         if (ctx is null) return;
         // Only a rule that consumes the unwrapped operand (a built-in like NotNull, GreaterThan,
@@ -1972,9 +1972,9 @@ internal static class RuleEmitter
             .OfType<IPropertySymbol>()
             .Count(p => !p.IsStatic && p.DeclaredAccessibility == Accessibility.Public);
 
-        ctx.Value.ReportDiagnostic(Diagnostic.Create(
+        ctx.Report(
             ZV0016,
             prop.Locations.FirstOrDefault() ?? Location.None,
-            prop.Name, prop.Type.Name, propCount));
+            prop.Name, prop.Type.Name, propCount);
     }
 }

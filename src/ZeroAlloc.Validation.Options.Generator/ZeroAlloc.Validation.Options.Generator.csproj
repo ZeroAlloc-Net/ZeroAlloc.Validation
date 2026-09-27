@@ -42,6 +42,15 @@
              Link="Shared\MemberWalker.cs" />
     <Compile Include="..\ZeroAlloc.Validation.Inject\UnreadableReason.cs"
              Link="Shared\UnreadableReason.cs" />
+    <!-- The equatable models the transform extracts, so the output step stays cached, issue #209. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\ValidatedModelInfo.cs"
+             Link="Shared\ValidatedModelInfo.cs" />
+    <Compile Include="..\ZeroAlloc.Validation.Inject\RegistrationNode.cs"
+             Link="Shared\RegistrationNode.cs" />
+    <Compile Include="..\ZeroAlloc.Validation.Inject\RegistrationDependency.cs"
+             Link="Shared\RegistrationDependency.cs" />
+    <Compile Include="..\ZeroAlloc.Validation.Inject\EquatableArray.cs"
+             Link="Shared\EquatableArray.cs" />
   </ItemGroup>
 
 </Project>

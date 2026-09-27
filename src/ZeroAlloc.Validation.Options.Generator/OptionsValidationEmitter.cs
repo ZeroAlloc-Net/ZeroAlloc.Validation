@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -13,6 +12,9 @@ namespace ZeroAlloc.Validation.Options.Generator;
 public sealed class OptionsValidationEmitter : IIncrementalGenerator
 {
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
+
+    /// <summary>Tracking name of the step the output is produced from, so tests can assert that it stays cached.</summary>
+    internal const string OutputTrackingName = "OptionsValidationModels";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -30,27 +32,29 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
                 // A model that gets no validator is left out here too: one the generated validator
                 // cannot reach, ZV0025 and #216, or a generic one, ZV0029 and #219. Naming it would
                 // only add compiler errors in generated code.
-                // Null marks it; Emit drops it, so the provider chain needs no extra step.
+                // Null marks it, and the step after Collect drops it.
+                // The transform extracts everything the output needs into an equatable model, so
+                // the output step stays cached while nothing it was read from changes, issue #209.
+                // It reruns for every compilation, so the model still follows edits in other
+                // files, such as to a nested model, and into referenced assemblies, issue #246.
                 transform: static (ctx, _) =>
                     GeneratedValidatorReach.HasGeneratedValidator((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
-                        ? (INamedTypeSymbol)ctx.TargetSymbol
+                        ? ValidatedModelInfo.From((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
                         : null);
 
 #pragma warning disable EPS06
-        var collected = validateClasses.Collect();
+        var collected = validateClasses.Collect()
+            .Select(static (models, _) => ValidatedModelInfo.WithGeneratedValidator(models));
         var isInternalMode = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => GeneratedAccessibilityOption.IsInternal(provider));
-        // ValidateWithZeroAlloc registers one model, so the registration follows its validator's
-        // constructor dependencies, here and into referenced assemblies, issue #246.
-        var combined = collected.Combine(isInternalMode).Combine(context.CompilationProvider);
+        var combined = collected.Combine(isInternalMode).WithTrackingName(OutputTrackingName);
 #pragma warning restore EPS06
-        context.RegisterSourceOutput(combined, static (ctx, pair) => Emit(ctx, pair.Left.Left, pair.Left.Right, pair.Right));
+        context.RegisterSourceOutput(combined, static (ctx, pair) => Emit(ctx, pair.Left, pair.Right));
     }
 
-    private static void Emit(SourceProductionContext ctx, ImmutableArray<INamedTypeSymbol?> candidates, bool isInternalMode, Compilation compilation)
+    private static void Emit(SourceProductionContext ctx, EquatableArray<ValidatedModelInfo> models, bool isInternalMode)
     {
-        var models = GeneratedValidatorReach.WithGeneratedValidator(candidates);
-        if (models.IsDefaultOrEmpty) return;
+        if (models.Count == 0) return;
 
         // An extension method cannot be more visible than the model in its signature, so
         // models that are not visible outside the assembly go in a separate internal class,
@@ -58,27 +62,27 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
         // ZeroAllocGeneratedAccessibility=Internal (issue #193) routes every model into the
         // internal class regardless of the model's own accessibility, so the public class is
         // never emitted at all — nothing generated becomes more visible than requested.
-        var publicModels   = new List<INamedTypeSymbol>();
-        var internalModels = new List<INamedTypeSymbol>();
+        var publicModels   = new List<ValidatedModelInfo>();
+        var internalModels = new List<ValidatedModelInfo>();
         foreach (var model in models)
-            (!isInternalMode && IsEffectivelyPublic(model) ? publicModels : internalModels).Add(model);
+            (!isInternalMode && model.IsEffectivelyPublic ? publicModels : internalModels).Add(model);
 
         if (publicModels.Count > 0)
         {
             ctx.AddSource(
                 "ZeroAlloc.Validation.ZeroAllocOptionsValidationExtensions.g.cs",
-                EmitExtensionsClass("public", "ZeroAllocOptionsValidationExtensions", publicModels, compilation));
+                EmitExtensionsClass("public", "ZeroAllocOptionsValidationExtensions", publicModels));
         }
 
         if (internalModels.Count > 0)
         {
             ctx.AddSource(
                 "ZeroAlloc.Validation.InternalZeroAllocOptionsValidationExtensions.g.cs",
-                EmitExtensionsClass("internal", "InternalZeroAllocOptionsValidationExtensions", internalModels, compilation));
+                EmitExtensionsClass("internal", "InternalZeroAllocOptionsValidationExtensions", internalModels));
         }
     }
 
-    private static string EmitExtensionsClass(string accessibility, string className, List<INamedTypeSymbol> models, Compilation compilation)
+    private static string EmitExtensionsClass(string accessibility, string className, List<ValidatedModelInfo> models)
     {
         var sb = new StringBuilder();
         sb.AppendLine("// <auto-generated />");
@@ -104,7 +108,7 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
         for (var i = 0; i < models.Count; i++)
         {
             var model    = models[i];
-            var modelFqn = model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var modelFqn = model.FullyQualifiedName;
 
             // model.Name, not modelFqn: a constructed generic name would put raw angle
             // brackets in the XML and raise CS1570.
@@ -115,7 +119,7 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
             sb.AppendLine($"        this global::Microsoft.Extensions.Options.OptionsBuilder<{modelFqn}> builder)");
             sb.AppendLine("    {");
             sb.AppendLine("        var services = builder.Services;");
-            ValidatorRegistrationEmitter.EmitRegistrations(sb, [model], compilation);
+            ValidatorRegistrationEmitter.AppendRegistrations(sb, [model]);
             sb.AppendLine($"        builder.Services.TryAddSingleton<global::Microsoft.Extensions.Options.IValidateOptions<{modelFqn}>,");
             sb.AppendLine($"            global::ZeroAlloc.Validation.Options.ZeroAllocOptionsValidator<{modelFqn}>>();");
             sb.AppendLine("        return builder;");
@@ -126,19 +130,5 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
 
         sb.AppendLine("}");
         return sb.ToString();
-    }
-
-    /// <summary>
-    /// True when <paramref name="type"/> and every type containing it are public, so the
-    /// type is visible outside its assembly.
-    /// </summary>
-    private static bool IsEffectivelyPublic(INamedTypeSymbol type)
-    {
-        for (INamedTypeSymbol? t = type; t is not null; t = t.ContainingType)
-        {
-            if (t.DeclaredAccessibility != Accessibility.Public)
-                return false;
-        }
-        return true;
     }
 }

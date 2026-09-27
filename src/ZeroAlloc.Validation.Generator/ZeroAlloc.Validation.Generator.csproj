@@ -58,6 +58,9 @@
     <!-- GeneratedValidatorReach decides which [Validate] models get a validator, issue #216. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedValidatorReach.cs"
              Link="Shared\GeneratedValidatorReach.cs" />
+    <!-- EquatableArray keeps the pipeline's models comparable by value, issue #209. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\EquatableArray.cs"
+             Link="Shared\EquatableArray.cs" />
   </ItemGroup>
 
   <!--

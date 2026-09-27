@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 
 namespace ZeroAlloc.Validation.Generator.Shared;
@@ -134,23 +133,5 @@ internal static class GeneratedValidatorReach
         }
 
         return compilation.IsSymbolAccessibleWithin(model, compilation.Assembly);
-    }
-
-    /// <summary>
-    /// The collected models that have a generated validator. A companion generator's transform
-    /// marks every other one as <see langword="null"/>.
-    /// </summary>
-    public static ImmutableArray<INamedTypeSymbol> WithGeneratedValidator(ImmutableArray<INamedTypeSymbol?> candidates)
-    {
-        if (candidates.IsDefaultOrEmpty)
-            return ImmutableArray<INamedTypeSymbol>.Empty;
-
-        var builder = ImmutableArray.CreateBuilder<INamedTypeSymbol>(candidates.Length);
-        foreach (var candidate in candidates)
-        {
-            if (candidate is not null)
-                builder.Add(candidate);
-        }
-        return builder.ToImmutable();
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
 using Microsoft.CodeAnalysis;
@@ -38,60 +39,139 @@ public static class ValidatorRegistrationEmitter
     /// </remarks>
     public static void EmitRegistrations(StringBuilder sb, IEnumerable<INamedTypeSymbol> models, Compilation compilation)
     {
-        var registered = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
-        var validateWith = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
-        var pending = new Queue<INamedTypeSymbol>();
+        var infos = new List<ValidatedModelInfo>();
+        foreach (var model in models)
+            infos.Add(ValidatedModelInfo.From(model, compilation));
+        AppendRegistrations(sb, infos);
+    }
+
+    /// <summary>
+    /// Appends the registrations <see cref="EmitRegistrations"/> describes, from models whose
+    /// registration graphs <see cref="RegistrationGraph"/> extracted, so the generators emit them
+    /// without a symbol or a compilation, issue #209. The models are registered first, in order,
+    /// then the validators their constructors take, breadth first, each once.
+    /// </summary>
+    internal static void AppendRegistrations(StringBuilder sb, IEnumerable<ValidatedModelInfo> models)
+    {
+        var nodes = new Dictionary<string, RegistrationNode>(StringComparer.Ordinal);
+        var registered = new HashSet<string>(StringComparer.Ordinal);
+        var validateWith = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Queue<RegistrationNode>();
 
         foreach (var model in models)
         {
-            if (registered.Add(model.OriginalDefinition))
+            foreach (var node in model.Registrations)
             {
-                AppendValidatorFor(sb, model, GeneratedValidatorNames.QualifiedValidatorName(model));
-                pending.Enqueue(model);
+                if (!nodes.ContainsKey(node.Key))
+                    nodes.Add(node.Key, node);
+            }
+
+            var root = model.Registrations[0];
+            if (registered.Add(root.Key))
+            {
+                sb.AppendLine(root.Registration);
+                pending.Enqueue(root);
             }
         }
 
         while (pending.Count > 0)
         {
-            foreach (var (_, type, isValidateWith, model) in ValidatorDependencies.Of(pending.Dequeue(), compilation))
+            foreach (var dependency in pending.Dequeue().Dependencies)
             {
-                if (isValidateWith)
+                if (dependency.IsValidateWith)
                 {
-                    if (IsConstructible(type, compilation) && validateWith.Add(type))
-                    {
-                        sb.AppendLine(
-                            $"        services.TryAddSingleton<{type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>();");
-                    }
+                    if (dependency.ValidateWithRegistration is { } line && validateWith.Add(dependency.Key))
+                        sb.AppendLine(line);
 
                     // [ValidateWith] naming a referenced assembly's generated validator for the
                     // property's own model: that validator's constructor takes the model's nested
                     // validators, so the model is followed too.
-                    if (model is not null
-                        && SymbolEqualityComparer.Default.Equals(type, ReferencedValidator(model, compilation)))
-                        Register(model);
+                    if (dependency.FollowedModelKey is { } followed)
+                        Register(followed);
                     continue;
                 }
 
-                Register(type);
+                Register(dependency.Key);
             }
         }
 
-        void Register(INamedTypeSymbol nested)
+        void Register(string key)
         {
-            if (registered.Contains(nested) || ValidatorNameIfAccessible(nested, compilation) is not { } validatorName)
+            if (registered.Contains(key) || nodes[key].Registration is not { } line)
                 return;
 
-            registered.Add(nested);
-            AppendValidatorFor(sb, nested, validatorName);
-            pending.Enqueue(nested);
+            registered.Add(key);
+            sb.AppendLine(line);
+            pending.Enqueue(nodes[key]);
         }
     }
 
-    private static void AppendValidatorFor(StringBuilder sb, INamedTypeSymbol model, string validatorFqn)
+    /// <summary>
+    /// The registrations <paramref name="model"/> needs, as data: its own node first, then one per
+    /// model its validator's constructor takes, transitively, in the order they are reached. A
+    /// model this compilation cannot name the validator of gets a node without a registration and
+    /// is not followed.
+    /// </summary>
+    internal static EquatableArray<RegistrationNode> RegistrationGraph(INamedTypeSymbol model, Compilation compilation)
+    {
+        var nodes = new List<RegistrationNode>();
+        var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default) { model.OriginalDefinition };
+        var pending = new Queue<(INamedTypeSymbol Model, string? Registration)>();
+        pending.Enqueue((model, ValidatorForLine(model, GeneratedValidatorNames.QualifiedValidatorName(model))));
+
+        while (pending.Count > 0)
+        {
+            var (current, registration) = pending.Dequeue();
+            if (registration is null)
+            {
+                nodes.Add(new RegistrationNode(Key(current), null, EquatableArray<RegistrationDependency>.Empty));
+                continue;
+            }
+
+            var dependencies = new List<RegistrationDependency>();
+            foreach (var (_, type, isValidateWith, nestedModel) in ValidatorDependencies.Of(current, compilation))
+            {
+                if (!isValidateWith)
+                {
+                    dependencies.Add(new RegistrationDependency(false, Visit(type), null, null));
+                    continue;
+                }
+
+                var line = IsConstructible(type, compilation)
+                    ? $"        services.TryAddSingleton<{type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>();"
+                    : null;
+                var followed = nestedModel is not null
+                    && SymbolEqualityComparer.Default.Equals(type, ReferencedValidator(nestedModel, compilation))
+                        ? Visit(nestedModel)
+                        : null;
+                dependencies.Add(new RegistrationDependency(true, Key(type), line, followed));
+            }
+
+            nodes.Add(new RegistrationNode(Key(current), registration, EquatableArray.From(dependencies)));
+        }
+
+        return EquatableArray.From(nodes);
+
+        string Visit(INamedTypeSymbol nested)
+        {
+            if (seen.Add(nested))
+            {
+                var validatorName = ValidatorNameIfAccessible(nested, compilation);
+                pending.Enqueue((nested, validatorName is null ? null : ValidatorForLine(nested, validatorName)));
+            }
+            return Key(nested);
+        }
+    }
+
+    // A type's identity across compilations: its assembly and fully qualified name, which tell
+    // apart the same types SymbolEqualityComparer.Default does.
+    private static string Key(INamedTypeSymbol type) =>
+        type.ContainingAssembly?.Identity.Name + "|" + type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+    private static string ValidatorForLine(INamedTypeSymbol model, string validatorFqn)
     {
         var modelFqn = model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        sb.AppendLine(
-            $"        services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<{modelFqn}>, {validatorFqn}>();");
+        return $"        services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<{modelFqn}>, {validatorFqn}>();";
     }
 
     /// <summary>
