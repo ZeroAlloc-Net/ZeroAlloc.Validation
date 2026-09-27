@@ -173,10 +173,12 @@ internal static class MethodCallProbe
 
     /// <summary>
     /// The compiler's own message for reading <paramref name="property"/>, which
-    /// <see cref="CertainCall.IsObsoleteError"/> has already found <c>[Obsolete(error: true)]</c>.
-    /// Pragma cannot suppress the CS0619 that read raises, unlike CS0612 and CS0618, so no rule
-    /// the generated validator emits for <paramref name="property"/> ever reads it; ZV0032
-    /// reports this message as an error at the rule's attribute instead. Asked for in a
+    /// <see cref="ObsoleteErrors.IsObsoleteError"/> has already found <c>[Obsolete(error: true)]</c>.
+    /// Pragma cannot suppress the CS0619 that read raises, unlike CS0612 and CS0618, so no rule,
+    /// nested validation or collection validation the generated validator emits for
+    /// <paramref name="property"/> ever reads it; ZV0032 reports this message as an error
+    /// instead, at the rule's attribute or, for a nested or collection validation, at the
+    /// property. Asked for in a
     /// throwaway probe, once per property, so the wording is exactly what the generated file
     /// would have said.
     /// </summary>
@@ -215,7 +217,7 @@ internal static class MethodCallProbe
                 return diagnostic.GetMessage(CultureInfo.InvariantCulture);
         }
 
-        // CertainCall.IsObsoleteError already found the attribute; this is only a fallback for
+        // ObsoleteErrors.IsObsoleteError already found the attribute; this is only a fallback for
         // an ObsoleteAttribute shape the probe could not reproduce.
         return $"'{property.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat)}' is obsolete.";
     }

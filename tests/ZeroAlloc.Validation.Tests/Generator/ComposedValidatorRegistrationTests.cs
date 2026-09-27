@@ -339,6 +339,48 @@ public class ComposedValidatorRegistrationTests
             "services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.Line>, global::MyApp.LineValidator>();"));
     }
 
+    [Fact]
+    public void ObsoleteErrorProperties_TheirValidatorsAreNotRegistered()
+    {
+        // Issue #267: the generated validator leaves an [Obsolete(error: true)] nested or
+        // collection property out, constructor parameter included, so the glue registers no
+        // validator for it: neither a [ValidateWith] validator nor a referenced model's.
+        var library = """
+            using ZeroAlloc.Validation;
+            namespace Lib;
+            [Validate] public class Address { [NotEmpty] public string City { get; set; } = ""; }
+            """;
+        var application = """
+            using System;
+            using System.Collections.Generic;
+            using ZeroAlloc.Validation;
+            namespace MyApp;
+            public class Money { public decimal Amount { get; set; } }
+            public sealed class MoneyChecker : ValidatorFor<Money>
+            {
+                public override ValidationResult Validate(Money instance) =>
+                    new ValidationResult(System.Array.Empty<ValidationFailure>());
+            }
+            [Validate] public class Order
+            {
+                [NotEmpty] public string Code { get; set; } = "";
+                [Obsolete("gone", error: true)] public Lib.Address Ship { get; set; } = new();
+                [Obsolete("gone", error: true)] public List<Lib.Address> Stops { get; set; } = new();
+                [Obsolete("gone", error: true)][ValidateWith(typeof(MoneyChecker))] public Money Total { get; set; } = new();
+            }
+            """;
+
+        var (output, registration, diagnostics) = RunWithDiagnostics(application, "TestAssembly", CompileLibrary(library));
+
+        Assert.Empty(Errors(output));
+        Assert.Equal(3, diagnostics.Count(d => string.Equals(d.Id, "ZV0032", StringComparison.Ordinal)));
+        Assert.DoesNotContain("Lib.Address", registration, StringComparison.Ordinal);
+        Assert.DoesNotContain("MoneyChecker", registration, StringComparison.Ordinal);
+        Assert.Equal(1, Occurrences(
+            registration,
+            "services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.Order>, global::MyApp.OrderValidator>();"));
+    }
+
     private static MetadataReference CompileLibrary(string source) => CompileLibraryImage(source, "Lib").Reference;
 
     /// <summary>

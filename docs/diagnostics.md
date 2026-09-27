@@ -803,6 +803,7 @@ That is the only pragma of this kind the generator writes, and a call that does 
 
 - a property marked `[Obsolete(..., error: true)]`, or whose getter or overridden property is. Every rule on it is left out: a built-in rule that reads it in its condition, a `[Must]` predicate and a custom rule that are given its value as their argument.
 - a `[CustomValidation]` method marked `[Obsolete(..., error: true)]`. Its call and the loop over its failures are left out, and the model's other rules and `[CustomValidation]` methods still run.
+- a nested or collection property marked `[Obsolete(..., error: true)]`, or whose getter or overridden property is: one whose type or element type is a `[Validate]` model, or that has `[ValidateWith]`. The generated validator would read it to hand it to the nested validator, so its nested or collection validation is left out, and the validator takes no validator for it in its constructor, so the DI registration registers none either. There is no rule attribute to report at, so ZV0032 is reported at the property, made for `nested validation of 'Home'` or `collection validation of 'Homes'`. A rule on the same property, such as `[NotNull]`, still gets its own ZV0032 at its attribute.
 - any other call the generated validator makes for a rule that the compiler reports CS0619 on.
 
 A `[Must]` predicate, `When`, `Unless` or `[SkipWhen]` method that is itself `[Obsolete(..., error: true)]` does not compile as a call, so it is reported as [ZV0030](#zv0030) and left out, not as ZV0032.
@@ -818,6 +819,9 @@ public class Order
     [CustomValidation]                           // ZV0032, Error — CS0619, Check is obsolete as an error
     [Obsolete("Use CheckAll.", error: true)]
     public ValidationFailure[] Check() => [];
+
+    [Obsolete("Use Addresses.", error: true)]
+    public Address? Home { get; set; }           // ZV0032, Error, at Home — CS0619, nested validation of 'Home'
 
     public bool IsKnownCode(string code) => code.Length == 3;
 }

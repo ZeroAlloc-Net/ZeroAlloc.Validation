@@ -453,7 +453,7 @@ internal static class RuleEmitter
         var propAccess = BuildPropertyAccess(modelParamName, prop);
         var rawPropAccess = GeneratedCalls.RawPropertyAccess(modelParamName, prop);
         var stopMode = HasStopOnFirstFailure(prop, classSymbol);
-        var obsoleteError = CertainCall.IsObsoleteError(prop);
+        var obsoleteError = ObsoleteErrors.IsObsoleteError(prop);
 
         ReportZV0016IfApplicable(ctx, prop, rules);
 
@@ -725,7 +725,7 @@ internal static class RuleEmitter
         var propAccess = BuildPropertyAccess(modelParamName, prop);
         var rawPropAccess = GeneratedCalls.RawPropertyAccess(modelParamName, prop);
         var stopMode = HasStopOnFirstFailure(prop, classSymbol);
-        var obsoleteError = CertainCall.IsObsoleteError(prop);
+        var obsoleteError = ObsoleteErrors.IsObsoleteError(prop);
 
         ReportZV0016IfApplicable(ctx, prop, rules);
 
@@ -1014,7 +1014,7 @@ internal static class RuleEmitter
         {
             // A property that is [Obsolete(error: true)] gets no rule emitted for it at all: its
             // condition becomes the literal false, so nothing about it is ever probed.
-            if (member is not IPropertySymbol prop || CertainCall.IsObsoleteError(prop)) continue;
+            if (member is not IPropertySymbol prop || ObsoleteErrors.IsObsoleteError(prop)) continue;
 
             // Only [Must] and custom rules emit no null test of their own; every other rule may.
             bool nullTested = false;
@@ -1120,7 +1120,7 @@ internal static class RuleEmitter
 
     /// <summary>
     /// Every rule of <paramref name="classSymbol"/> whose property
-    /// <see cref="CertainCall.IsObsoleteError"/> finds <c>[Obsolete(error: true)]</c>: pragma
+    /// <see cref="ObsoleteErrors.IsObsoleteError"/> finds <c>[Obsolete(error: true)]</c>: pragma
     /// cannot suppress the CS0619 a read of it would raise, unlike CS0612 and CS0618, so
     /// <see cref="EmitPropertyRulesForProp"/> and <see cref="EmitFlatPathPropertyRules"/> never
     /// emit a rule for it at all, and this is reported as ZV0032 instead, an error, at the
@@ -1131,7 +1131,7 @@ internal static class RuleEmitter
     {
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
-            if (member is not IPropertySymbol prop || !CertainCall.IsObsoleteError(prop)) continue;
+            if (member is not IPropertySymbol prop || !ObsoleteErrors.IsObsoleteError(prop)) continue;
 
             foreach (var attr in prop.GetAttributes())
             {
@@ -1139,6 +1139,31 @@ internal static class RuleEmitter
                 var rule = ShortAttributeName(attr);
                 yield return (attr, prop, GeneratedCalls.RawPropertyAccess(MethodCallProbe.Model, prop), $"[{rule}] on '{prop.Name}'");
             }
+        }
+    }
+
+    /// <summary>
+    /// Every nested or collection property of <paramref name="classSymbol"/> that
+    /// <see cref="ObsoleteErrors.IsObsoleteError"/> finds <c>[Obsolete(error: true)]</c>. The
+    /// generated validator would read it to hand it to the nested validator, and pragma cannot
+    /// suppress the CS0619 that read raises, so <see cref="GetNestedValidateProperties"/> and
+    /// <see cref="GetCollectionValidateProperties"/> leave it out, validator field and
+    /// constructor parameter included, and this is reported as ZV0032 instead, an error, at the
+    /// property, issue #267. A rule on the same property is reported by
+    /// <see cref="ObsoleteErrorRules"/>, at the rule's attribute.
+    /// </summary>
+    public static IEnumerable<(IPropertySymbol Property, string RawAccess, string Usage)> ObsoleteErrorNestedReads(
+        INamedTypeSymbol classSymbol, Compilation compilation)
+    {
+        foreach (var prop in NestedValidateCandidates(classSymbol, compilation))
+        {
+            if (ObsoleteErrors.IsObsoleteError(prop))
+                yield return (prop, GeneratedCalls.RawPropertyAccess(MethodCallProbe.Model, prop), $"nested validation of '{prop.Name}'");
+        }
+        foreach (var (prop, _) in CollectionValidateCandidates(classSymbol, compilation))
+        {
+            if (ObsoleteErrors.IsObsoleteError(prop))
+                yield return (prop, GeneratedCalls.RawPropertyAccess(MethodCallProbe.Model, prop), $"collection validation of '{prop.Name}'");
         }
     }
 
@@ -1586,7 +1611,16 @@ internal static class RuleEmitter
     private static INamedTypeSymbol? GetValidateWithType(IPropertySymbol prop) =>
         ValidatorDependencies.ValidateWithType(prop);
 
+    /// <summary>
+    /// The properties the generated validator validates through a nested validator. One that
+    /// <see cref="ObsoleteErrors.IsObsoleteError"/> finds <c>[Obsolete(error: true)]</c> is left
+    /// out, since pragma cannot suppress the CS0619 its read would raise, and
+    /// <see cref="ObsoleteErrorNestedReads"/> reports it as ZV0032 instead, issue #267.
+    /// </summary>
     private static IEnumerable<IPropertySymbol> GetNestedValidateProperties(INamedTypeSymbol classSymbol, Compilation compilation) =>
+        NestedValidateCandidates(classSymbol, compilation).Where(p => !ObsoleteErrors.IsObsoleteError(p));
+
+    private static IEnumerable<IPropertySymbol> NestedValidateCandidates(INamedTypeSymbol classSymbol, Compilation compilation) =>
         MemberWalker.GetMembersIncludingBase(classSymbol, compilation)
             .OfType<IPropertySymbol>()
             // First arm: type has [Validate] (auto-compose) — also covers the overlap where [ValidateWith] is present on a [Validate] type; [ValidateWith] wins in CollectNestedValidatorFields.
@@ -1607,7 +1641,15 @@ internal static class RuleEmitter
     private static ITypeSymbol? GetCollectionElementType(IPropertySymbol prop) =>
         ValidatorDependencies.CollectionElementType(prop.Type);
 
+    /// <summary>
+    /// The properties the generated validator validates element by element. As for
+    /// <see cref="GetNestedValidateProperties"/>, an <c>[Obsolete(error: true)]</c> one is left
+    /// out and reported by <see cref="ObsoleteErrorNestedReads"/>, issue #267.
+    /// </summary>
     private static IEnumerable<(IPropertySymbol Property, INamedTypeSymbol ElementType)> GetCollectionValidateProperties(INamedTypeSymbol classSymbol, Compilation compilation) =>
+        CollectionValidateCandidates(classSymbol, compilation).Where(x => !ObsoleteErrors.IsObsoleteError(x.Property));
+
+    private static IEnumerable<(IPropertySymbol Property, INamedTypeSymbol ElementType)> CollectionValidateCandidates(INamedTypeSymbol classSymbol, Compilation compilation) =>
         MemberWalker.GetMembersIncludingBase(classSymbol, compilation)
             .OfType<IPropertySymbol>()
             .Select(p =>

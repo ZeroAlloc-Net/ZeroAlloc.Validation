@@ -15,7 +15,9 @@ namespace ZeroAlloc.Validation.Generator.Shared;
 /// <para>
 /// The properties are the ones <see cref="MemberWalker.GetMembersIncludingBase"/> yields: hidden
 /// members, base members under <c>[Validate(IncludeBaseProperties = false)]</c>, and members the
-/// validator cannot read or reach are left out, exactly as for every rule.
+/// validator cannot read or reach are left out, exactly as for every rule. So is a property
+/// <see cref="ObsoleteErrors.IsObsoleteError"/> finds <c>[Obsolete(error: true)]</c>, whose
+/// read would raise CS0619 in the generated file, issue #267.
 /// </para>
 /// <para>
 /// A property with <c>[ValidateWith(typeof(X))]</c> is validated by <c>X</c>, and the constructor
@@ -52,7 +54,10 @@ internal static class ValidatorDependencies
         var result = new List<(IPropertySymbol, INamedTypeSymbol, bool, INamedTypeSymbol?)>();
         foreach (var member in MemberWalker.GetMembersIncludingBase(model, compilation))
         {
-            if (member is not IPropertySymbol prop)
+            // Reading an [Obsolete(error: true)] property raises CS0619, which pragma cannot
+            // suppress, so the generated validator never validates it and takes no validator for
+            // it, issue #267; ZV0032 reports it instead.
+            if (member is not IPropertySymbol prop || ObsoleteErrors.IsObsoleteError(prop))
                 continue;
 
             var validated = ValidatedModel(prop, compilation);

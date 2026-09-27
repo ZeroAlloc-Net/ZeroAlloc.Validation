@@ -631,6 +631,165 @@ public class MirroredCallWarningTests
         EmitSucceeds(output);
     }
 
+    private const string Address = """
+        [Validate] public class Address { [NotEmpty] public string? Street { get; set; } }
+
+        public class Money { public decimal Amount { get; set; } }
+
+        public sealed class MoneyChecker : ValidatorFor<Money>
+        {
+            public override ValidationResult Validate(Money instance) =>
+                new ValidationResult(Array.Empty<ValidationFailure>());
+        }
+
+        """;
+
+    /// <summary>
+    /// Issue #267: a nested or collection property that is <c>[Obsolete(error: true)]</c> was read
+    /// by the generated validator to hand it to the nested validator, and that read leaked CS0619
+    /// into the generated file with no ZeroAlloc diagnostic. The property is now left out of the
+    /// validator, field and constructor parameter included, and ZV0032 reports the compiler's own
+    /// message as an error at the property. An error-level getter counts the same, and so does a
+    /// <c>[ValidateWith]</c> property.
+    /// </summary>
+    [Theory]
+    [InlineData("[Obsolete(\"gone\", error: true)] public Address? Home { get; set; }",
+        "Home", "nested validation of 'Home'", "'Request.Home' is obsolete: 'gone'")]
+    [InlineData("[Obsolete(\"gone\", error: true)] public List<Address> Homes { get; set; } = new();",
+        "Homes", "collection validation of 'Homes'", "'Request.Homes' is obsolete: 'gone'")]
+    [InlineData("[Obsolete(\"gone\", error: true)] public Address[] Homes { get; set; } = Array.Empty<Address>();",
+        "Homes", "collection validation of 'Homes'", "'Request.Homes' is obsolete: 'gone'")]
+    [InlineData("public Address? Home { [Obsolete(\"gone\", error: true)] get; set; }",
+        "Home", "nested validation of 'Home'", "'Request.Home.get' is obsolete: 'gone'")]
+    [InlineData("[ValidateWith(typeof(MoneyChecker))][Obsolete(\"gone\", error: true)] public Money Total { get; set; } = new();",
+        "Total", "nested validation of 'Total'", "'Request.Total' is obsolete: 'gone'")]
+    [InlineData("[ValidateWith(typeof(MoneyChecker))][Obsolete(\"gone\", error: true)] public List<Money> Totals { get; set; } = new();",
+        "Totals", "collection validation of 'Totals'", "'Request.Totals' is obsolete: 'gone'")]
+    public void Obsolete_error_nested_or_collection_property_is_left_out_and_reported(
+        string property, string name, string usage, string compilerMessage)
+    {
+        var source = Prelude + Address + $$"""
+            [Validate]
+            public class Request
+            {
+                [NotEmpty] public string? Code { get; set; }
+
+                {{property}}
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        var zv0032 = SingleZV0032(result);
+        Assert.Equal(DiagnosticSeverity.Error, zv0032.Severity);
+        Assert.Equal(name, SpanText(zv0032));
+        Assert.Equal(
+            $"The generated validator's call 'instance.{name}', made for {usage}, raises CS0619: {compilerMessage}",
+            zv0032.GetMessage(CultureInfo.InvariantCulture));
+        Assert.Equal(result.Diagnostics.Length, WithId(result, "ZV0032").Length);
+
+        // No read, no validator field and no constructor parameter for it: the Probe's
+        // parameterless "new RequestValidator()" compiles only without that parameter.
+        var generated = GeneratedValidator(result);
+        Assert.DoesNotContain($"instance.{name}", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("Validator _", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("#pragma warning disable CS", generated, StringComparison.Ordinal);
+        Assert.Empty(GeneratedWarnings(result, output));
+        Assert.DoesNotContain(output.GetDiagnostics(), d => string.Equals(d.Id, "CS0619", StringComparison.Ordinal));
+        Assert.Equal(["Code"], FailedProperties(output));
+    }
+
+    /// <summary>
+    /// Issue #267: a rule on an <c>[Obsolete(error: true)]</c> nested property keeps its own
+    /// ZV0032 at the rule's attribute, as issue #255 made it, and the nested validation gets its
+    /// own at the property.
+    /// </summary>
+    [Fact]
+    public void Obsolete_error_nested_property_with_a_rule_reports_both_usages()
+    {
+        var source = Prelude + Address + """
+            [Validate]
+            public class Request
+            {
+                [NotNull]
+                [Obsolete("gone", error: true)]
+                public Address? Home { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        var reported = WithId(result, "ZV0032").OrderBy(d => d.Location.SourceSpan.Start).ToArray();
+        Assert.Equal(result.Diagnostics.Length, reported.Length);
+        Assert.Equal(2, reported.Length);
+        Assert.All(reported, d => Assert.Equal(DiagnosticSeverity.Error, d.Severity));
+        Assert.Equal("NotNull", SpanText(reported[0]));
+        Assert.Contains("made for [NotNull] on 'Home'", reported[0].GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        Assert.Equal("Home", SpanText(reported[1]));
+        Assert.Contains("made for nested validation of 'Home'", reported[1].GetMessage(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+
+        Assert.DoesNotContain("instance.Home", GeneratedValidator(result), StringComparison.Ordinal);
+        Assert.Empty(GeneratedWarnings(result, output));
+        Assert.Empty(FailedProperties(output));
+    }
+
+    /// <summary>
+    /// Issue #267: an <c>[Obsolete(error: true)]</c> nested property on a <c>[Validate]</c> base
+    /// type is left out of both validators, and reported once, by the base type's own validator.
+    /// </summary>
+    [Fact]
+    public void Obsolete_error_nested_property_on_a_validated_base_is_reported_once()
+    {
+        var source = Prelude + Address + """
+            [Validate]
+            public class RequestBase
+            {
+                [Obsolete("gone", error: true)]
+                public List<Address> Homes { get; set; } = new();
+            }
+
+            [Validate]
+            public class Request : RequestBase
+            {
+                [NotEmpty] public string? Code { get; set; }
+            }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        var zv0032 = SingleZV0032(result);
+        Assert.Equal(DiagnosticSeverity.Error, zv0032.Severity);
+        Assert.Equal(result.Diagnostics.Length, WithId(result, "ZV0032").Length);
+        Assert.DoesNotContain("instance.Homes", GeneratedValidator(result), StringComparison.Ordinal);
+        Assert.Empty(GeneratedWarnings(result, output));
+        Assert.Equal(["Code"], FailedProperties(output));
+    }
+
+    /// <summary>
+    /// Issue #267: a warning-level <c>[Obsolete]</c> nested or collection property is still
+    /// validated through its validator, as before; only an error-level one is left out.
+    /// </summary>
+    [Theory]
+    [InlineData("[Obsolete] public Address? Home { get; set; }", "_homeValidator.Validate(instance.Home)")]
+    [InlineData("[Obsolete(\"use another\")] public List<Address> Homes { get; set; } = new();", "_homesValidator")]
+    public void Obsolete_warning_nested_or_collection_property_is_still_validated(string property, string expected)
+    {
+        var source = Prelude + Address + $$"""
+            [Validate]
+            public class Request
+            {
+                {{property}}
+            }
+            """;
+
+        var (result, _) = RunGenerator(source);
+
+        Assert.DoesNotContain(result.Diagnostics, d => d.Severity == DiagnosticSeverity.Error);
+        var generated = GeneratedValidator(result);
+        Assert.Contains(expected, generated, StringComparison.Ordinal);
+        Assert.Contains("global::ZeroAlloc.Validation.ValidatorFor<global::TestModels.Address>", generated, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// Issue #255: a model with no obsolete member at all takes exactly the path it did before —
     /// no ZV0032, no pragma, no literal <c>false</c> condition.
