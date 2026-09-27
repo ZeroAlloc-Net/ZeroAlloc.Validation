@@ -152,54 +152,6 @@ internal static class CertainCall
         return false;
     }
 
-    /// <summary>
-    /// Whether <paramref name="property"/>, or a property it overrides, is
-    /// <c>[Obsolete(message, error: true)]</c>. Unlike CS0612 and CS0618, pragma cannot suppress
-    /// the CS0619 an obsolete-as-error read raises, so a rule that would read
-    /// <paramref name="property"/> is left out of the generated file entirely, and ZV0032
-    /// reports the compiler's own message as an error, once, at the rule's attribute.
-    /// </summary>
-    public static bool IsObsoleteError(IPropertySymbol property)
-    {
-        for (IPropertySymbol? current = property; current is not null; current = current.OverriddenProperty)
-        {
-            foreach (var attr in current.GetAttributes())
-            {
-                if (IsObsoleteErrorAttribute(attr)) return true;
-            }
-            if (current.GetMethod is { } getter)
-            {
-                foreach (var attr in getter.GetAttributes())
-                {
-                    if (IsObsoleteErrorAttribute(attr)) return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// Whether <paramref name="attr"/> is <c>[Obsolete(..., error: true)]</c>. The <c>error</c>
-    /// argument, named or positional, is found by parameter name on the constructor the attribute
-    /// resolved to, so it does not depend on which <c>ObsoleteAttribute</c> overload was written.
-    /// </summary>
-    private static bool IsObsoleteErrorAttribute(AttributeData attr)
-    {
-        if (!string.Equals(attr.AttributeClass?.ToDisplayString(), "System.ObsoleteAttribute", System.StringComparison.Ordinal))
-            return false;
-
-        var parameters = attr.AttributeConstructor?.Parameters;
-        if (parameters is null) return false;
-
-        var arguments = attr.ConstructorArguments;
-        for (int i = 0; i < parameters.Value.Length && i < arguments.Length; i++)
-        {
-            if (string.Equals(parameters.Value[i].Name, "error", System.StringComparison.Ordinal))
-                return arguments[i].Value is true;
-        }
-        return false;
-    }
-
     private static bool HasFlaggedAttribute(System.Collections.Immutable.ImmutableArray<AttributeData> attributes)
     {
         foreach (var attr in attributes)

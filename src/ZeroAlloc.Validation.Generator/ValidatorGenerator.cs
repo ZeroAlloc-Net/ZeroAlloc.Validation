@@ -187,7 +187,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             + "and the generated call is wrapped in a pragma for exactly that warning. Otherwise it "
             + "would fail a TreatWarningsAsErrors build in a file the user cannot edit. CS0619, the "
             + "use of an [Obsolete(error: true)] member, is an error that pragma cannot suppress, so "
-            + "that call is left out of the generated validator and reported here as an error.");
+            + "that call is left out of the generated validator and reported here as an error. A "
+            + "nested or collection property that is [Obsolete(error: true)] is not validated either, "
+            + "and the validator takes no validator for it; that is reported at the property.");
 
     private static readonly DiagnosticDescriptor ZV0029 = new DiagnosticDescriptor(
         id: "ZV0029",
@@ -739,6 +741,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         ReportSkipWhenDiagnostics(ctx, classSymbol, compilation);
         ReportMirroredCallWarnings(ctx, classSymbol, compilation);
         ReportObsoleteErrorRuleReads(ctx, classSymbol, compilation);
+        ReportObsoleteErrorNestedReads(ctx, classSymbol, compilation);
         ReportDuplicateRuleAttributeDiagnostics(ctx, classSymbol, compilation);
         ReportUnreadValidationAttributeDiagnostics(ctx, classSymbol, compilation);
     }
@@ -1253,6 +1256,31 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
             ctx.ReportWithSeverity(ZV0032,
                 AttributeLocation(attr, prop, classSymbol),
+                DiagnosticSeverity.Error,
+                rawAccess,
+                usage,
+                "CS0619",
+                MethodCallProbe.ObsoleteErrorMessage(compilation, prop));
+        }
+    }
+
+    /// <summary>
+    /// ZV0032 for a nested or collection property that is <c>[Obsolete(error: true)]</c>, from
+    /// <see cref="RuleEmitter.ObsoleteErrorNestedReads"/>, issue #267. Pragma cannot suppress the
+    /// CS0619 the generated validator's read of it would raise, so the validator leaves its
+    /// nested validation out, validator field and constructor parameter included, and the
+    /// compiler's own message for the read is reported here instead, as an error, at the
+    /// property: there is no rule attribute to report it at. A property declared on a
+    /// <c>[Validate]</c> base type is reported by that type's validator, so it is reported once.
+    /// </summary>
+    private static void ReportObsoleteErrorNestedReads(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    {
+        foreach (var (prop, rawAccess, usage) in RuleEmitter.ObsoleteErrorNestedReads(classSymbol, compilation))
+        {
+            if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, prop.ContainingType)) continue;
+
+            ctx.ReportWithSeverity(ZV0032,
+                prop.Locations.FirstOrDefault(l => l.IsInSource) ?? FindValidateAttributeLocation(classSymbol),
                 DiagnosticSeverity.Error,
                 rawAccess,
                 usage,

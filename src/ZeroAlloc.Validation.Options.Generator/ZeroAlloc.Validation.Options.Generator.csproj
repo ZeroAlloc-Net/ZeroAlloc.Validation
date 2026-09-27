@@ -36,6 +36,10 @@
          ValidatorRegistrationEmitter can register them too, issue #246. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\ValidatorDependencies.cs"
              Link="Shared\ValidatorDependencies.cs" />
+    <!-- ObsoleteErrors finds [Obsolete(error: true)] properties, which ValidatorDependencies
+         leaves out of the constructor, issue #267. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\ObsoleteErrors.cs"
+             Link="Shared\ObsoleteErrors.cs" />
     <!-- MemberWalker decides which properties a generated validator walks, so the dependencies
          listed are exactly the ones its constructor takes, issue #246. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\MemberWalker.cs"
