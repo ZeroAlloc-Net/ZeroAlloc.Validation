@@ -577,6 +577,13 @@ internal static class MethodCallProbe
     /// <paramref name="model"/> is the model's type as the probe compilation sees it, and
     /// <paramref name="ambiguous"/> whether the call fails with CS0121. The compiler reports an
     /// ambiguous call as an overload resolution failure too, so the error tells them apart.
+    /// <para>
+    /// This only covers another generator adding an instance overload to a <c>partial</c> type,
+    /// via <see cref="GeneratorCanAddMembers"/>. An extension method compiles for any model,
+    /// <c>partial</c> or not, once no instance method is applicable, so ZV0030 is still reported
+    /// beside one added to a non-partial model: covering that too would mean never reporting an
+    /// argument error on any model. Documented limitation, issue #262.
+    /// </para>
     /// </summary>
     private static bool OverloadMayBeAdded(SymbolInfo symbolInfo, ITypeSymbol model, bool ambiguous)
     {
@@ -634,6 +641,12 @@ internal static class MethodCallProbe
     /// <summary>
     /// ZV0028's cases: CS0176, a static method, and CS0122, one the validator cannot access. An
     /// inaccessible instance method on a base type is ZV0017's case instead.
+    /// <para>
+    /// Unlike <see cref="OverloadMayBeAdded"/>, this is reported even when the model is
+    /// <c>partial</c>: relaxing it there too would take ZV0028 away from a rule method that is
+    /// merely private or static, a common mistake, in exchange for a rare interaction with
+    /// another generator. Documented limitation, issue #262.
+    /// </para>
     /// </summary>
     private static MethodResolution Unreachable(string id, IMethodSymbol? method, INamedTypeSymbol model)
     {
