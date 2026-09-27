@@ -21,7 +21,7 @@ public ref struct FailureBuffer
         _count = 0;
     }
 
-    public int Count => _count;
+    public readonly int Count => _count;
 
     public void Add(in global::ZeroAlloc.Validation.ValidationFailure f)
     {
