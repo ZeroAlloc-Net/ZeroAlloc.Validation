@@ -34,13 +34,17 @@ public sealed class PackedFeed : IDisposable
         // A private artifacts path keeps this rebuild out of the repository's own bin and
         // obj. The release workflow packs with --no-build after the tests have run, so
         // anything written there by a test would be what ships.
+        //
+        // -p:Version, not -p:PackageVersion: this pack rebuilds, and PackageVersion alone
+        // labels the package without stamping the assembly, which the version guard in
+        // Directory.Build.props rejects. See ZeroAlloc-Net/.github#36.
         var artifacts = Path.Combine(_workDir, "artifacts");
 
         foreach (var project in s_packedProjects)
         {
             var csproj = Path.Combine(repoRoot, project);
             var pack = RunDotnet(
-                $"pack \"{csproj}\" -c Release -p:PackageVersion={Version} --artifacts-path \"{artifacts}\" -o \"{_feed}\"",
+                $"pack \"{csproj}\" -c Release -p:Version={Version} --artifacts-path \"{artifacts}\" -o \"{_feed}\"",
                 repoRoot);
             if (pack.ExitCode != 0)
                 throw new InvalidOperationException($"Packing {project} failed.\n{pack.Output}");
