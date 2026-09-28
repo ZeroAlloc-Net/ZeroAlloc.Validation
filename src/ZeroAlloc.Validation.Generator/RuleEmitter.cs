@@ -1389,32 +1389,36 @@ internal static class RuleEmitter
             return "!" + GeneratedCalls.RuleCall(field, rawForPredicate);
         }
 
+        // The type of the value the rule reads: for a single-property [ValueObject] that is the
+        // unwrapped member, which access already reads through.
+        var valueType = ValueTypeOf(propType);
+
         return fqn switch
         {
             NotNullFqn               => $"{access} is null",
             NotEmptyFqn              => BuildNotEmptyCondition(access, propType),
             MinLengthFqn             => GuardAgainstNull(access, propType, $"{access}.Length < {GetIntArg(attr, 0)}"),
             MaxLengthFqn             => GuardAgainstNull(access, propType, $"{access}.Length > {GetIntArg(attr, 0)}"),
-            GreaterThanFqn           => $"System.Convert.ToDouble({access}) <= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
-            LessThanFqn              => $"System.Convert.ToDouble({access}) >= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
-            InclusiveBetweenFqn      => $"System.Convert.ToDouble({access}) < {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)} || System.Convert.ToDouble({access}) > {GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture)}",
-            GreaterThanOrEqualToFqn  => $"System.Convert.ToDouble({access}) < {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
-            LessThanOrEqualToFqn     => $"System.Convert.ToDouble({access}) > {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
-            ExclusiveBetweenFqn      => $"System.Convert.ToDouble({access}) <= {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)} || System.Convert.ToDouble({access}) >= {GetDoubleArg(attr, 1).ToString(CultureInfo.InvariantCulture)}",
+            GreaterThanFqn           => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) <= {Number(attr, 0)}"),
+            LessThanFqn              => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) >= {Number(attr, 0)}"),
+            InclusiveBetweenFqn      => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) < {Number(attr, 0)} || System.Convert.ToDouble({v}) > {Number(attr, 1)}"),
+            GreaterThanOrEqualToFqn  => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) < {Number(attr, 0)}"),
+            LessThanOrEqualToFqn     => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) > {Number(attr, 0)}"),
+            ExclusiveBetweenFqn      => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) <= {Number(attr, 0)} || System.Convert.ToDouble({v}) >= {Number(attr, 1)}"),
             LengthFqn                => GuardAgainstNull(access, propType, $"{access}.Length < {GetIntArg(attr, 0)} || {access}.Length > {GetIntArg(attr, 1)}"),
             EmailAddressFqn          => $"!global::ZeroAlloc.Validation.Internal.EmailValidator.IsValid({access})",
             MatchesFqn               => BuildMatchesCondition(access, propName, attr, fields),
             NullFqn                  => $"{access} is not null",
             EmptyFqn                 => $"!string.IsNullOrEmpty({access})",
             EqualFqn                 => IsStringArg(attr, 0)
-                ? $"{access} != \"{EscapeString(GetStringArg(attr, 0))}\""
-                : $"System.Convert.ToDouble({access}) != {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
+                ? GuardAgainstNull(access, valueType, $"{access} != \"{EscapeString(GetStringArg(attr, 0))}\"")
+                : CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) != {Number(attr, 0)}"),
             NotEqualFqn              => IsStringArg(attr, 0)
                 ? $"{access} == \"{EscapeString(GetStringArg(attr, 0))}\""
-                : $"System.Convert.ToDouble({access}) == {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
+                : CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) == {Number(attr, 0)}"),
             IsInEnumFqn              => BuildIsInEnumCondition(access, propTypeFullName, propType),
-            IsEnumNameFqn            => $"!global::System.Enum.IsDefined(typeof({GetTypeArgFullName(attr, 0)}), {access})",
-            PrecisionScaleFqn        => $"global::ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale({access}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})",
+            IsEnumNameFqn            => GuardAgainstNull(access, valueType, $"!global::System.Enum.IsDefined(typeof({GetTypeArgFullName(attr, 0)}), {access})"),
+            PrecisionScaleFqn        => CompareValue(access, valueType, v => $"global::ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale({v}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})"),
             MustFqn                  => GeneratedCalls.MustCondition(modelParamName, GetStringArg(attr, 0), rawForPredicate),
             _                        => "false"
         };
@@ -1483,27 +1487,47 @@ internal static class RuleEmitter
     }
 
     /// <summary>
-    /// Emits the right "is empty" predicate for the property's actual type.
-    /// Supports strings, Guid, arrays, Span/Memory family, ICollection / IReadOnlyCollection
-    /// (covering List, HashSet, Dictionary, etc.), and falls back to IEnumerable + LINQ Any
-    /// for non-counting sequences. Without a type symbol (e.g. legacy call site) falls back
-    /// to the string-only check so existing behavior is preserved.
-    /// </summary>
-    /// <summary>
     /// Guards a comparison that dereferences the value, so a null never reaches it. A length rule
     /// says nothing about a missing value — that is <c>[NotEmpty]</c>'s or <c>[NotNull]</c>'s job —
     /// which keeps the two composable and matches FluentValidation, where length validators pass on
     /// null. Without the guard the generated validator threw NullReferenceException on exactly the
     /// input it exists to reject, and tripped CS8602 in any consumer with nullable warnings as
-    /// errors.
+    /// errors. <c>[Equal("text")]</c> and <c>[IsEnumName]</c> are guarded the same way, as
+    /// <see cref="CompareValue"/> guards the numeric comparisons: a null string passes them.
     /// </summary>
     private static string GuardAgainstNull(string access, ITypeSymbol? propType, string comparison) =>
         CanBeNull(propType) ? $"{access} is not null && ({comparison})" : comparison;
 
     /// <summary>
-    /// Whether the value could be null at runtime, and so needs guarding before a dereference.
-    /// Non-nullable value types cannot, and guarding one would not compile.
+    /// Builds a comparison rule's failure condition, <paramref name="comparison"/> applied to the
+    /// value. A comparison constrains a value that is present and says nothing about a missing one:
+    /// on a <c>Nullable&lt;T&gt;</c> a null passes and the rule compares <c>.Value</c>. Whether a
+    /// missing value is acceptable is <c>[NotNull]</c>'s decision, the split the length rules and
+    /// <c>[IsInEnum]</c> follow, and FluentValidation's comparison validators pass on null too.
+    /// Passing the <c>Nullable&lt;T&gt;</c> itself picked <c>Convert.ToDouble(object)</c>, which
+    /// boxed on every call and read null as 0, so <c>[GreaterThan(0)]</c> rejected a missing value
+    /// while <c>[LessThan(5)]</c> accepted it, #276.
     /// </summary>
+    private static string CompareValue(string access, ITypeSymbol? valueType, Func<string, string> comparison) =>
+        valueType?.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+            ? $"{access}.HasValue && ({comparison($"{access}.Value")})"
+            : comparison(access);
+
+    private static string Number(AttributeData attr, int index) =>
+        GetDoubleArg(attr, index).ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The type of the value a built-in rule reads. For a single-property <c>[ValueObject]</c> the
+    /// rule reads the unwrapped member, see <see cref="BuildPropertyAccess"/>, so that member's type.
+    /// </summary>
+    private static ITypeSymbol? ValueTypeOf(ITypeSymbol? propType)
+    {
+        if (propType is null) return null;
+        var member = GetValueObjectUnwrapMember(propType);
+        if (member is null) return propType;
+        return propType.GetMembers(member).OfType<IPropertySymbol>().FirstOrDefault()?.Type ?? propType;
+    }
+
     /// <summary>
     /// <c>[IsInEnum]</c> checks that a present value is a defined member. On a nullable enum it
     /// checks the underlying value and says nothing about null — that is <c>[NotNull]</c>'s job,
@@ -1515,11 +1539,22 @@ internal static class RuleEmitter
             ? $"{access}.HasValue && !global::System.Enum.IsDefined(typeof({enumTypeFullName}), {access}.Value)"
             : $"!global::System.Enum.IsDefined(typeof({enumTypeFullName}), {access})";
 
+    /// <summary>
+    /// Whether the value could be null at runtime, and so needs guarding before a dereference.
+    /// Non-nullable value types cannot, and guarding one would not compile.
+    /// </summary>
     private static bool CanBeNull(ITypeSymbol? propType) =>
         propType is not null
         && (propType.IsReferenceType
             || propType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T);
 
+    /// <summary>
+    /// Emits the right "is empty" predicate for the property's actual type.
+    /// Supports strings, Guid, arrays, Span/Memory family, ICollection / IReadOnlyCollection
+    /// (covering List, HashSet, Dictionary, etc.), and falls back to IEnumerable + LINQ Any
+    /// for non-counting sequences. Without a type symbol (e.g. legacy call site) falls back
+    /// to the string-only check so existing behavior is preserved.
+    /// </summary>
     private static string BuildNotEmptyCondition(string access, ITypeSymbol? propType)
     {
         if (propType is null)

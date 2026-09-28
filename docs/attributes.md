@@ -46,15 +46,31 @@ public class ContactForm
 
 | Attribute | Description | Default error message |
 |---|---|---|
-| `[GreaterThan(value)]` | > value | `PropertyName must be greater than value.` |
-| `[GreaterThanOrEqualTo(value)]` | ≥ value | `PropertyName must be greater than or equal to value.` |
-| `[LessThan(value)]` | < value | `PropertyName must be less than value.` |
-| `[LessThanOrEqualTo(value)]` | ≤ value | `PropertyName must be less than or equal to value.` |
-| `[InclusiveBetween(min, max)]` | min ≤ x ≤ max | `PropertyName must be between min and max.` |
-| `[ExclusiveBetween(min, max)]` | min < x < max | `PropertyName must be exclusively between min and max.` |
-| `[Equal(value)]` | == value | `PropertyName must be equal to value.` |
-| `[NotEqual(value)]` | != value | `PropertyName must not be equal to value.` |
-| `[PrecisionScale(p, s)]` | At most `p` total digits, `s` after decimal | `PropertyName must not exceed p digits total with s decimal places.` |
+| `[GreaterThan(value)]` | > value, null ignored | `PropertyName must be greater than value.` |
+| `[GreaterThanOrEqualTo(value)]` | ≥ value, null ignored | `PropertyName must be greater than or equal to value.` |
+| `[LessThan(value)]` | < value, null ignored | `PropertyName must be less than value.` |
+| `[LessThanOrEqualTo(value)]` | ≤ value, null ignored | `PropertyName must be less than or equal to value.` |
+| `[InclusiveBetween(min, max)]` | min ≤ x ≤ max, null ignored | `PropertyName must be between min and max.` |
+| `[ExclusiveBetween(min, max)]` | min < x < max, null ignored | `PropertyName must be exclusively between min and max.` |
+| `[Equal(value)]` | == value, null ignored | `PropertyName must equal value.` |
+| `[NotEqual(value)]` | != value, null ignored | `PropertyName must not equal value.` |
+| `[PrecisionScale(p, s)]` | At most `p` total digits, `s` after decimal, null ignored | `PropertyName must not exceed p digits total with s decimal places.` |
+
+> **Comparison rules and null.** The rules above constrain a value that is present; they report
+> nothing for `null`, on a nullable number such as `int?` or `decimal?`, a nullable enum, or a
+> string compared with `[Equal("text")]`. Whether a missing value is acceptable is `[NotNull]`'s
+> decision, the same split the length rules follow, so the two compose without reporting the
+> same problem twice:
+>
+> ```csharp
+> [NotNull]               // null -> one failure, "Quantity must not be null."
+> [GreaterThan(0)]        // only applies once a value is present
+> public int? Quantity { get; init; }
+> ```
+>
+> Up to 2.0.1 these rules read a null `Nullable<T>` as `0`, so `[GreaterThan(0)]` rejected a
+> missing value while `[LessThan(5)]` accepted it. If you relied on a comparison rule to reject
+> null, add `[NotNull]`.
 
 ```csharp
 [Validate]
@@ -86,7 +102,7 @@ public class Order
 
 | Attribute | Description | Default error message |
 |---|---|---|
-| `[IsEnumName(typeof(TEnum))]` | String property — value must be a defined name in the specified enum type | `PropertyName is not a valid enum name.` |
+| `[IsEnumName(typeof(TEnum))]` | String property — value must be a defined name in the specified enum type. A null string passes; add `[NotNull]` to reject it | `PropertyName is not a valid enum name.` |
 | `[IsInEnum]` | Enum-typed property — value must be a defined member of its own enum type. On a nullable enum, null passes; add `[NotNull]` to reject it | `PropertyName is not a valid value.` |
 
 ```csharp
