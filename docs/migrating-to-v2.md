@@ -6,8 +6,9 @@ description: Breaking changes to review before upgrading to ZeroAlloc.Validation
 sidebar_position: 99
 ---
 
-This page collects the breaking changes shipped in ZeroAlloc.Validation 2.0.0. Each section
-covers one change: what changed, why, and what to do about it.
+This page collects the breaking changes shipped in ZeroAlloc.Validation 2.0.0, and the behaviour
+changes shipped in later 2.x releases. Each section covers one change: what changed, why, and
+what to do about it.
 
 ## `ZeroAllocOptionsValidationExtensions` moved out of the global namespace
 
@@ -230,3 +231,33 @@ validator instead of failing with `CS0051`.
   `: this(...)`: switch to `ValidatorFor<TNested>`.
 - **Performance**: each nested call is now a virtual call through `ValidatorFor<T>.Validate`
   instead of a call on the sealed generated class. The valid path still allocates nothing.
+
+## Comparison rules no longer reject null
+
+Shipped in the release after 2.0.1.
+
+`[GreaterThan]`, `[GreaterThanOrEqualTo]`, `[LessThan]`, `[LessThanOrEqualTo]`,
+`[InclusiveBetween]`, `[ExclusiveBetween]`, `[Equal]`, `[NotEqual]` and `[PrecisionScale]` now
+pass a `null` value, and `[IsEnumName]` passes a `null` string. Up to 2.0.1 the numeric rules read
+a null `Nullable<T>` as `0`, so the outcome depended on where the range sat relative to 0:
+`[GreaterThan(0)]` rejected a missing `int?` with "must be greater than 0", while `[LessThan(5)]`
+accepted it. `[Equal("text")]` rejected a null string, `[IsEnumName]` threw
+`ArgumentNullException` on one, and `[PrecisionScale]` on a `decimal?` did not compile.
+
+A rule now constrains a value that is present, and whether a missing value is acceptable is
+`[NotNull]`'s decision. That is the split the length rules and `[IsInEnum]` already follow, and
+the way FluentValidation's comparison validators behave. The generated check also no longer boxes
+a nullable value on every call.
+
+### What to do
+
+Where a comparison rule was the only thing rejecting a missing value, add `[NotNull]`:
+
+```csharp
+[NotNull]
+[GreaterThan(0)]
+public int? Quantity { get; set; }
+```
+
+A null then reports one failure, `Quantity must not be null.`, instead of the comparison's
+message.

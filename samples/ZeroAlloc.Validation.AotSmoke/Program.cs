@@ -196,8 +196,11 @@ if (Expect(readingValidator.Validate(new Reading { Score = -2 }), "Score -2",
 if (Expect(readingValidator.Validate(new Reading { Count = 0 }), "Count 0",
         ("Count", "Count must be positive, got 0.", "POSITIVE")) is { } e4) return Fail(e4);
 
-// Built-in comparisons over int? and decimal?. A null value is left out: the rules convert it
-// to 0 and compare that, see ZeroAlloc-Net/ZeroAlloc.Validation#276.
+// Built-in comparisons over int? and decimal?. A null passes: the rules check a value that is
+// present, and rejecting null is [NotNull]'s job. They used to read null as 0, so
+// [GreaterThan(0)] rejected it, see ZeroAlloc-Net/ZeroAlloc.Validation#276.
+if (Expect(readingValidator.Validate(new Reading { Quantity = null }), "Quantity null") is { } e5a) return Fail(e5a);
+if (Expect(readingValidator.Validate(new Reading { Rating = null }), "Rating null") is { } e5b) return Fail(e5b);
 if (Expect(readingValidator.Validate(new Reading { Quantity = 1 }), "Quantity 1") is { } e5) return Fail(e5);
 if (Expect(readingValidator.Validate(new Reading { Quantity = 0 }), "Quantity 0",
         ("Quantity", "Quantity must be greater than 0.", null)) is { } e6) return Fail(e6);
