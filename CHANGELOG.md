@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.0.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.0.1...v2.0.2) (2026-09-28)
+
+
+### Bug Fixes
+
+* **generator:** let null pass the comparison rules instead of reading it as 0 ([#281](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/281)) ([dfdd622](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/dfdd62288bf6790e38ecfb3f3f7b382f3ffb4982)), closes [#276](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/276)
+* handle a nullable enum in [IsInEnum] ([8fd3c96](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/8fd3c96b6377e8ed1f4011dcaf114a22034a392f))
+
+
+### Tests
+
+* cover value types in the AOT smoke ([8fd3c96](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/8fd3c96b6377e8ed1f4011dcaf114a22034a392f))
+
 ## [2.0.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.0.0...v2.0.1) (2026-09-27)
 
 
