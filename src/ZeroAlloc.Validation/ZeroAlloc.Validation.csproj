@@ -44,18 +44,30 @@
     does not resolve a generator's own PackageReference dependencies) into this package under
     analyzers/dotnet/cs, the same layout ZeroAlloc.Resilience and ZeroAlloc.Rest use to bundle
     their generators into their main package.
+
+    The generator DLL is the one the build actually produced. Asking the generator project for
+    its target path, instead of hardcoding bin\$(Configuration)\netstandard2.0, follows any
+    output redirection such as artifacts-path. The hardcoded path silently bundled whatever
+    stale DLL sat in the repository's bin folder, at whatever version that DLL had been built
+    with. The helper DLLs are taken from the same directory, where the generator's
+    CopyGeneratorHelperDlls target copies them. See ZeroAlloc-Net/.github#43.
   -->
   <Target Name="IncludeGeneratorInPackage" BeforeTargets="_GetPackageFiles">
+    <MSBuild Projects="..\ZeroAlloc.Validation.Generator\ZeroAlloc.Validation.Generator.csproj"
+             Targets="GetTargetPath"
+             RemoveProperties="TargetFramework;RuntimeIdentifier;SelfContained">
+      <Output TaskParameter="TargetOutputs" ItemName="_ZeroAllocValidationGeneratorAssembly" />
+    </MSBuild>
     <ItemGroup>
-      <None Include="$(MSBuildThisFileDirectory)..\ZeroAlloc.Validation.Generator\bin\$(Configuration)\netstandard2.0\ZeroAlloc.Validation.Generator.dll"
+      <None Include="@(_ZeroAllocValidationGeneratorAssembly)"
             Pack="true"
             PackagePath="analyzers/dotnet/cs"
             Visible="false" />
-      <None Include="$(MSBuildThisFileDirectory)..\ZeroAlloc.Validation.Generator\bin\$(Configuration)\netstandard2.0\ZeroAlloc.Pipeline.Generators.dll"
+      <None Include="@(_ZeroAllocValidationGeneratorAssembly->'%(RootDir)%(Directory)ZeroAlloc.Pipeline.Generators.dll')"
             Pack="true"
             PackagePath="analyzers/dotnet/cs"
             Visible="false" />
-      <None Include="$(MSBuildThisFileDirectory)..\ZeroAlloc.Validation.Generator\bin\$(Configuration)\netstandard2.0\ZeroAlloc.Pipeline.dll"
+      <None Include="@(_ZeroAllocValidationGeneratorAssembly->'%(RootDir)%(Directory)ZeroAlloc.Pipeline.dll')"
             Pack="true"
             PackagePath="analyzers/dotnet/cs"
             Visible="false" />
