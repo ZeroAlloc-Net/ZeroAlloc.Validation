@@ -18,4 +18,26 @@ public class IsInEnumTests
     {
         ValidationAssert.HasError(_validator.Validate(new EnumModel { Light = (TrafficLight)99 }), "Light");
     }
+
+    private readonly NullableEnumModelValidator _nullableValidator = new();
+
+    [Fact]
+    public void Nullable_Null_Passes()
+    {
+        // A missing value is [NotNull]'s decision, the same as for the length rules.
+        ValidationAssert.NoErrors(_nullableValidator.Validate(new NullableEnumModel { Light = null }));
+    }
+
+    [Fact]
+    public void Nullable_DefinedValue_Passes()
+    {
+        ValidationAssert.NoErrors(_nullableValidator.Validate(new NullableEnumModel { Light = TrafficLight.Red }));
+    }
+
+    [Fact]
+    public void Nullable_UndefinedValue_Fails()
+    {
+        ValidationAssert.HasError(
+            _nullableValidator.Validate(new NullableEnumModel { Light = (TrafficLight)99 }), "Light");
+    }
 }

@@ -73,9 +73,13 @@ jobs:
 
   aot-smoke:
     runs-on: ubuntu-latest
+    # Typical run is under a few minutes. The bound makes a NativeAOT hang, like
+    # dotnet/runtime#134799, fail fast instead of burning the default six-hour job limit.
+    timeout-minutes: 15
     # Publishes samples/ZeroAlloc.Validation.AotSmoke with PublishAot=true and
-    # runs the binary. Exercises the generator-emitted AddressValidator —
-    # [Validate] + [NotEmpty] attributes resolved into a zero-reflection check.
+    # runs the binary. Exercises the generator-emitted validators, built-in and
+    # custom rules resolved into zero-reflection checks, over reference, primitive,
+    # enum, struct and nullable properties.
     steps:
       - uses: actions/checkout@v7
         with:
@@ -100,7 +104,8 @@ jobs:
         run: dotnet publish samples/ZeroAlloc.Validation.AotSmoke/ZeroAlloc.Validation.AotSmoke.csproj -r linux-x64 -c Release -o ./aot-out
 
       - name: Run AOT binary
-        run: ./aot-out/ZeroAlloc.Validation.AotSmoke
+        # GNU timeout exits 124 when the binary hangs, so a hang fails the step within two minutes.
+        run: timeout --kill-after=10s 120s ./aot-out/ZeroAlloc.Validation.AotSmoke
 
   # A release PR must mark everything it releases as shipped: the analyzer rules in
   # AnalyzerReleases.Unshipped.md and the API in every PublicAPI.Unshipped.txt. The

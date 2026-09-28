@@ -1412,7 +1412,7 @@ internal static class RuleEmitter
             NotEqualFqn              => IsStringArg(attr, 0)
                 ? $"{access} == \"{EscapeString(GetStringArg(attr, 0))}\""
                 : $"System.Convert.ToDouble({access}) == {GetDoubleArg(attr, 0).ToString(CultureInfo.InvariantCulture)}",
-            IsInEnumFqn              => $"!global::System.Enum.IsDefined(typeof({propTypeFullName}), {access})",
+            IsInEnumFqn              => BuildIsInEnumCondition(access, propTypeFullName, propType),
             IsEnumNameFqn            => $"!global::System.Enum.IsDefined(typeof({GetTypeArgFullName(attr, 0)}), {access})",
             PrecisionScaleFqn        => $"global::ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale({access}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})",
             MustFqn                  => GeneratedCalls.MustCondition(modelParamName, GetStringArg(attr, 0), rawForPredicate),
@@ -1504,6 +1504,17 @@ internal static class RuleEmitter
     /// Whether the value could be null at runtime, and so needs guarding before a dereference.
     /// Non-nullable value types cannot, and guarding one would not compile.
     /// </summary>
+    /// <summary>
+    /// <c>[IsInEnum]</c> checks that a present value is a defined member. On a nullable enum it
+    /// checks the underlying value and says nothing about null — that is <c>[NotNull]</c>'s job,
+    /// the same split the length rules follow. Passing the <c>Nullable&lt;T&gt;</c> itself to
+    /// <c>Enum.IsDefined</c> tripped CS8604, and a null value threw ArgumentNullException.
+    /// </summary>
+    private static string BuildIsInEnumCondition(string access, string enumTypeFullName, ITypeSymbol? propType) =>
+        propType?.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+            ? $"{access}.HasValue && !global::System.Enum.IsDefined(typeof({enumTypeFullName}), {access}.Value)"
+            : $"!global::System.Enum.IsDefined(typeof({enumTypeFullName}), {access})";
+
     private static bool CanBeNull(ITypeSymbol? propType) =>
         propType is not null
         && (propType.IsReferenceType
