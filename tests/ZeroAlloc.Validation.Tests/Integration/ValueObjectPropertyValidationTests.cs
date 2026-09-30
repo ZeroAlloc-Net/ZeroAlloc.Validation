@@ -53,7 +53,58 @@ namespace ZeroAlloc.Validation.Tests.Integration
             var result = validator.Validate(new GetPageCommand(new PageNumber(raw)));
             Assert.Equal(expectedValid, result.IsValid);
         }
+
+        // [IsInEnum] reads the unwrapped member, so Enum.IsDefined must be asked about the enum,
+        // not the wrapper, which threw ArgumentException on every validation, #300.
+        [Theory]
+        [InlineData(PaintColor.Red, true)]
+        [InlineData((PaintColor)42, false)]
+        public void EnumValueObject_IsInEnum_Behaves(PaintColor raw, bool expectedValid)
+        {
+            var validator = new PaintCommandValidator();
+            var result = validator.Validate(new PaintCommand(new Hue(raw)));
+            Assert.Equal(expectedValid, result.IsValid);
+            if (!expectedValid)
+                Assert.Equal(nameof(PaintCommand.Tint), result.Failures[0].PropertyName);
+        }
+
+        // A value object over a nullable enum: a missing value passes, as [IsInEnum] on a
+        // Nullable<TEnum> property does, and a present one is checked.
+        [Theory]
+        [InlineData(null, true)]
+        [InlineData(PaintColor.Green, true)]
+        [InlineData((PaintColor)42, false)]
+        public void NullableEnumValueObject_IsInEnum_Behaves(PaintColor? raw, bool expectedValid)
+        {
+            var validator = new PrimeCommandValidator();
+            var result = validator.Validate(new PrimeCommand(new OptionalHue(raw)));
+            Assert.Equal(expectedValid, result.IsValid);
+        }
     }
+
+    public enum PaintColor { Red, Green }
+
+    [global::ZeroAlloc.ValueObjects.ValueObject]
+    public readonly partial struct Hue
+    {
+        public PaintColor Value { get; }
+        public Hue(PaintColor value) => Value = value;
+    }
+
+    [Validate]
+    public readonly record struct PaintCommand(
+        [property: IsInEnum] Hue Tint);
+
+    [global::ZeroAlloc.ValueObjects.ValueObject]
+    public readonly partial struct OptionalHue
+    {
+        public PaintColor? Value { get; }
+        public OptionalHue(PaintColor? value) => Value = value;
+    }
+
+    [Validate]
+    public readonly record struct PrimeCommand(
+        [property: IsInEnum] OptionalHue Tint);
 
     [global::ZeroAlloc.ValueObjects.ValueObject]
     public readonly partial struct CustomerId
