@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.3](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.0.2...v2.0.3) (2026-09-30)
+
+
+### Bug Fixes
+
+* **generator:** let a null string pass the numeric comparison rules instead of reading it as 0 ([838e4fe](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/838e4fe56c05e873f5375479daaab185f79df98c))
+* **generator:** let null pass [EmailAddress] and [Matches] ([#286](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/286)) ([d51563d](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/d51563d6eaa34b86f823ac2c2b2fdf22ab7c295a)), closes [#280](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/280)
+* **generator:** make When and Unless guard a rule's whole condition ([#287](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/287)) ([c7eb179](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/c7eb179fa77bee2518de1066108fe4cbba83f0fd)), closes [#282](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/282)
+* **generator:** report numeric comparison rules on types that are not numbers as ZV0033 ([838e4fe](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/838e4fe56c05e873f5375479daaab185f79df98c))
+* **generator:** report ZV0020, ZV0021 and ZV0023 once for a rule on a validated base type ([838e4fe](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/838e4fe56c05e873f5375479daaab185f79df98c))
+
 ## [2.0.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.0.1...v2.0.2) (2026-09-28)
 
 
