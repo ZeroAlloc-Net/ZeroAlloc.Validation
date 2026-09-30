@@ -289,3 +289,32 @@ public DateOnly? Arrival { get; set; }
 public bool IsInTheFuture(DateOnly? arrival) =>
     arrival is null || arrival > DateOnly.FromDateTime(DateTime.Today);
 ```
+
+## `[EmailAddress]` and `[Matches]` no longer reject null
+
+Shipped in the release after 2.0.2.
+
+`[EmailAddress]` and `[Matches]` now pass a `null` string, as the length and comparison rules do.
+Up to 2.0.2 `[EmailAddress]` rejected `null` with "must be a valid email address", and
+`[Matches]` matched `null` as `""`, so the outcome depended on the pattern: `[Matches(@"^\d+$")]`
+rejected a missing value while `[Matches(".*")]` accepted it. `[NotEmpty][EmailAddress]` reported
+a `null` twice.
+
+A rule now checks a string that is present, and whether a missing value is acceptable is
+`[NotEmpty]`'s or `[NotNull]`'s decision, the way FluentValidation's `EmailAddress` and `Matches`
+validators behave. An empty string is still a value: `[EmailAddress]` rejects `""`, and
+`[Matches]` rejects it unless the pattern matches the empty string.
+
+### What to do
+
+Where `[EmailAddress]` or `[Matches]` was the only thing rejecting a missing value, add
+`[NotEmpty]`:
+
+```csharp
+[NotEmpty]
+[EmailAddress]
+public string? Email { get; set; }
+```
+
+A null then reports one failure, `Email must not be empty.`. An optional field that used a `When`
+guard only to let `null` through no longer needs it.
