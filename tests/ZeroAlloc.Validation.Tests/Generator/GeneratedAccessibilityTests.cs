@@ -490,6 +490,32 @@ public class GeneratedAccessibilityTests
     }
 
     [Fact]
+    public void Internal_GenericModelHelperAndOptionsOverload_GoInTheInternalClasses()
+    {
+        // Issue #238, phase 2: the registration helper and the options overload of a public
+        // generic model follow the switch like every other generated entry point.
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace MyApp;
+            [Validate] public class Page<T> { [NotEmpty] public string Title { get; set; } = ""; }
+            """;
+
+        var generated = RunGeneratorGetSources(
+            source,
+            AccessibilityOptions("Internal"),
+            new global::ZeroAlloc.Validation.Inject.InjectGenerator(),
+            new global::ZeroAlloc.Validation.Options.Generator.OptionsValidationEmitter());
+
+        var helper = generated.First(s => s.Contains("AddPageValidator<T>", StringComparison.Ordinal));
+        Assert.Contains("internal static class InternalZeroAllocGenericValidatorRegistrationExtensions", helper, StringComparison.Ordinal);
+        Assert.DoesNotContain("public static class", helper, StringComparison.Ordinal);
+
+        var overload = generated.First(s => s.Contains("ValidateWithZeroAlloc<T>", StringComparison.Ordinal));
+        Assert.Contains("internal static class InternalZeroAllocOptionsValidationExtensions", overload, StringComparison.Ordinal);
+        Assert.DoesNotContain(generated, s => s.Contains("public static class ZeroAllocOptionsValidationExtensions", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Internal_AspNetCoreGenerator_ServiceCollectionExtensionsClassBecomesInternal()
     {
         var source = """

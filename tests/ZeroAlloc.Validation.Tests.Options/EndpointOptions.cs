@@ -2,8 +2,9 @@ using ZeroAlloc.Validation;
 
 namespace ZeroAlloc.Validation.Tests.Options;
 
-// A generic options section, issue #238. It gets no ValidateWithZeroAlloc() overload of its own
-// in this release; its closings are registered by the options models holding them.
+// A generic options section, issue #238. Its closings are registered by the options models
+// holding them, and a closing used as an options model itself is validated through the
+// generated ValidateWithZeroAlloc<TSecurity>() overload.
 [Validate]
 public class EndpointOptions<TSecurity> where TSecurity : class, new()
 {

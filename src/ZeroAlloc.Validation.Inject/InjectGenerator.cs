@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -30,7 +32,8 @@ public sealed class InjectGenerator : IIncrementalGenerator
                 // cannot reach, ZV0025 and #216, or one whose type parameters it cannot redeclare,
                 // ZV0029 and #219. Naming it would only add compiler errors in generated code. A
                 // generic model is left out as a root, since nothing closed can be registered for
-                // it; its closings are registered by the models composing them, issue #238.
+                // it; its closings are registered by the models composing them, and by its own helper,
+                // emitted from genericClasses below, issue #238.
                 // Null marks it, and the step after Collect drops it.
                 // The transform extracts everything the output needs into an equatable model, so
                 // the output step stays cached while nothing it was read from changes, issue #209.
@@ -42,12 +45,31 @@ public sealed class InjectGenerator : IIncrementalGenerator
                         ? ValidatedModelInfo.From((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
                         : null);
 
+        // A generic model gets a registration helper instead, generic over its type parameters and
+        // closed at the call site, AddPageValidator<Customer>(), issue #238.
+        var genericClasses = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                ValidateAttributeFqn,
+                predicate: static (node, _) => node is ClassDeclarationSyntax
+                                                    or RecordDeclarationSyntax,
+                transform: static (ctx, _) =>
+                    GeneratedValidatorReach.HasGeneratedValidator((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
+                    && GeneratedValidatorReach.IsGeneric((INamedTypeSymbol)ctx.TargetSymbol)
+                        ? GenericModelInfo.From((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
+                        : null);
+
         var collected = validateClasses.Collect()
             .Select(static (models, _) => ValidatedModelInfo.WithGeneratedValidator(models));
+        var collectedGeneric = genericClasses.Collect()
+            .Select(static (models, _) => GenericModelInfo.Collected(models));
         var isInternal = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => GeneratedAccessibilityOption.IsInternal(provider));
-        var combined = collected.Combine(isInternal).WithTrackingName(OutputTrackingName);
-        context.RegisterSourceOutput(combined, static (ctx, pair) => Emit(ctx, pair.Left, pair.Right));
+        var combined = collected.Combine(collectedGeneric).Combine(isInternal).WithTrackingName(OutputTrackingName);
+        context.RegisterSourceOutput(combined, static (ctx, input) =>
+        {
+            Emit(ctx, input.Left.Left, input.Right);
+            EmitGenericHelpers(ctx, input.Left.Right, input.Right);
+        });
     }
 
     private static void Emit(SourceProductionContext ctx, EquatableArray<ValidatedModelInfo> models, bool isInternal)
@@ -85,5 +107,96 @@ public sealed class InjectGenerator : IIncrementalGenerator
         sb.AppendLine("}");
 
         ctx.AddSource("ZeroAlloc.Validation.ZeroAllocValidatorRegistrationExtensions.g.cs", sb.ToString());
+    }
+
+    /// <summary>
+    /// Emits the registration helpers of the generic models, issue #238: one static class per
+    /// namespace, in the models' own namespace, so a helper is in scope wherever its model is, and
+    /// same-named models in two namespaces do not produce two helpers of the same signature in one
+    /// class, CS0111. A helper names the model's validator in its body only, but its constraints
+    /// may name the model's own types, so models that are not visible outside the assembly go in
+    /// an internal class beside the public one, and <c>ZeroAllocGeneratedAccessibility=Internal</c>
+    /// routes every model there, as the Options overloads do, issues #184 and #193.
+    /// </summary>
+    private static void EmitGenericHelpers(SourceProductionContext ctx, EquatableArray<GenericModelInfo> models, bool isInternal)
+    {
+        if (models.Count == 0) return;
+
+        var byNamespace = new SortedDictionary<string, List<GenericModelInfo>>(StringComparer.Ordinal);
+        foreach (var model in models)
+        {
+            var key = model.HintNamespace ?? "";
+            if (!byNamespace.TryGetValue(key, out var list))
+                byNamespace.Add(key, list = new List<GenericModelInfo>());
+            list.Add(model);
+        }
+
+        foreach (var entry in byNamespace)
+        {
+            var publicModels = new List<GenericModelInfo>();
+            var internalModels = new List<GenericModelInfo>();
+            for (var i = 0; i < entry.Value.Count; i++)
+            {
+                var model = entry.Value[i];
+                (!isInternal && model.IsEffectivelyPublic ? publicModels : internalModels).Add(model);
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("// <auto-generated />");
+            sb.AppendLine("#nullable enable");
+            sb.AppendLine();
+            sb.AppendLine("using Microsoft.Extensions.DependencyInjection;");
+            sb.AppendLine("using Microsoft.Extensions.DependencyInjection.Extensions;");
+            sb.AppendLine();
+            if (entry.Value[0].NamespaceName is { } ns)
+            {
+                sb.AppendLine($"namespace {ns};");
+                sb.AppendLine();
+            }
+
+            if (publicModels.Count > 0)
+                AppendHelperClass(sb, "public", GenericHelperClassName, publicModels);
+            if (publicModels.Count > 0 && internalModels.Count > 0)
+                sb.AppendLine();
+            if (internalModels.Count > 0)
+                AppendHelperClass(sb, "internal", "Internal" + GenericHelperClassName, internalModels);
+
+            var hintName = entry.Key.Length == 0
+                ? GenericHelperClassName + ".g.cs"
+                : $"{entry.Key}.{GenericHelperClassName}.g.cs";
+            ctx.AddSource(hintName, sb.ToString());
+        }
+    }
+
+    private const string GenericHelperClassName = "ZeroAllocGenericValidatorRegistrationExtensions";
+
+    private static void AppendHelperClass(StringBuilder sb, string accessibility, string className, List<GenericModelInfo> models)
+    {
+        sb.AppendLine("/// <summary>Registers the generated validators of the generic models in this namespace, closed over the type arguments of each call.</summary>");
+        sb.AppendLine($"{accessibility} static class {className}");
+        sb.AppendLine("{");
+        for (var i = 0; i < models.Count; i++)
+        {
+            var model = models[i];
+            var services = model.Names.Services;
+
+            // model.Name, not the fully qualified name: angle brackets would reach the XML, CS1570.
+            sb.AppendLine($"    /// <summary>Registers the validator of <c>{model.Name}</c> closed over the given type arguments, and every validator it takes.</summary>");
+            foreach (var parameter in model.TypeParameterNames)
+                sb.AppendLine($"    /// <typeparam name=\"{parameter}\">The type argument for the <c>{parameter}</c> type parameter of <c>{model.Name}</c>.</typeparam>");
+            sb.AppendLine($"    /// <param name=\"{services}\">The service collection to add the registrations to.</param>");
+            sb.AppendLine("    /// <returns>The same service collection, so calls can be chained.</returns>");
+            sb.AppendLine($"    public static global::Microsoft.Extensions.DependencyInjection.IServiceCollection {model.HelperName}{model.TypeParameterList}(");
+            sb.AppendLine($"        this global::Microsoft.Extensions.DependencyInjection.IServiceCollection {services})");
+            foreach (var clause in model.ConstraintClauses)
+                sb.AppendLine($"        {clause}");
+            sb.AppendLine("    {");
+            ValidatorRegistrationEmitter.AppendRegistrations(sb, model.Registrations);
+            sb.AppendLine($"        return {services};");
+            sb.AppendLine("    }");
+            if (i < models.Count - 1)
+                sb.AppendLine();
+        }
+        sb.AppendLine("}");
     }
 }

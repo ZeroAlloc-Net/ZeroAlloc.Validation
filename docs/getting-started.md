@@ -118,8 +118,10 @@ var validator = new PageValidator<Product>(new LineValidator<Product>());
   and a property whose type is a type parameter only through a `[Validate]` class it is
   constrained to.
 - **Registration.** `AddZeroAllocValidators()` registers each closing the models you register
-  reach, such as `Page<Order>` held by a non-generic `OrderPage`, closed; see
-  [Dependency injection](inject.md#generic-models).
+  reach, such as `Page<Order>` held by a non-generic `OrderPage`, closed. A closing used only
+  at the root is registered with the generated helper, `services.AddPageValidator<Customer>()`,
+  and an options model with `AddOptions<Page<Customer>>().ValidateWithZeroAlloc()`; see
+  [Dependency injection](inject.md#generic-models) and [Options](options.md).
 - **Pipeline behaviors** name the open form, `AppliesTo = typeof(Page<>)`, and run for every
   closing; a closed form is reported as [ZV0038](diagnostics.md#zv0038).
 - **NativeAOT.** A value-type closing gets its own compiled instantiation, rooted by the

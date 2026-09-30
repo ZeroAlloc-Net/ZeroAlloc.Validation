@@ -5,7 +5,8 @@ using Xunit;
 namespace ZeroAlloc.Validation.Tests.Inject;
 
 // Issue #238: AddZeroAllocValidators registers every closing of a generic model that a
-// registered validator takes, closed, and lists each as an IModelValidator.
+// registered validator takes, closed, and lists each as an IModelValidator. The generated
+// AddPageValidator<TItem>() does the same for a closing used only at the root.
 public class GenericModelInjectTests
 {
     private static ServiceProvider BuildProvider(System.Action<IServiceCollection>? before = null)
@@ -68,6 +69,66 @@ public class GenericModelInjectTests
 
         var shelf = new Shelf { Code = "A1", Page = new Page<Dock> { Title = "" } };
         Assert.True(sp.GetRequiredService<ValidatorFor<Shelf>>().Validate(shelf).IsValid);
+    }
+
+    // Phase 2: the generated AddPageValidator<TItem>() registers a closing used only at the root,
+    // with every closing its validator takes.
+    [Fact]
+    public void AddPageValidator_RegistersARootClosingAndTheClosingsItTakes()
+    {
+        var services = new ServiceCollection();
+        services.AddPageValidator<Dock>();
+        using var sp = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
+
+        var validator = sp.GetRequiredService<ValidatorFor<Page<Dock>>>();
+        Assert.IsType<PageValidator<Dock>>(validator);
+        Assert.IsType<LineValidator<Dock>>(sp.GetRequiredService<ValidatorFor<Line<Dock>>>());
+
+        var page = new Page<Dock> { Title = "" };
+        page.Lines.Add(new Line<Dock> { Quantity = 0 });
+        var result = validator.Validate(page);
+        Assert.Equal(
+            ["Title", "Lines[0].Quantity", "Lines[0].Item"],
+            result.Failures.ToArray().Select(f => f.PropertyName),
+            System.StringComparer.Ordinal);
+
+        Assert.Equal(
+            [typeof(Page<Dock>), typeof(Line<Dock>)],
+            sp.GetServices<IModelValidator>().Select(v => v.ModelType));
+    }
+
+    [Fact]
+    public void AddPageValidator_RegistersOnlyTheClosingItIsCalledWith()
+    {
+        var services = new ServiceCollection();
+        services.AddPageValidator<Dock>();
+        using var sp = services.BuildServiceProvider();
+
+        Assert.Null(sp.GetService<ValidatorFor<Page<Shelf>>>());
+        Assert.Null(sp.GetService<ValidatorFor<Line<Shelf>>>());
+    }
+
+    [Fact]
+    public void AddPageValidator_BesideAddZeroAllocValidators_RegistersEachClosingOnce()
+    {
+        using var sp = BuildProvider(services => services.AddPageValidator<Dock>().AddPageValidator<Dock>().AddLineValidator<Dock>());
+
+        Assert.Collection(sp.GetServices<ValidatorFor<Page<Dock>>>(), static _ => { });
+        Assert.Collection(sp.GetServices<ValidatorFor<Line<Dock>>>(), static _ => { });
+        Assert.Equal(2, sp.GetServices<IModelValidator>().Count());
+    }
+
+    [Fact]
+    public void AddPageValidator_KeepsARegistrationTheApplicationMadeFirst()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ValidatorFor<Page<Dock>>, AcceptingPageValidator>();
+        services.AddPageValidator<Dock>();
+        using var sp = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true });
+
+        var registered = sp.GetRequiredService<ValidatorFor<Page<Dock>>>();
+        Assert.IsType<AcceptingPageValidator>(registered);
+        Assert.Same(registered, sp.GetServices<IModelValidator>().First(v => v.ModelType == typeof(Page<Dock>)));
     }
 
     private sealed class AcceptingPageValidator : ValidatorFor<Page<Dock>>

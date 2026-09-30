@@ -63,20 +63,36 @@ public static class ValidatorRegistrationEmitter
     /// </summary>
     internal static void AppendRegistrations(StringBuilder sb, IEnumerable<ValidatedModelInfo> models)
     {
+        var graphs = new List<EquatableArray<RegistrationNode>>();
+        foreach (var model in models)
+            graphs.Add(model.Registrations);
+        AppendRegistrations(sb, graphs);
+    }
+
+    /// <summary>
+    /// Appends the registrations of one model's graph, such as the one
+    /// <see cref="OpenRegistrationGraph"/> extracted for a generic model's registration helper.
+    /// </summary>
+    internal static void AppendRegistrations(StringBuilder sb, EquatableArray<RegistrationNode> registrations) =>
+        AppendRegistrations(sb, new List<EquatableArray<RegistrationNode>> { registrations });
+
+    private static void AppendRegistrations(StringBuilder sb, List<EquatableArray<RegistrationNode>> graphs)
+    {
         var nodes = new Dictionary<string, RegistrationNode>(StringComparer.Ordinal);
         var registered = new HashSet<string>(StringComparer.Ordinal);
         var validateWith = new HashSet<string>(StringComparer.Ordinal);
         var pending = new Queue<RegistrationNode>();
 
-        foreach (var model in models)
+        for (var g = 0; g < graphs.Count; g++)
         {
-            foreach (var node in model.Registrations)
+            var registrations = graphs[g];
+            foreach (var node in registrations)
             {
                 if (!nodes.ContainsKey(node.Key))
                     nodes.Add(node.Key, node);
             }
 
-            var root = model.Registrations[0];
+            var root = registrations[0];
             if (registered.Add(root.Key))
             {
                 AppendNode(sb, root);
@@ -132,7 +148,25 @@ public static class ValidatorRegistrationEmitter
     /// registered for it. A closing of a generic model is walked as that closing, so its
     /// properties have their substituted types, <c>Line&lt;Order&gt;</c> for <c>Page&lt;Order&gt;</c>.
     /// </summary>
-    internal static EquatableArray<RegistrationNode> RegistrationGraph(INamedTypeSymbol model, Compilation compilation)
+    internal static EquatableArray<RegistrationNode> RegistrationGraph(INamedTypeSymbol model, Compilation compilation) =>
+        RegistrationGraph(model, compilation, RegistrationNames.Default, overTypeParameters: false);
+
+    /// <summary>
+    /// The registrations a generic method over <paramref name="model"/>'s type parameters needs,
+    /// issue #238: the <c>Add…Validator&lt;…&gt;()</c> helper and the generic
+    /// <c>ValidateWithZeroAlloc&lt;…&gt;()</c> overload, which close them at the call site. Like
+    /// <see cref="RegistrationGraph(INamedTypeSymbol, Compilation)"/>, except that a type written
+    /// in terms of the model's type parameters, the model itself or the <c>Line&lt;TItem&gt;</c>
+    /// its validator takes, is registered too. Every type parameter the walk reaches is one of the
+    /// model's or of a type containing it, since properties are walked with their substituted
+    /// types. The lines use <paramref name="names"/>, which the method chooses so they do not clash
+    /// with a type parameter of the same name.
+    /// </summary>
+    internal static EquatableArray<RegistrationNode> OpenRegistrationGraph(INamedTypeSymbol model, Compilation compilation, RegistrationNames names) =>
+        RegistrationGraph(model, compilation, names, overTypeParameters: true);
+
+    private static EquatableArray<RegistrationNode> RegistrationGraph(
+        INamedTypeSymbol model, Compilation compilation, RegistrationNames names, bool overTypeParameters)
     {
         var nodes = new List<RegistrationNode>();
         var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default) { model.OriginalDefinition };
@@ -158,7 +192,7 @@ public static class ValidatorRegistrationEmitter
                 }
 
                 var line = IsConstructible(type, compilation)
-                    ? $"        services.TryAddSingleton<{type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>();"
+                    ? $"        {names.Services}.TryAddSingleton<{type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>();"
                     : null;
                 var followed = nestedModel is not null
                     && SymbolEqualityComparer.Default.Equals(type, ReferencedValidator(nestedModel, compilation))
@@ -167,10 +201,15 @@ public static class ValidatorRegistrationEmitter
                 dependencies.Add(new RegistrationDependency(true, Key(type), line, followed));
             }
 
-            nodes.Add(new RegistrationNode(Key(current), registration, RegistryEntry(current), EquatableArray.From(dependencies)));
+            nodes.Add(new RegistrationNode(Key(current), registration, RegistryEntry(current, names), EquatableArray.From(dependencies)));
         }
 
         return EquatableArray.From(nodes);
+
+        // A type that still holds a type parameter gets no closed registration, unless the lines
+        // go in a method generic over the model's type parameters.
+        string? RegistrableLine(INamedTypeSymbol type, string validatorFqn) =>
+            !overTypeParameters && ContainsTypeParameter(type) ? null : ValidatorForLine(type, validatorFqn, names);
 
         string Visit(INamedTypeSymbol nested)
         {
@@ -188,18 +227,11 @@ public static class ValidatorRegistrationEmitter
     private static string Key(INamedTypeSymbol type) =>
         type.ContainingAssembly?.Identity.Name + "|" + type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
-    private static string ValidatorForLine(INamedTypeSymbol model, string validatorFqn)
+    private static string ValidatorForLine(INamedTypeSymbol model, string validatorFqn, RegistrationNames names)
     {
         var modelFqn = model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        return $"        services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<{modelFqn}>, {validatorFqn}>();";
+        return $"        {names.Services}.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<{modelFqn}>, {validatorFqn}>();";
     }
-
-    /// <summary>
-    /// <see cref="ValidatorForLine"/>, or <see langword="null"/> when <paramref name="model"/> still
-    /// holds a type parameter, which no closed registration can name.
-    /// </summary>
-    private static string? RegistrableLine(INamedTypeSymbol model, string validatorFqn) =>
-        ContainsTypeParameter(model) ? null : ValidatorForLine(model, validatorFqn);
 
     /// <summary>
     /// The line listing a generic model's closing in the <c>IModelValidator</c> registry, or
@@ -207,15 +239,15 @@ public static class ValidatorRegistrationEmitter
     /// <c>ValidatorFor</c> registration rather than constructing the generated validator, so a
     /// registration the application made first is the one listed.
     /// </summary>
-    private static string? RegistryEntry(INamedTypeSymbol model)
+    private static string? RegistryEntry(INamedTypeSymbol model, RegistrationNames names)
     {
         if (!GeneratedValidatorReach.IsGeneric(model))
             return null;
 
         var service = $"global::ZeroAlloc.Validation.ValidatorFor<{model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>";
-        return "        services.TryAddEnumerable(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<"
+        return $"        {names.Services}.TryAddEnumerable(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<"
             + $"global::ZeroAlloc.Validation.IModelValidator, {service}>("
-            + $"static sp => global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<{service}>(sp)));";
+            + $"static {names.Provider} => global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<{service}>({names.Provider})));";
     }
 
     private static bool ContainsTypeParameter(ITypeSymbol type) => type switch

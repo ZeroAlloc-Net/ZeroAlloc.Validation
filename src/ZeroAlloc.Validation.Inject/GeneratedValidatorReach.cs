@@ -27,7 +27,8 @@ namespace ZeroAlloc.Validation.Generator.Shared;
 /// repeats along the containing chain, <c>Outer&lt;T&gt;.Inner&lt;T&gt;</c>, or one named like the
 /// validator or like one of its members. The companion generators never list a generic model as a
 /// root of their registrations, <see cref="IsGeneric"/>: nothing closed can be registered for it,
-/// and its closings reach the container through the models that compose them.
+/// and its closings reach the container through the models that compose them, and through the
+/// generic registration helper and options overload the Inject and Options generators emit for it.
 /// </para>
 /// <para>
 /// Two models whose validators would get the same name in the same namespace, such as

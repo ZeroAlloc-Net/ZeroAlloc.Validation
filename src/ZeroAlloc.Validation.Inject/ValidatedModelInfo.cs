@@ -68,7 +68,8 @@ internal sealed class ValidatedModelInfo : IEquatable<ValidatedModelInfo>
         return new EquatableArray<ValidatedModelInfo>(builder.ToImmutable());
     }
 
-    private static bool IsPublicWithContainers(INamedTypeSymbol type)
+    /// <summary>Whether <paramref name="type"/> and every type containing it are public.</summary>
+    public static bool IsPublicWithContainers(INamedTypeSymbol type)
     {
         for (INamedTypeSymbol? t = type; t is not null; t = t.ContainingType)
         {
