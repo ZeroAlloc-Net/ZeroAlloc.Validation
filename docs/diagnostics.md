@@ -653,7 +653,7 @@ Leaving this to the final compilation too would fix the rare case where a second
 A type parameter also shares the validator's declaration space, so it cannot have the name of one of the validator's members, CS0102. ZV0029 reports a type parameter with a name the validator declares or reserves for its members:
 
 - `Validate` and `ValidateAsync`;
-- a name that starts with two underscores, the prefix of the validator's private members such as `__ValidateAsyncCore`, `__Rule_Name_0` and `__Regex_Name`. The C# specification reserves identifiers with two consecutive underscores for the implementation anyway;
+- a name that starts with two underscores, the prefix of the validator's private members such as `__ValidateAsyncCore`, `__Rule_Name_0`, `__Regex_Name` and the `__validateNext` delegate caches of its behavior chains. The C# specification reserves identifiers with two consecutive underscores for the implementation anyway;
 - an underscore, a name and `Validator`, such as `_addressValidator`, the form of the field that holds a nested model's validator.
 
 Which of these members a validator declares depends on the model's rules and properties, so every name of these forms is reported, and a model does not start failing when it gains an asynchronous rule or a nested property. A name the validator only uses for a method parameter or a local, such as `instance` or `ct`, is fine.

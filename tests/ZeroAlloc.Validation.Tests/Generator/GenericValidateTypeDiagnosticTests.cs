@@ -42,6 +42,7 @@ public class GenericValidateTypeDiagnosticTests
         { $$"""[Validate] public class Box<__Regex_Name> { {{Rule}} }""", "MyApp.Box<__Regex_Name>", "__Regex_Name", MemberName },
         { $$"""[Validate] public class Box<__Rule_Name_0> { {{Rule}} }""", "MyApp.Box<__Rule_Name_0>", "__Rule_Name_0", MemberName },
         { $$"""[Validate] public class Box<__ValidateAsyncCore> { {{Rule}} }""", "MyApp.Box<__ValidateAsyncCore>", "__ValidateAsyncCore", MemberName },
+        { $$"""[Validate] public class Box<__validateNext0> { {{Rule}} }""", "MyApp.Box<__validateNext0>", "__validateNext0", MemberName },
         { $$"""[Validate] public class Box<_nameValidator> { {{Rule}} }""", "MyApp.Box<_nameValidator>", "_nameValidator", MemberName },
     };
 

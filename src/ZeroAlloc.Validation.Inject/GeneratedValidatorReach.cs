@@ -197,8 +197,8 @@ internal static class GeneratedValidatorReach
     /// Whether a generated validator declares, or may declare, a member named
     /// <paramref name="name"/>: <c>Validate</c> and <c>ValidateAsync</c>; a name starting with two
     /// underscores, the prefix of its private members such as <c>__ValidateAsyncCore</c>,
-    /// <c>__Rule_Name_0</c> and <c>__Regex_Name</c>, which the C# specification reserves for the
-    /// implementation anyway; or <c>_</c> + a name + <c>Validator</c>, the form of the field that
+    /// <c>__Rule_Name_0</c>, <c>__Regex_Name</c> and the <c>__validateNext</c> delegate caches of its
+    /// behavior chains, which the C# specification reserves for the implementation anyway; or <c>_</c> + a name + <c>Validator</c>, the form of the field that
     /// holds a nested model's validator, <c>_addressValidator</c>. Which of these members a
     /// validator declares depends on the model's rules and properties, so every name of these
     /// forms is reserved, and a model does not start failing when it gains a rule or a property.
