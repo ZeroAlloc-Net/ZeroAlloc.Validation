@@ -494,7 +494,7 @@ internal static class RuleEmitter
             var unlessGuard  = unlessMethod is null ? "" : GeneratedCalls.UnlessGuard(modelParamName, unlessMethod);
 
             // A condition whose call raises CS0619, which ZV0032 reports, is left out with its body.
-            if (!calls.TryAppendLine(sb, $"{prefix} ({whenGuard}{unlessGuard}{condition})",
+            if (!calls.TryAppendLine(sb, $"{prefix} ({GeneratedCalls.GuardedCondition(whenGuard + unlessGuard, condition)})",
                 RuleCallSites(attr, prop, modelParamName, rawPropAccess, ruleIndex: i, condition)))
                 continue;
             sb.AppendLine($"            _buf.Add({BuildFailureInitializer(propName, message, attr, ruleMessage, propertyValueExpr)});");
@@ -764,7 +764,7 @@ internal static class RuleEmitter
             var unlessGuard  = unlessMethod is null ? "" : GeneratedCalls.UnlessGuard(modelParamName, unlessMethod);
 
             // A condition whose call raises CS0619, which ZV0032 reports, is left out with its body.
-            if (!calls.TryAppendLine(sb, $"{prefix} ({whenGuard}{unlessGuard}{condition})",
+            if (!calls.TryAppendLine(sb, $"{prefix} ({GeneratedCalls.GuardedCondition(whenGuard + unlessGuard, condition)})",
                 RuleCallSites(attr, prop, modelParamName, rawPropAccess, ruleIndex: i, condition)))
                 continue;
             sb.AppendLine("        {");

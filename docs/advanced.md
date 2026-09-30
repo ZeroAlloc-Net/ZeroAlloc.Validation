@@ -215,6 +215,8 @@ public class DerivedModel : BaseModel
 - `When = nameof(Method)` — only validate this rule **if** `instance.Method()` returns `true`
 - `Unless = nameof(Method)` — skip this rule **if** `instance.Method()` returns `true`
 
+A guard covers the whole rule: when it skips `[InclusiveBetween]`, neither bound is checked. Up to 2.0.2, a guarded `[InclusiveBetween]` or `[ExclusiveBetween]` on a non-nullable number, or `[Length]` on a struct value object, still checked the upper bound when the guard skipped the rule, [#282](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/282).
+
 ```csharp
 [Validate]
 public class Shipment
