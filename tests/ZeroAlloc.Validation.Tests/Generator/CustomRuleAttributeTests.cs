@@ -205,7 +205,7 @@ public class CustomRuleAttributeTests
 
         Assert.Empty(CompileErrors(output));
         var src = GetGeneratedSource(result, "RequestValidator.g.cs");
-        Assert.Contains("instance.Cond() && !instance.Skip() && !__Rule_Name_0.IsValid(instance.Name)", src, StringComparison.Ordinal);
+        Assert.Contains("instance.Cond() && !instance.Skip() && (!__Rule_Name_0.IsValid(instance.Name))", src, StringComparison.Ordinal);
         Assert.Contains("ErrorMessage = \"Name needs text\"", src, StringComparison.Ordinal);
         Assert.Contains("ErrorCode = \"BLANK\"", src, StringComparison.Ordinal);
         Assert.Contains("Severity = global::ZeroAlloc.Validation.Severity.Warning", src, StringComparison.Ordinal);
@@ -589,7 +589,7 @@ public class CustomRuleAttributeTests
         var src = NormalizeNewLines(GetGeneratedSource(result, "RequestValidator.g.cs"));
         Assert.DoesNotContain("_buf", src, StringComparison.Ordinal);
         Assert.Contains(
-            "        if (instance.Cond() && !__Rule_Name_0.IsValid(instance.Name))\n"
+            "        if (instance.Cond() && (!__Rule_Name_0.IsValid(instance.Name)))\n"
                 + "        {\n"
                 + "            return new global::ZeroAlloc.Validation.ValidationResult(new global::ZeroAlloc.Validation.ValidationFailure[]\n"
                 + "            {\n"
@@ -635,7 +635,7 @@ public class CustomRuleAttributeTests
         var src = NormalizeNewLines(GetGeneratedSource(result, "CustomerValidator.g.cs"));
         Assert.Contains("global::ZeroAlloc.Validation.ValidatorFor<global::TestModels.Address>", src, StringComparison.Ordinal);
         Assert.Contains(
-            "        if (instance.Cond() && !__Rule_Name_0.IsValid(instance.Name))\n"
+            "        if (instance.Cond() && (!__Rule_Name_0.IsValid(instance.Name)))\n"
                 + "            _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure { PropertyName = \"Name\", ErrorMessage = \"Name needs text\", "
                 + "ErrorCode = \"BLANK\", Severity = global::ZeroAlloc.Validation.Severity.Warning });\n",
             src,

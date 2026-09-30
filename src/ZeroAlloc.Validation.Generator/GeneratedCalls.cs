@@ -69,11 +69,21 @@ internal static class GeneratedCalls
     /// </summary>
     public static string MethodCall(string model, string method, string argument = "") => $"{MemberAccess(model, method)}({argument})";
 
-    /// <summary>A <c>When</c> guard, followed by the rule's condition.</summary>
+    /// <summary>A <c>When</c> guard, followed by the rule's condition as <see cref="GuardedCondition"/> writes it.</summary>
     public static string WhenGuard(string model, string method) => $"{MethodCall(model, method)} && ";
 
-    /// <summary>An <c>Unless</c> guard, followed by the rule's condition.</summary>
+    /// <summary>An <c>Unless</c> guard, followed by the rule's condition as <see cref="GuardedCondition"/> writes it.</summary>
     public static string UnlessGuard(string model, string method) => $"!{MethodCall(model, method)} && ";
+
+    /// <summary>
+    /// A rule's failure condition behind its <c>When</c> and <c>Unless</c> guards, as
+    /// <see cref="WhenGuard"/> and <see cref="UnlessGuard"/> build them. The condition is
+    /// parenthesised as a whole: a rule such as <c>[InclusiveBetween]</c> joins its bounds with
+    /// <c>||</c>, and <c>&amp;&amp;</c> binds tighter, so an unparenthesised condition left the
+    /// upper bound outside the guard, #282. Without a guard the condition stands alone, unchanged.
+    /// </summary>
+    public static string GuardedCondition(string guards, string condition) =>
+        guards.Length == 0 ? condition : $"{guards}({condition})";
 
     /// <summary>A <c>[Must]</c> rule's failure condition.</summary>
     public static string MustCondition(string model, string method, string argument) => $"!{MethodCall(model, method, argument)}";
