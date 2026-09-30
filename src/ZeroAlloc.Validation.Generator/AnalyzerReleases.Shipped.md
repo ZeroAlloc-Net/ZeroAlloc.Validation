@@ -64,3 +64,11 @@ ZV0029  | ZeroAlloc.Validation | Error    | [Validate] on a generic type
 ZV0030  | ZeroAlloc.Validation | Error    | Validation method call that does not compile
 ZV0031  | ZeroAlloc.Validation | Error    | Two [Validate] models whose validators would have the same name
 ZV0032  | ZeroAlloc.Validation | Warning  | Validation call that raises a compiler warning in the generated validator
+
+## Release 2.0.3
+
+### New Rules
+
+Rule ID | Category             | Severity | Notes
+--------|----------------------|----------|--------------------------------------------------------------------------------
+ZV0033  | ZeroAlloc.Validation | Error    | Numeric comparison rule on a type that is not a number
