@@ -18,6 +18,9 @@ public static class TestApp
 
         builder.Services.AddZeroAllocAspNetCoreValidation();
 
+        // A closing used only as an action argument, registered through the helper, #238.
+        builder.Services.AddCrateValidator<SampleModel>();
+
         var app = builder.Build();
         app.MapControllers();
         return app;

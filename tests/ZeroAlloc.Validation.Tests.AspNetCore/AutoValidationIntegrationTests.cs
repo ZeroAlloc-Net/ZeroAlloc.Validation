@@ -140,6 +140,34 @@ public class AutoValidationIntegrationTests : IAsyncLifetime
         Assert.Contains(registry, v => v.ModelType == typeof(Crate<Parcel>));
     }
 
+    // Issue #238, phase 3: a closing of a generic model as the action argument itself, which the
+    // filter's type-switch cannot name, is dispatched through the IModelValidator registry.
+    [Theory]
+    [InlineData("/sample/crate/parcel", "{\"Label\":\"c\"}", HttpStatusCode.OK)]
+    [InlineData("/sample/crate/parcel", "{\"Label\":\"\"}", HttpStatusCode.UnprocessableEntity)]
+    [InlineData("/sample/crate/sample", "{\"Label\":\"c\"}", HttpStatusCode.OK)]
+    [InlineData("/sample/crate/sample", "{\"Label\":\"\"}", HttpStatusCode.UnprocessableEntity)]
+    [InlineData("/sample/crate/special", "{\"Label\":\"c\"}", HttpStatusCode.OK)]
+    [InlineData("/sample/crate/special", "{\"Label\":\"\"}", HttpStatusCode.UnprocessableEntity)]
+    public async Task GenericClosingArgument_IsValidatedThroughTheRegistry(string path, string json, HttpStatusCode expected)
+    {
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        var response = await _client!.PostAsync(path, content);
+        Assert.Equal(expected, response.StatusCode);
+        if (expected == HttpStatusCode.UnprocessableEntity)
+            Assert.Contains("Label", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UnregisteredClosingOfALocalGenericModel_Throws()
+    {
+        // Letting it through would skip validation silently; the dispatch fails loudly instead.
+        using var content = new StringContent("{\"Label\":\"\"}", System.Text.Encoding.UTF8, "application/json");
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => _client!.PostAsync("/sample/crate/signup", content));
+        Assert.Contains("Crate", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Add…Validator<…>()", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task UnknownModelType_FilterSkips_Returns200()
     {

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -41,19 +42,53 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
                         ? ValidatedModelInfo.From((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
                         : null);
 
+        // The generic models of this compilation, as the unbound typeof operand of each, for the
+        // dispatch's fail-loud arm: a closing of one that nothing registered throws, issue #238.
+        var genericModels = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                ValidateAttributeFqn,
+                predicate: static (node, _) => node is ClassDeclarationSyntax
+                                                    or RecordDeclarationSyntax,
+                transform: static (ctx, _) =>
+                    GeneratedValidatorReach.HasGeneratedValidator((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
+                    && GeneratedValidatorReach.IsGeneric((INamedTypeSymbol)ctx.TargetSymbol)
+                        ? GeneratedValidatorNames.UnboundTypeName((INamedTypeSymbol)ctx.TargetSymbol)
+                        : null);
+
         var collected = validateClasses.Collect()
             .Select(static (models, _) => ValidatedModelInfo.WithGeneratedValidator(models));
+        var collectedGeneric = genericModels.Collect()
+            .Select(static (names, _) => Present(names));
         var isInternal = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => GeneratedAccessibilityOption.IsInternal(provider));
-        var combined = collected.Combine(isInternal).WithTrackingName(OutputTrackingName);
-        context.RegisterSourceOutput(combined, static (ctx, pair) => EmitFiles(ctx, pair.Left, pair.Right));
+        var combined = collected.Combine(collectedGeneric).Combine(isInternal).WithTrackingName(OutputTrackingName);
+        context.RegisterSourceOutput(combined, static (ctx, input) => EmitFiles(ctx, input.Left.Left, input.Left.Right, input.Right));
     }
 
-    private static void EmitFiles(SourceProductionContext ctx, EquatableArray<ValidatedModelInfo> models, bool isInternal)
+    private static EquatableArray<string> Present(ImmutableArray<string?> names)
     {
-        if (models.Count == 0) return;
+        var builder = ImmutableArray.CreateBuilder<string>(names.Length);
+        foreach (var name in names)
+        {
+            if (name is not null)
+                builder.Add(name);
+        }
+        return new EquatableArray<string>(builder.ToImmutable());
+    }
+
+    /// <summary>
+    /// Emits the filter, its dispatch of generic closings and the registration extension. They
+    /// are emitted for a compilation with any <c>[Validate]</c> model that gets a validator,
+    /// generic ones included: a project whose only models are generic needs the filter too, to
+    /// validate the closings its application registers.
+    /// </summary>
+    private static void EmitFiles(
+        SourceProductionContext ctx, EquatableArray<ValidatedModelInfo> models, EquatableArray<string> genericModels, bool isInternal)
+    {
+        if (models.Count == 0 && genericModels.Count == 0) return;
 
         ctx.AddSource("ZeroAlloc.Validation.ZeroAllocValidationActionFilter.g.cs",                EmitFilter(models));
+        ctx.AddSource("ZeroAlloc.Validation.ZeroAllocGenericModelDispatch.g.cs",                  EmitGenericDispatch(genericModels));
         ctx.AddSource("ZeroAlloc.Validation.ZeroAllocValidationServiceCollectionExtensions.g.cs", EmitExtensions(models, isInternal));
     }
 
@@ -63,6 +98,73 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         AppendFilterHeader(sb);
         AppendDispatchSwitch(sb, models);
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The dispatch of every argument the filter's type-switch does not know, issue #238, design
+    /// D-6: the closings of generic models, which cannot be a <c>case</c>, since the closings an
+    /// application uses are not all known here. It looks the argument's runtime type up among the
+    /// validators registered as <c>IModelValidator</c>, which every closed registration of a
+    /// generic closing lists, and then each of its base types, as a <c>case</c> matches a derived
+    /// type. An argument of no registered type is let through, as before, unless one of its types
+    /// is a closing of a generic model of this compilation: that throws, since a closing the
+    /// application forgot to register would otherwise pass unvalidated. The table is built once,
+    /// in a singleton; the lookup is a <c>GetType()</c> and a frozen-dictionary probe per type,
+    /// with no allocation, no <c>MakeGenericType</c> and nothing NativeAOT cannot compile.
+    /// </summary>
+    private static string EmitGenericDispatch(EquatableArray<string> genericModels)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("// <auto-generated />");
+        sb.AppendLine("#nullable enable");
+        sb.AppendLine();
+        sb.AppendLine("internal sealed class ZeroAllocGenericModelDispatch");
+        sb.AppendLine("{");
+        sb.AppendLine("    // The generic [Validate] models of this assembly, whose unregistered closings fail loudly.");
+        sb.Append("    private static readonly global::System.Type[] GenericModels = [");
+        for (var i = 0; i < genericModels.Count; i++)
+        {
+            if (i > 0) sb.Append(", ");
+            sb.Append("typeof(").Append(genericModels[i]).Append(')');
+        }
+        sb.AppendLine("];");
+        sb.AppendLine();
+        sb.AppendLine("    private readonly global::System.Collections.Frozen.FrozenDictionary<global::System.Type, global::ZeroAlloc.Validation.IModelValidator> _byType;");
+        sb.AppendLine();
+        sb.AppendLine("    public ZeroAllocGenericModelDispatch(global::System.Collections.Generic.IEnumerable<global::ZeroAlloc.Validation.IModelValidator> validators)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        // The first validator listed for a type wins, so a second entry added by hand cannot fail startup.");
+        sb.AppendLine("        var byType = new global::System.Collections.Generic.Dictionary<global::System.Type, global::ZeroAlloc.Validation.IModelValidator>();");
+        sb.AppendLine("        foreach (var validator in validators)");
+        sb.AppendLine("            byType.TryAdd(validator.ModelType, validator);");
+        sb.AppendLine("        _byType = global::System.Collections.Frozen.FrozenDictionary.ToFrozenDictionary(byType);");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        AppendDispatchLookup(sb);
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    /// <summary>The dispatch's lookup: the argument's type, then each base type, as <see cref="EmitGenericDispatch"/> describes.</summary>
+    private static void AppendDispatchLookup(StringBuilder sb)
+    {
+        sb.AppendLine("    public async global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult?> ValidateAsync(object arg, global::System.Threading.CancellationToken ct)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        if (_byType.Count == 0 && GenericModels.Length == 0)");
+        sb.AppendLine("            return null;");
+        sb.AppendLine();
+        sb.AppendLine("        for (var type = arg.GetType(); type is not null; type = type.BaseType)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (_byType.TryGetValue(type, out var validator))");
+        sb.AppendLine("                return await validator.ValidateAsync(arg, ct);");
+        sb.AppendLine("            if (type.IsConstructedGenericType && global::System.Array.IndexOf(GenericModels, type.GetGenericTypeDefinition()) >= 0)");
+        sb.AppendLine("                throw new global::System.InvalidOperationException(");
+        sb.AppendLine("                    $\"No validator is registered for '{type}', a closing of a generic [Validate] model, so the action argument cannot be validated. \" +");
+        sb.AppendLine("                    \"Register the closing with the generated Add…Validator<…>() helper of ZeroAlloc.Validation.Inject, or register \" +");
+        sb.AppendLine("                    \"ValidatorFor<T> with an IModelValidator entry for it, as that helper does.\");");
+        sb.AppendLine("        }");
+        sb.AppendLine("        return null;");
+        sb.AppendLine("    }");
     }
 
     private static void AppendFilterHeader(StringBuilder sb)
@@ -77,8 +179,13 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         sb.AppendLine("internal sealed class ZeroAllocValidationActionFilter : global::Microsoft.AspNetCore.Mvc.Filters.IAsyncActionFilter");
         sb.AppendLine("{");
         sb.AppendLine("    private readonly global::System.IServiceProvider _services;");
+        sb.AppendLine("    private readonly ZeroAllocGenericModelDispatch _generic;");
         sb.AppendLine();
-        sb.AppendLine("    public ZeroAllocValidationActionFilter(global::System.IServiceProvider services) => _services = services;");
+        sb.AppendLine("    public ZeroAllocValidationActionFilter(global::System.IServiceProvider services, ZeroAllocGenericModelDispatch generic)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        _services = services;");
+        sb.AppendLine("        _generic = generic;");
+        sb.AppendLine("    }");
         sb.AppendLine();
         sb.AppendLine("    public async global::System.Threading.Tasks.Task OnActionExecutionAsync(global::Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context, global::Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)");
         sb.AppendLine("    {");
@@ -120,7 +227,9 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
             sb.AppendLine($"                return await _services.GetRequiredService<global::ZeroAlloc.Validation.ValidatorFor<{fullName}>>().ValidateAsync({varName}, ct);");
         }
 
-        sb.AppendLine("            default: return null;");
+        // A closing of a generic model cannot be a case: see EmitGenericDispatch, issue #238.
+        sb.AppendLine("            case null: return null;");
+        sb.AppendLine("            default: return await _generic.ValidateAsync(arg, ct);");
         sb.AppendLine("        }");
         sb.AppendLine("    }");
         sb.AppendLine("}");
@@ -159,6 +268,7 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
 
         ValidatorRegistrationEmitter.AppendRegistrations(sb, models);
 
+        sb.AppendLine("        services.TryAddSingleton<ZeroAllocGenericModelDispatch>();");
         sb.AppendLine("        services.TryAddTransient<ZeroAllocValidationActionFilter>();");
         sb.AppendLine("        services.Configure<global::Microsoft.AspNetCore.Mvc.MvcOptions>(o => o.Filters.Add<ZeroAllocValidationActionFilter>());");
         sb.AppendLine("        return services;");

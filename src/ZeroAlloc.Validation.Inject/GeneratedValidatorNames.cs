@@ -70,6 +70,34 @@ internal static class GeneratedValidatorNames
         return ns is null || ns.IsGlobalNamespace ? null : ns.ToDisplayString(HintNamespaceFormat);
     }
 
+    /// <summary>
+    /// The unbound form of a generic model as a <c>typeof</c> operand writes it, fully qualified,
+    /// with keyword segments escaped: <c>global::Ns.Page&lt;&gt;</c>, <c>global::Ns.Pair&lt;,&gt;</c>,
+    /// or <c>global::Ns.Envelope&lt;&gt;.Header</c> for a model declared inside a generic type.
+    /// Its runtime value is the generic type definition of every closing of the model.
+    /// </summary>
+    public static string UnboundTypeName(INamedTypeSymbol model)
+    {
+        var sb = new StringBuilder("global::");
+        if (NamespaceName(model.OriginalDefinition) is { } ns)
+            sb.Append(ns).Append('.');
+        AppendUnbound(sb, model.OriginalDefinition);
+        return sb.ToString();
+    }
+
+    private static void AppendUnbound(StringBuilder sb, INamedTypeSymbol type)
+    {
+        if (type.ContainingType is { } container)
+        {
+            AppendUnbound(sb, container);
+            sb.Append('.');
+        }
+
+        sb.Append(GenericSignature.Identifier(type.Name));
+        if (type.Arity > 0)
+            sb.Append('<').Append(',', type.Arity - 1).Append('>');
+    }
+
     /// <summary>The validator's simple name, for example <c>Outer_RequestValidator</c>.</summary>
     public static string ValidatorName(INamedTypeSymbol model)
     {

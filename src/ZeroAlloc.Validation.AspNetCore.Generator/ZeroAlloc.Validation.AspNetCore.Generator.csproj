@@ -27,6 +27,9 @@
          names, issue #238. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\RegistrationNames.cs"
              Link="Shared\RegistrationNames.cs" />
+    <!-- GenericSignature escapes the names of the generic models the filter dispatch lists, #238. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\GenericSignature.cs"
+             Link="Shared\GenericSignature.cs" />
     <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedValidatorNames.cs"
              Link="Shared\GeneratedValidatorNames.cs" />
     <!-- GeneratedValidatorReach decides which [Validate] models get a validator, issue #216. -->
