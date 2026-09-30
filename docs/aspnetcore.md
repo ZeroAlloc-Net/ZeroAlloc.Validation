@@ -37,7 +37,7 @@ builder.Services.AddZeroAllocAspNetCoreValidation();
 The generated `ZeroAllocValidationActionFilter` implements `IAsyncActionFilter` and intercepts every incoming request:
 
 - `OnActionExecutionAsync` iterates over `context.ActionArguments.Values`
-- For each argument, calls a generated type-switch `Dispatch(arg)` method that resolves the validator via `ValidatorFor<T>` from DI
+- For each argument, calls a generated type-switch `DispatchAsync(arg, ct)` method that resolves the validator via `ValidatorFor<T>` from DI and awaits its `ValidateAsync`, so [asynchronous rules](custom-validation.md#asynchronous-rules--asyncvalidationattributet) run too. `ct` is the request's `HttpContext.RequestAborted`, so an aborted request cancels them
 - If validation fails: short-circuits the request and returns HTTP **422 Unprocessable Entity** with `ValidationProblemDetails`
 - On success: the request proceeds to the controller
 
@@ -51,7 +51,7 @@ sequenceDiagram
     participant Controller
 
     Client->>Filter: HTTP Request
-    Filter->>Validator: Validate(actionArgument)
+    Filter->>Validator: ValidateAsync(actionArgument, RequestAborted)
     alt IsValid
         Validator-->>Filter: ValidationResult (valid)
         Filter->>Controller: proceed

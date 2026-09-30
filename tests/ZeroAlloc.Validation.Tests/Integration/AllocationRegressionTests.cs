@@ -112,6 +112,27 @@ public class AllocationRegressionTests
         Assert.InRange(Measure(() => validator.Validate(model).IsValid), 1, OneFailureCeiling);
     }
 
+    // An async rule whose ValueTask completes at once leaves the generated async method to finish
+    // synchronously, so its state machine stays on the stack and the valid path allocates nothing.
+    [Fact]
+    public void AsyncRuleModel_SynchronouslyCompletingValidPath_AllocatesNothing()
+    {
+        var validator = new AllocAsyncRuleModelValidator();
+        var model = new AllocAsyncRuleModel { Name = "ok" };
+
+        Assert.Equal(0, Measure(() => validator.ValidateAsync(model).Result.IsValid));
+    }
+
+    [Fact]
+    public void AsyncRuleModel_SynchronouslyCompletingSingleFailure_AllocatesResultArrayOnly()
+    {
+        var validator = new AllocAsyncRuleModelValidator();
+        var model = new AllocAsyncRuleModel { Name = "" };
+
+        // [NotEmpty] fails; the async rule then fails too, so two failures: 24 + 2 * 32 bytes.
+        Assert.InRange(Measure(() => validator.ValidateAsync(model).Result.IsValid), 1, OneFailureCeiling + 32);
+    }
+
     /// <summary>Bytes allocated per call, averaged over a warmed-up run.</summary>
     private static long Measure(Func<bool> action)
     {

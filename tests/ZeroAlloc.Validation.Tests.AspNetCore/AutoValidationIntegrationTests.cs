@@ -38,6 +38,24 @@ public class AutoValidationIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AsyncRule_Passing_Returns200()
+    {
+        var response = await _client!.PostAsJsonAsync("/sample/signup", new { UserName = "free" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task AsyncRule_Failing_Returns422_WithItsMessage()
+    {
+        // The model's synchronous Validate throws, so a 422 here shows the filter awaited ValidateAsync.
+        var response = await _client!.PostAsJsonAsync("/sample/signup", new { UserName = "taken-name" });
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("UserName 'taken-name' is taken.", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task InvalidModel_EmptyName_Returns422()
     {
         var response = await _client!.PostAsJsonAsync("/sample", new { Name = "", Quantity = 5 });

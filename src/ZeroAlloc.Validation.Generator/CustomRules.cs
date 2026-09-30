@@ -8,26 +8,41 @@ namespace ZeroAlloc.Validation.Generator;
 
 /// <summary>
 /// Recognition and emission of user-defined rules: attributes deriving from
-/// <c>ZeroAlloc.Validation.ValidationAttribute&lt;T&gt;</c>. Each usage is rebuilt once as a
-/// static instance of the attribute and checked with a statically bound <c>IsValid</c> call.
+/// <c>ZeroAlloc.Validation.ValidationAttribute&lt;T&gt;</c> or, for an asynchronous rule,
+/// <c>ZeroAlloc.Validation.AsyncValidationAttribute&lt;T&gt;</c>. Each usage is rebuilt once as a
+/// static instance of the attribute and checked with a statically bound <c>IsValid</c> call, or
+/// an awaited <c>IsValidAsync</c> call.
 /// </summary>
 internal static class CustomRules
 {
     private const string ValidationAttributeOfTMetadataName = "ValidationAttribute`1";
+    private const string AsyncValidationAttributeOfTMetadataName = "AsyncValidationAttribute`1";
     private const string ValidationAttributeMetadataName = "ValidationAttribute";
     private const string ValidationNamespace = "ZeroAlloc.Validation";
     private const string RuleMessageAttributeMetadataName = "RuleMessageAttribute";
 
     /// <summary>
-    /// Returns <c>T</c> of the first <c>ValidationAttribute&lt;T&gt;</c> in the base-type chain of
+    /// Returns <c>T</c> of the first <c>ValidationAttribute&lt;T&gt;</c> or
+    /// <c>AsyncValidationAttribute&lt;T&gt;</c> in the base-type chain of
     /// <paramref name="attrClass"/>, which is closed for any attribute that can be applied.
     /// </summary>
-    public static bool TryGetRuleValueType(INamedTypeSymbol attrClass, out ITypeSymbol valueType)
+    public static bool TryGetRuleValueType(INamedTypeSymbol attrClass, out ITypeSymbol valueType) =>
+        TryGetRuleValueType(attrClass, out valueType, out _);
+
+    /// <summary>
+    /// As <see cref="TryGetRuleValueType(INamedTypeSymbol, out ITypeSymbol)"/>, and whether the
+    /// rule is asynchronous: <paramref name="isAsync"/> is set when the base found is
+    /// <c>AsyncValidationAttribute&lt;T&gt;</c>, whose <c>IsValidAsync</c> the validator awaits.
+    /// </summary>
+    public static bool TryGetRuleValueType(INamedTypeSymbol attrClass, out ITypeSymbol valueType, out bool isAsync)
     {
         for (var current = attrClass.BaseType; current is not null; current = current.BaseType)
         {
-            if (string.Equals(current.MetadataName, ValidationAttributeOfTMetadataName, StringComparison.Ordinal)
-                && string.Equals(current.ContainingNamespace?.ToDisplayString(), ValidationNamespace, StringComparison.Ordinal))
+            if (!string.Equals(current.ContainingNamespace?.ToDisplayString(), ValidationNamespace, StringComparison.Ordinal))
+                continue;
+
+            isAsync = string.Equals(current.MetadataName, AsyncValidationAttributeOfTMetadataName, StringComparison.Ordinal);
+            if (isAsync || string.Equals(current.MetadataName, ValidationAttributeOfTMetadataName, StringComparison.Ordinal))
             {
                 valueType = current.TypeArguments[0];
                 return true;
@@ -35,12 +50,20 @@ internal static class CustomRules
         }
 
         valueType = null!;
+        isAsync = false;
         return false;
     }
 
-    /// <summary>Whether <paramref name="attr"/> is a user-defined rule, a <c>ValidationAttribute&lt;T&gt;</c> subclass.</summary>
+    /// <summary>
+    /// Whether <paramref name="attr"/> is a user-defined rule, a <c>ValidationAttribute&lt;T&gt;</c>
+    /// or <c>AsyncValidationAttribute&lt;T&gt;</c> subclass.
+    /// </summary>
     public static bool IsCustomRule(AttributeData attr) =>
         attr.AttributeClass is { } attrClass && TryGetRuleValueType(attrClass, out _);
+
+    /// <summary>Whether <paramref name="attr"/> is an asynchronous user-defined rule, an <c>AsyncValidationAttribute&lt;T&gt;</c> subclass.</summary>
+    public static bool IsAsyncRule(AttributeData attr) =>
+        attr.AttributeClass is { } attrClass && TryGetRuleValueType(attrClass, out _, out var isAsync) && isAsync;
 
     /// <summary>
     /// Whether <paramref name="attrClass"/> derives, directly or indirectly, from the non-generic

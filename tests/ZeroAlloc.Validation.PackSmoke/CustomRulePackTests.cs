@@ -9,7 +9,8 @@ namespace ZeroAlloc.Validation.PackSmoke;
 /// [RuleMessage] on it, decorate a [Validate] model with it, and get back a validator the
 /// generator emits a statically bound check into. An in-repo ProjectReference build cannot
 /// catch a packaging gap here — the base types, or the generator's custom-rule recognition,
-/// failing to ship in the .nupkg.
+/// failing to ship in the .nupkg. Issue #202 adds an AsyncValidationAttribute&lt;T&gt; rule, whose
+/// generated ValidateAsync needs the packed AsyncFailureBuffer.
 /// </summary>
 [Collection(PackedFeedCollection.Name)]
 public sealed class CustomRulePackTests
@@ -30,6 +31,7 @@ public sealed class CustomRulePackTests
             PackedFeed.WriteNuGetConfig(projectDir, _feed.FeedDirectory, Path.Combine(workDir, "packages"));
             WriteProject(projectDir);
             WriteSource(projectDir);
+            WriteAsyncRuleSource(projectDir);
 
             var build = PackedFeed.RunDotnet("build \"CustomRuleConsumer.csproj\" -c Release", projectDir);
             Assert.True(build.ExitCode == 0, $"Consumer build failed.\n{build.Output}");
@@ -51,6 +53,7 @@ public sealed class CustomRulePackTests
             var run = PackedFeed.RunDotnet($"\"{dll}\"", projectDir);
             Assert.True(run.ExitCode == 0, $"Consumer run failed.\n{run.Output}");
             Assert.Contains("Name must not be blank.", run.Output, StringComparison.Ordinal);
+            Assert.Contains("Handle 'taken' is taken.", run.Output, StringComparison.Ordinal);
         }
         finally
         {
@@ -106,9 +109,10 @@ public sealed class CustomRulePackTests
             }
             """);
 
-        // Validates a model that fails the custom rule, prints the resulting failure message,
-        // and exits 1 if validation unexpectedly passed — the run itself is the assertion that
-        // the packed generator both recognized [NotBlank] and wired up [RuleMessage].
+        // Validates a model that fails the custom rule, and one that fails the asynchronous rule,
+        // prints the failure messages, and exits 1 if either unexpectedly passed. The run itself
+        // is the assertion that the packed generator recognized [NotBlank] and [Available] and
+        // wired up [RuleMessage].
         File.WriteAllText(Path.Combine(projectDir, "Program.cs"), """
             using System;
             using Consumer;
@@ -125,7 +129,52 @@ public sealed class CustomRulePackTests
             foreach (var failure in result.Failures)
                 Console.WriteLine(failure.ErrorMessage);
 
+            var account = await new AccountValidator().ValidateAsync(new Account { Handle = "taken" });
+            if (account.IsValid)
+            {
+                Console.Error.WriteLine("Expected the account to fail its asynchronous rule, but it passed.");
+                return 1;
+            }
+
+            foreach (var failure in account.Failures)
+                Console.WriteLine(failure.ErrorMessage);
+
             return 0;
+            """);
+    }
+
+    /// <summary>An asynchronous rule, issue #202, and a model using it, which Program.cs validates with ValidateAsync.</summary>
+    private static void WriteAsyncRuleSource(string projectDir)
+    {
+        File.WriteAllText(Path.Combine(projectDir, "AvailableAttribute.cs"), """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using ZeroAlloc.Validation;
+
+            namespace Consumer;
+
+            [RuleMessage("{PropertyName} '{PropertyValue}' is taken.")]
+            public sealed class AvailableAttribute : AsyncValidationAttribute<string?>
+            {
+                public override async ValueTask<bool> IsValidAsync(string? value, CancellationToken ct)
+                {
+                    await Task.Yield();
+                    return value != "taken";
+                }
+            }
+            """);
+
+        File.WriteAllText(Path.Combine(projectDir, "Account.cs"), """
+            using ZeroAlloc.Validation;
+
+            namespace Consumer;
+
+            [Validate]
+            public sealed class Account
+            {
+                [Available]
+                public string? Handle { get; set; }
+            }
             """);
     }
 }

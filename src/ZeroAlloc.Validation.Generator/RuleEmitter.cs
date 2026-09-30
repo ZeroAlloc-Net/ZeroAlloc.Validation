@@ -76,7 +76,10 @@ internal static class RuleEmitter
             string.Equals(a.AttributeClass?.ToDisplayString(), StopOnFirstFailureFqn, StringComparison.Ordinal));
 
     /// <summary>
-    /// Emits the body of the generated <c>Validate</c> method. <paramref name="calls"/> writes the
+    /// Emits the body of the generated <c>Validate</c> method, or, for a model that
+    /// <see cref="RequiresAsync(INamedTypeSymbol, Compilation)"/>, the body of its <c>async</c>
+    /// validation method, which awaits asynchronous rules and nested validators and reads the
+    /// cancellation token <see cref="GeneratedCalls.CancellationToken"/>. <paramref name="calls"/> writes the
     /// lines that hold rule calls; by default it wraps each one the compiler warned on, as
     /// <see cref="MethodCallProbe.CallWarnings"/> reports, in a pragma for that warning, which
     /// ZV0032 mirrors at the attribute. <see cref="MethodCallProbe"/> passes a recording one to
@@ -85,6 +88,7 @@ internal static class RuleEmitter
     public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName = "instance", GeneratedFields? fields = null, CallLineWriter? calls = null)
     {
         calls ??= CallLineWriter.Emitting(MethodCallProbe.CallWarnings(compilation, classSymbol));
+        bool isAsync = RequiresAsync(classSymbol, compilation);
 
         // A [SkipWhen] method the validator cannot call is reported, as ZV0017, ZV0028 or ZV0030,
         // and left out, so the model is validated. So is one whose call raises CS0619, which
@@ -110,10 +114,66 @@ internal static class RuleEmitter
         bool validatorStop = GetBoolNamedArg(validateAttr, "StopOnFirstFailure");
 
         if (hasNested)
-            EmitNestedPath(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, customMethods, modelParamName, validatorStop, totalDirectRules, calls, fields);
+            EmitNestedPath(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, customMethods, modelParamName, validatorStop, totalDirectRules, calls, isAsync, fields);
         else
-            EmitFlatPath(sb, classSymbol, byProperty, totalDirectRules, modelParamName, validatorStop, calls, fields);
+            EmitFlatPath(sb, classSymbol, byProperty, totalDirectRules, modelParamName, validatorStop, calls, isAsync, fields);
     }
+
+    /// <summary>
+    /// Whether the validator for <paramref name="classSymbol"/> must validate asynchronously: a
+    /// rule it emits is an <c>AsyncValidationAttribute&lt;T&gt;</c>, or a nested or collection
+    /// property is validated by the generated validator of a model that must, transitively. Its
+    /// body is then emitted as the body of an <c>async</c> method, awaiting those rules and every
+    /// nested validator's <c>ValidateAsync</c>, and its synchronous <c>Validate</c> throws rather
+    /// than skip them. The rules counted are the ones <see cref="CollectPropertyRules"/> keeps, so
+    /// the async body always awaits something. A <c>[ValidateWith]</c> validator is not generated
+    /// here, so it does not count; an async body still calls its <c>ValidateAsync</c>.
+    /// </summary>
+    public static bool RequiresAsync(INamedTypeSymbol classSymbol, Compilation compilation)
+    {
+        var cache = AsyncModels.GetValue(compilation, static _ => new System.Collections.Concurrent.ConcurrentDictionary<string, bool>(StringComparer.Ordinal));
+        var key = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        if (cache.TryGetValue(key, out var requiresAsync)) return requiresAsync;
+
+        requiresAsync = RequiresAsync(classSymbol, compilation, new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default));
+        cache.TryAdd(key, requiresAsync);
+        return requiresAsync;
+    }
+
+    /// <summary>
+    /// <see cref="RequiresAsync(INamedTypeSymbol, Compilation)"/>'s answers per compilation, which
+    /// every emit of a model's body, its probes and ZV0034 ask for. A <see cref="Compilation"/> is
+    /// immutable, so an answer never goes stale, and the table holds it weakly. Only the model
+    /// asked about is stored: a model reached inside a cycle is answered by its own first visit.
+    /// </summary>
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Compilation, System.Collections.Concurrent.ConcurrentDictionary<string, bool>> AsyncModels = new();
+
+    private static bool RequiresAsync(INamedTypeSymbol classSymbol, Compilation compilation, HashSet<INamedTypeSymbol> visited)
+    {
+        // A model that reaches itself through a cycle is decided by its first visit.
+        if (!visited.Add(classSymbol)) return false;
+
+        foreach (var (prop, rules) in CollectPropertyRules(classSymbol, compilation))
+        {
+            if (!ObsoleteErrors.IsObsoleteError(prop) && rules.Exists(CustomRules.IsAsyncRule))
+                return true;
+        }
+
+        foreach (var (_, type, isValidateWith, _) in ValidatorDependencies.Of(classSymbol, compilation))
+        {
+            if (!isValidateWith && RequiresAsync(type, compilation, visited))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>The return type of <c>ValidateAsync</c>.</summary>
+    public const string AsyncResultType = "global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult>";
+
+    /// <summary>The failure buffer a body collects into: <c>FailureBuffer</c>, or its non-ref counterpart for an async body.</summary>
+    private static string FailureBufferType(bool isAsync) => isAsync
+        ? "global::ZeroAlloc.Validation.Internal.AsyncFailureBuffer"
+        : "global::ZeroAlloc.Validation.Internal.FailureBuffer";
 
     /// <summary>
     /// The rules to emit for each property, in declaration order. Every emit path, sync and async,
@@ -200,31 +260,32 @@ internal static class RuleEmitter
         bool validatorStop,
         int totalDirectRules,
         CallLineWriter calls,
+        bool isAsync,
         GeneratedFields? fields = null)
     {
-        sb.AppendLine($"        var _buf = new global::ZeroAlloc.Validation.Internal.FailureBuffer({totalDirectRules});");
+        sb.AppendLine($"        var _buf = new {FailureBufferType(isAsync)}({totalDirectRules});");
         sb.AppendLine();
 
         if (!validatorStop)
         {
             EmitPropertyRulesWithAdd(sb, byProperty, classSymbol, modelParamName, calls, fields);
-            EmitNestedValidators(sb, nestedProperties, validatorFields, modelParamName);
-            EmitCollectionValidators(sb, collectionProperties, validatorFields, modelParamName);
+            EmitNestedValidators(sb, nestedProperties, validatorFields, modelParamName, isAsync);
+            EmitCollectionValidators(sb, collectionProperties, validatorFields, modelParamName, isAsync);
         }
         else
         {
-            EmitNestedPathStop(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, modelParamName, calls, fields);
+            EmitNestedPathStop(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, modelParamName, calls, isAsync, fields);
         }
 
         // [CustomValidation] methods always run last.
         // With validatorStop=true: EmitNestedPathStop above emits early returns for each failing property group,
         // so custom methods are only reached if all property groups pass.
-        EmitCustomValidationCalls(sb, customMethods, modelParamName, calls);
+        EmitCustomValidationCalls(sb, customMethods, modelParamName, calls, isAsync);
 
         sb.AppendLine("        return _buf.ToResult();");
     }
 
-    private static void EmitCustomValidationCalls(StringBuilder sb, List<CustomValidationCall> customMethods, string modelParamName, CallLineWriter calls)
+    private static void EmitCustomValidationCalls(StringBuilder sb, List<CustomValidationCall> customMethods, string modelParamName, CallLineWriter calls, bool isAsync)
     {
         for (int i = 0; i < customMethods.Count; i++)
         {
@@ -232,6 +293,14 @@ internal static class RuleEmitter
             var site = new[] { CustomValidationSite(customMethods[i], call) };
             // A call that raises CS0619, which ZV0032 reports, is left out with the loop over
             // its result.
+            if (customMethods[i].ByRef && isAsync)
+            {
+                // An async body cannot declare a span local, so the span goes straight to the
+                // buffer, which walks it by reference.
+                if (calls.TryAppendLine(sb, $"        _buf.AddRange({call});", site))
+                    sb.AppendLine();
+                continue;
+            }
             if (customMethods[i].ByRef)
             {
                 // A span is walked by reference to avoid copying each failure. The call is hoisted
@@ -371,6 +440,7 @@ internal static class RuleEmitter
         Dictionary<IPropertySymbol, string> validatorFields,
         string modelParamName,
         CallLineWriter calls,
+        bool isAsync,
         GeneratedFields? fields = null)
     {
         int groupIdx = 0;
@@ -395,10 +465,10 @@ internal static class RuleEmitter
                 EmitPropertyRulesForProp(sb, directProp, directRules, classSymbol, modelParamName, calls, fields);
 
             if (nestedProp is not null)
-                EmitNestedValidatorForProp(sb, nestedProp, ValidatorField(validatorFields, nestedProp), modelParamName);
+                EmitNestedValidatorForProp(sb, nestedProp, ValidatorField(validatorFields, nestedProp), modelParamName, isAsync);
 
             if (collProp is not null && collElementType is not null)
-                EmitCollectionValidatorForProp(sb, collProp, collElementType, ValidatorField(validatorFields, collProp), collCi++, modelParamName);
+                EmitCollectionValidatorForProp(sb, collProp, collElementType, ValidatorField(validatorFields, collProp), collCi++, modelParamName, isAsync);
 
             sb.AppendLine($"        if (_buf.Count > _b{groupIdx}) return _buf.ToResult();");
             sb.AppendLine();
@@ -534,13 +604,14 @@ internal static class RuleEmitter
         StringBuilder sb,
         List<IPropertySymbol> nestedProperties,
         Dictionary<IPropertySymbol, string> validatorFields,
-        string modelParamName)
+        string modelParamName,
+        bool isAsync)
     {
         for (int ni = 0; ni < nestedProperties.Count; ni++)
-            EmitNestedValidatorForProp(sb, nestedProperties[ni], ValidatorField(validatorFields, nestedProperties[ni]), modelParamName);
+            EmitNestedValidatorForProp(sb, nestedProperties[ni], ValidatorField(validatorFields, nestedProperties[ni]), modelParamName, isAsync);
     }
 
-    private static void EmitNestedValidatorForProp(StringBuilder sb, IPropertySymbol nestedProp, string validatorField, string modelParamName)
+    private static void EmitNestedValidatorForProp(StringBuilder sb, IPropertySymbol nestedProp, string validatorField, string modelParamName, bool isAsync)
     {
         var propName = nestedProp.Name;
 
@@ -552,11 +623,20 @@ internal static class RuleEmitter
             sb.AppendLine($"        if ({access} is not null)");
             sb.AppendLine("        {");
         }
-        sb.AppendLine($"            var nestedResult = {validatorField}.Validate({access});");
-        sb.AppendLine("            foreach (ref readonly var f in nestedResult.Failures)");
-        AppendFailureCopyPragma(sb, disable: true);
-        sb.AppendLine($"                _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
-        AppendFailureCopyPragma(sb, disable: false);
+        if (isAsync)
+        {
+            // An async body cannot walk the failures by reference, so the buffer copies them.
+            var validation = GeneratedCalls.Await($"{validatorField}.ValidateAsync({access}, {GeneratedCalls.CancellationToken})");
+            sb.AppendLine($"            _buf.AddNested({validation}, \"{propName}\");");
+        }
+        else
+        {
+            sb.AppendLine($"            var nestedResult = {validatorField}.Validate({access});");
+            sb.AppendLine("            foreach (ref readonly var f in nestedResult.Failures)");
+            AppendFailureCopyPragma(sb, disable: true);
+            sb.AppendLine($"                _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}.\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
+            AppendFailureCopyPragma(sb, disable: false);
+        }
         if (needsPropGuard)
         {
             sb.AppendLine("        }");
@@ -568,21 +648,26 @@ internal static class RuleEmitter
         StringBuilder sb,
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
         Dictionary<IPropertySymbol, string> validatorFields,
-        string modelParamName)
+        string modelParamName,
+        bool isAsync)
     {
         for (int ci = 0; ci < collectionProperties.Count; ci++)
         {
             var property = collectionProperties[ci].Property;
-            EmitCollectionValidatorForProp(sb, property, collectionProperties[ci].ElementType, ValidatorField(validatorFields, property), ci, modelParamName);
+            EmitCollectionValidatorForProp(sb, property, collectionProperties[ci].ElementType, ValidatorField(validatorFields, property), ci, modelParamName, isAsync);
         }
     }
 
-    private static void EmitCollectionValidatorForProp(StringBuilder sb, IPropertySymbol collProp, INamedTypeSymbol elementType, string validatorField, int ci, string modelParamName)
+    private static void EmitCollectionValidatorForProp(StringBuilder sb, IPropertySymbol collProp, INamedTypeSymbol elementType, string validatorField, int ci, string modelParamName, bool isAsync)
     {
         var propName = collProp.Name;
         var varName = $"_c{ci.ToString(CultureInfo.InvariantCulture)}";
 
         var style = ClassifyCollectionIteration(collProp.Type);
+        // An async body cannot hold a span or a ref local across an await, so a List<T> is
+        // walked by index there, as the interface-typed collections are.
+        if (isAsync && style == CollectionIteration.ListSpan)
+            style = CollectionIteration.Indexed;
 
         var access = GeneratedCalls.MemberAccess(modelParamName, propName);
 
@@ -617,26 +702,43 @@ internal static class RuleEmitter
                 break;
         }
 
+        EmitCollectionItemValidation(sb, propName, elementType, validatorField, varName, isAsync);
+        if (style != CollectionIteration.Indexed)
+            sb.AppendLine($"                {varName}Idx++;");
+        sb.AppendLine("            }");
+        sb.AppendLine("        }");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// The validation of one collection element, inside the loop <see cref="EmitCollectionValidatorForProp"/>
+    /// opens: the element's validator, its failures added under <c>Prop[i].</c>.
+    /// </summary>
+    private static void EmitCollectionItemValidation(StringBuilder sb, string propName, INamedTypeSymbol elementType, string validatorField, string varName, bool isAsync)
+    {
         var needsItemGuard = NeedsNullGuard(elementType);
         if (needsItemGuard)
         {
             sb.AppendLine($"                if ({varName}Item is not null)");
             sb.AppendLine("                {");
         }
-        sb.AppendLine($"                    var {varName}Result = {validatorField}.Validate({varName}Item);");
-        sb.AppendLine($"                    foreach (ref readonly var f in {varName}Result.Failures)");
-        AppendFailureCopyPragma(sb, disable: true);
-        sb.AppendLine($"                        _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
-        AppendFailureCopyPragma(sb, disable: false);
+        if (isAsync)
+        {
+            var validation = GeneratedCalls.Await($"{validatorField}.ValidateAsync({varName}Item, {GeneratedCalls.CancellationToken})");
+            sb.AppendLine($"                    _buf.AddNested({validation}, \"{propName}\", {varName}Idx);");
+        }
+        else
+        {
+            sb.AppendLine($"                    var {varName}Result = {validatorField}.Validate({varName}Item);");
+            sb.AppendLine($"                    foreach (ref readonly var f in {varName}Result.Failures)");
+            AppendFailureCopyPragma(sb, disable: true);
+            sb.AppendLine($"                        _buf.Add(new global::ZeroAlloc.Validation.ValidationFailure {{ PropertyName = \"{propName}[\" + {varName}Idx + \"].\" + f.PropertyName, ErrorMessage = f.ErrorMessage, ErrorCode = f.ErrorCode, Severity = f.Severity }});");
+            AppendFailureCopyPragma(sb, disable: false);
+        }
         if (needsItemGuard)
         {
             sb.AppendLine("                }");
         }
-        if (style != CollectionIteration.Indexed)
-            sb.AppendLine($"                {varName}Idx++;");
-        sb.AppendLine("            }");
-        sb.AppendLine("        }");
-        sb.AppendLine();
     }
 
     private enum CollectionIteration
@@ -680,6 +782,7 @@ internal static class RuleEmitter
         string modelParamName,
         bool validatorStop,
         CallLineWriter calls,
+        bool isAsync,
         GeneratedFields? fields = null)
     {
         // Under model-level fail-fast, a group that can only ever produce one failure returns
@@ -698,7 +801,7 @@ internal static class RuleEmitter
             // FailureBuffer rents from ArrayPool and only on the first Add, so the valid path
             // neither allocates nor touches the pool, and a failing path costs the result array
             // alone rather than a scratch array plus the result.
-            sb.AppendLine($"        var _buf = new global::ZeroAlloc.Validation.Internal.FailureBuffer({totalDirectRules});");
+            sb.AppendLine($"        var _buf = new {FailureBufferType(isAsync)}({totalDirectRules});");
             sb.AppendLine();
         }
 
@@ -1122,7 +1225,12 @@ internal static class RuleEmitter
         sb.AppendLine($"internal sealed class {className}");
         sb.AppendLine("{");
         AppendNestedValidatorFields(sb, CollectNestedValidatorFields(classSymbol, compilation));
-        sb.AppendLine($"    private global::ZeroAlloc.Validation.ValidationResult Validate({classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)} {MethodCallProbe.Model})");
+        // A model that must validate asynchronously gets an awaiting body, compiled as the async
+        // method the generated validator declares it in.
+        var model = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        sb.AppendLine(RequiresAsync(classSymbol, compilation)
+            ? $"    private async {AsyncResultType} Validate({model} {MethodCallProbe.Model}, global::System.Threading.CancellationToken {GeneratedCalls.CancellationToken})"
+            : $"    private global::ZeroAlloc.Validation.ValidationResult Validate({model} {MethodCallProbe.Model})");
         sb.AppendLine("    {");
         var fields = new GeneratedFields();
         var calls = CallLineWriter.Recording();
@@ -1156,9 +1264,10 @@ internal static class RuleEmitter
         if (GetUnless(attr) is { } unless)
             sites.Add(new CallSite(GeneratedCalls.MethodCall(modelParamName, unless), attr, prop, declaringType, $"Unless of [{rule}] on '{prop.Name}'"));
 
-        if (CustomRules.TryGetRuleValueType(attr.AttributeClass!, out _))
+        if (CustomRules.TryGetRuleValueType(attr.AttributeClass!, out _, out var isAsyncRule))
         {
-            sites.Add(new CallSite(GeneratedCalls.RuleCall(CustomRules.FieldName(prop.Name, ruleIndex), rawAccess),
+            var field = CustomRules.FieldName(prop.Name, ruleIndex);
+            sites.Add(new CallSite(isAsyncRule ? GeneratedCalls.AsyncRuleCall(field, rawAccess) : GeneratedCalls.RuleCall(field, rawAccess),
                 attr, prop, declaringType, $"[{rule}] on '{prop.Name}'"));
         }
         else if (IsMust(attr))
@@ -1417,7 +1526,7 @@ internal static class RuleEmitter
 
         // User-defined rules ([NotBlank] deriving from ValidationAttribute<T>) are rebuilt once as
         // a static field and called directly. Like [Must], they receive the raw property value.
-        if (CustomRules.TryGetRuleValueType(attr.AttributeClass!, out _))
+        if (CustomRules.TryGetRuleValueType(attr.AttributeClass!, out _, out var isAsyncRule))
         {
             var field = CustomRules.FieldName(propName, ruleIndex);
             if (fields is not null)
@@ -1427,7 +1536,10 @@ internal static class RuleEmitter
                     CustomRules.BuildInitializer(attr),
                     CustomRules.NamesObsoleteSymbol(attr));
             }
-            return "!" + GeneratedCalls.RuleCall(field, rawForPredicate);
+            // An async rule is only ever emitted into an async body, as RequiresAsync counts it.
+            return isAsyncRule
+                ? "!" + GeneratedCalls.Await(GeneratedCalls.AsyncRuleCall(field, rawForPredicate))
+                : "!" + GeneratedCalls.RuleCall(field, rawForPredicate);
         }
 
         // The type of the value the rule reads: for a single-property [ValueObject] that is the
@@ -1987,7 +2099,7 @@ internal static class RuleEmitter
     private static readonly DiagnosticDescriptor ZV0020 = new DiagnosticDescriptor(
         id: "ZV0020",
         title: "ValidationAttribute subclass the generator cannot emit",
-        messageFormat: "'{0}' derives from ValidationAttribute but the generator cannot emit it; derive from ValidationAttribute<T> and override IsValid",
+        messageFormat: "'{0}' derives from ValidationAttribute but the generator cannot emit it; derive from ValidationAttribute<T> and override IsValid, or from AsyncValidationAttribute<T> and override IsValidAsync",
         category: "ZeroAlloc.Validation",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);

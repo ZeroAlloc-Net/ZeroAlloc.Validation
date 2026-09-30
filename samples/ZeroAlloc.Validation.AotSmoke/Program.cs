@@ -274,6 +274,53 @@ if (Expect(allBad, "Reading all invalid",
         ("Batch", "Batch is invalid.", null),
         ("Tolerance.Ratio", "Ratio must be between 0 and 1.", null)) is { } e23) return Fail(e23);
 
+// Fixture 5: asynchronous rules, AsyncValidationAttribute<T>. ValidateAsync awaits them in
+// declaration order among the synchronous rules, honours When, and awaits nested and collection
+// validators; the synchronous Validate throws instead of skipping them.
+var memberValidator = new MemberValidator();
+if (Expect(await memberValidator.ValidateAsync(new Member { Handle = "free" }).ConfigureAwait(false), "Member free") is { } a0) return Fail(a0);
+if (Expect(await memberValidator.ValidateAsync(new Member { Handle = "taken-by-someone" }).ConfigureAwait(false), "Member taken",
+        ("Handle", "Handle 'taken-by-someone' is taken.", "TAKEN"),
+        ("Handle", "Handle must not exceed 12 characters.", null)) is { } a1) return Fail(a1);
+if (Expect(await memberValidator.ValidateAsync(new Member { Handle = "free", Alias = "taken" }).ConfigureAwait(false), "Member alias taken",
+        ("Alias", "Alias 'taken' is taken.", "TAKEN")) is { } a2) return Fail(a2);
+
+try
+{
+    memberValidator.Validate(new Member { Handle = "free" });
+    return Fail("Member: the synchronous Validate should throw for a model with asynchronous rules");
+}
+catch (NotSupportedException)
+{
+    // Expected: the asynchronous rules cannot run synchronously, and are not skipped.
+}
+
+var teamValidator = new TeamValidator(new MemberValidator(), new MemberValidator());
+var team = new Team
+{
+    Name = "",
+    Lead = new Member { Handle = "taken" },
+    Members = [new Member { Handle = "free" }, new Member { Handle = "taken-too" }],
+};
+if (Expect(await teamValidator.ValidateAsync(team).ConfigureAwait(false), "Team",
+        ("Name", "Name must not be empty.", null),
+        ("Lead.Handle", "Handle 'taken' is taken.", "TAKEN"),
+        ("Members[1].Handle", "Handle 'taken-too' is taken.", "TAKEN")) is { } a3) return Fail(a3);
+
+using (var cancelled = new System.Threading.CancellationTokenSource())
+{
+    cancelled.Cancel();
+    try
+    {
+        await memberValidator.ValidateAsync(new Member { Handle = "free" }, cancelled.Token).ConfigureAwait(false);
+        return Fail("Member: a cancelled token should cancel the asynchronous rule");
+    }
+    catch (OperationCanceledException)
+    {
+        // Expected: the token reaches the rule.
+    }
+}
+
 Console.WriteLine("AOT smoke: PASS");
 return 0;
 

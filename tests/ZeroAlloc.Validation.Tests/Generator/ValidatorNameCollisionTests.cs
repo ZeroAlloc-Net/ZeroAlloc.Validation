@@ -130,7 +130,9 @@ public class ValidatorNameCollisionTests
         var (_, _, generated) = Run(source, new global::ZeroAlloc.Validation.AspNetCore.Generator.AspNetCoreFilterEmitter());
 
         Assert.Contains(generated, s => s.Contains("global::MyApp.CustomerValidator>", StringComparison.Ordinal));
-        Assert.DoesNotContain(generated, s => s.Contains("Request", StringComparison.Ordinal));
+        // Both colliding models, Outer.Request and Outer_Request, are named from "MyApp.Outer". The
+        // filter itself reads the request's own HttpContext.RequestAborted token.
+        Assert.DoesNotContain(generated, s => s.Contains("MyApp.Outer", StringComparison.Ordinal));
     }
 
     /// <summary>Each source has a lookalike that gets no validator of that name, so nothing collides.</summary>

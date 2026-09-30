@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0033 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0035 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -35,6 +35,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0031](#zv0031) | Error | Two [Validate] models whose validators would have the same name |
 | [ZV0032](#zv0032) | Warning | Validation call that raises a compiler warning in the generated validator |
 | [ZV0033](#zv0033) | Error | Numeric comparison rule on a type that is not a number |
+| [ZV0034](#zv0034) | Error | Options validation of a model with asynchronous rules |
 | [ZV0035](#zv0035) | Warning | [PipelineBehavior] type that does not implement IPipelineBehavior |
 
 A rule or attribute declared on a base type is checked by every `[Validate]` model that inherits it, and a diagnostic about the usage is reported once, however many models derive from the base type, and whether or not it is `[Validate]` itself. A `[Validate(IncludeBaseProperties = false)]` model does not see the types above it, so it does not report their usages; a model deriving from it that includes base properties does. A generic base type is checked for each type argument the models use, and a diagnostic that is the same for each is reported once.
@@ -291,7 +292,7 @@ Or remove the property entirely to keep the default (`Public`).
 
 **Title:** ValidationAttribute subclass the generator cannot emit
 
-**When fired:** A property on a `[Validate]` model carries an attribute that derives from `ValidationAttribute`, but the attribute is neither one of the built-in rule attributes nor a subclass of `ValidationAttribute<T>` (see [Custom rule attributes](custom-validation.md)). The generator has no way to evaluate it, so without this error the property would go unvalidated with nothing to say so:
+**When fired:** A property on a `[Validate]` model carries an attribute that derives from `ValidationAttribute`, but the attribute is neither one of the built-in rule attributes nor a subclass of `ValidationAttribute<T>` or `AsyncValidationAttribute<T>` (see [Custom rule attributes](custom-validation.md)). The generator has no way to evaluate it, so without this error the property would go unvalidated with nothing to say so:
 
 ```csharp
 public sealed class LegacyRuleAttribute : ValidationAttribute
@@ -307,9 +308,9 @@ public class Order
 }
 ```
 
-> '{Attr}' derives from ValidationAttribute but the generator cannot emit it; derive from ValidationAttribute\<T\> and override IsValid
+> '{Attr}' derives from ValidationAttribute but the generator cannot emit it; derive from ValidationAttribute\<T\> and override IsValid, or from AsyncValidationAttribute\<T\> and override IsValidAsync
 
-**Fix:** Derive the attribute from `ValidationAttribute<T>` and override `IsValid`, or remove the attribute if it was never meant to be a rule:
+**Fix:** Derive the attribute from `ValidationAttribute<T>` and override `IsValid`, or from `AsyncValidationAttribute<T>` and override `IsValidAsync` for a check that has to await, or remove the attribute if it was never meant to be a rule:
 
 ```csharp
 [RuleMessage("{PropertyName} must not be blank.")]
@@ -517,7 +518,7 @@ public class Checkout
 **Title:** [RuleMessage] on a class that is not a custom rule
 
 **When fired:** `[RuleMessage]` is applied to a class that does not derive, directly or through a
-base class, from `ValidationAttribute<T>`. The generator reads `[RuleMessage]` only for custom
+base class, from `ValidationAttribute<T>` or `AsyncValidationAttribute<T>`. The generator reads `[RuleMessage]` only for custom
 rules, so on any other class, including a subclass of the non-generic `ValidationAttribute`, the
 message is never used:
 
@@ -532,9 +533,9 @@ custom rule, so a `[RuleMessage]` on it is not reported; derived rules inherit i
 The warning is reported at the `[RuleMessage]` attribute, whether or not the project has any
 `[Validate]` model.
 
-> '{0}' has [RuleMessage] but does not derive from ValidationAttribute<T>, so the message is never used
+> '{0}' has [RuleMessage] but does not derive from ValidationAttribute<T> or AsyncValidationAttribute<T>, so the message is never used
 
-**Fix:** Derive the class from `ValidationAttribute<T>` if it is meant to be a rule, or remove the
+**Fix:** Derive the class from `ValidationAttribute<T>` or `AsyncValidationAttribute<T>` if it is meant to be a rule, or remove the
 `[RuleMessage]`. Nothing is generated differently, so this is a warning rather than an error.
 
 ---
@@ -908,6 +909,35 @@ public class Booking
 ```
 
 See [Custom validation](custom-validation.md) for custom rules.
+
+---
+
+## ZV0034
+
+**Severity:** Error
+
+**Title:** Options validation of a model with asynchronous rules
+
+**When fired:** `ValidateWithZeroAlloc()` is called on an `OptionsBuilder<T>` whose model has an asynchronous rule, an [`AsyncValidationAttribute<T>`](custom-validation.md#asynchronous-rules--asyncvalidationattributet), directly or through a nested or collection `[Validate]` model. Options validation, `IValidateOptions<T>`, is synchronous, so it calls the generated validator's `Validate`, which cannot run an asynchronous rule and throws `NotSupportedException` rather than skip it. Without this error the application would fail when the options are first resolved, or at startup with `ValidateOnStart()`. The error is reported at the call:
+
+```csharp
+[Validate]
+public class TenantOptions
+{
+    [KnownTenant]                          // an AsyncValidationAttribute<string?>
+    public string? TenantId { get; set; }
+}
+
+builder.Services.AddOptions<TenantOptions>()
+    .BindConfiguration("Tenant")
+    .ValidateWithZeroAlloc();              // ZV0034
+```
+
+> '{Model}' has asynchronous validation rules, which options validation cannot run because it is synchronous; validate the options with ValidateAsync where they are used, or move the asynchronous rules off the options model
+
+The call is recognised as `builder.ValidateWithZeroAlloc()`, `builder?.ValidateWithZeroAlloc()` or the static form. Any other route to options validation, such as registering `ZeroAllocOptionsValidator<T>` by hand, still reaches the throwing `Validate`.
+
+**Fix:** Keep the options model synchronous: move the asynchronous check to where the options are used, and validate there with `await validator.ValidateAsync(options)`, or replace the rule with a synchronous one.
 
 ---
 

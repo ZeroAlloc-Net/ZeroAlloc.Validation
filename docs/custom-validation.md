@@ -2,17 +2,18 @@
 id: custom-validation
 title: Custom Validation
 slug: /docs/custom-validation
-description: Reusable rule attributes with ValidationAttribute<T>, inline predicates with [Must], and cross-property rules with [CustomValidation].
+description: Reusable rule attributes with ValidationAttribute<T> and AsyncValidationAttribute<T>, inline predicates with [Must], and cross-property rules with [CustomValidation].
 sidebar_position: 5
 ---
 
 # Custom Validation
 
-ZeroAlloc.Validation provides three customization mechanisms for rules that go beyond the built-in attributes.
+ZeroAlloc.Validation provides four customization mechanisms for rules that go beyond the built-in attributes.
 
 | Mechanism | Placement | Scope |
 |---|---|---|
 | `ValidationAttribute<T>` | Reusable attribute class | Single-property predicate, reusable across models |
+| `AsyncValidationAttribute<T>` | Reusable attribute class | Single-property asynchronous check, such as a uniqueness lookup |
 | `[Must]` | Property | Single-property predicate, model-specific |
 | `[CustomValidation]` | Instance method | Full model access (cross-property) |
 
@@ -159,12 +160,10 @@ validation formats nothing.
 
 ### Limitations
 
-- **No async rules yet.** `ValidationAttribute<T>.IsValid` is synchronous only; there is no
-  async counterpart today. An `AsyncValidationAttribute<T>` is tracked in
-  [#202](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/202). `[Must]` and
-  `[CustomValidation]` — see below — are synchronous too; neither is an async workaround, but
-  either is the mechanism for a model-specific check a reusable `ValidationAttribute<T>` rule
-  cannot express.
+- **Synchronous only.** `ValidationAttribute<T>.IsValid` is synchronous. A rule that has to
+  await, such as a uniqueness check or a remote lookup, derives from
+  [`AsyncValidationAttribute<T>`](#asynchronous-rules--asyncvalidationattributet) instead.
+  `[Must]` and `[CustomValidation]`, below, are synchronous too.
 
 ### When to use [Must] instead
 
@@ -178,6 +177,83 @@ reports one failure against the one property it decorates.
 
 Use `[CustomValidation]` when the rule belongs to the model as a whole: it can report any
 number of failures, against any properties, from one method.
+
+---
+
+## Asynchronous rules — AsyncValidationAttribute\<T\>
+
+Derive from `AsyncValidationAttribute<T>` for a reusable rule that has to await, such as a
+uniqueness check or a remote lookup. It declares one member,
+`abstract ValueTask<bool> IsValidAsync(T value, CancellationToken ct)`, and is otherwise used
+exactly like a `ValidationAttribute<T>` rule:
+
+```csharp
+[RuleMessage("{PropertyName} '{PropertyValue}' is already taken.", ErrorCode = "TAKEN")]
+public sealed class UniqueUserNameAttribute : AsyncValidationAttribute<string?>
+{
+    public override async ValueTask<bool> IsValidAsync(string? value, CancellationToken ct) =>
+        value is null || !await UserDirectory.ExistsAsync(value, ct).ConfigureAwait(false);
+}
+
+[Validate]
+public class SignUp
+{
+    [NotEmpty]
+    [UniqueUserName]
+    [MaxLength(32)]
+    public string? UserName { get; set; }
+}
+
+var result = await new SignUpValidator().ValidateAsync(signUp, cancellationToken);
+```
+
+**What the generator emits.** A model with at least one asynchronous rule gets a real
+`ValidateAsync`. It runs every rule of the model in declaration order, synchronous and
+asynchronous alike, and awaits each asynchronous one before the next rule runs, so failures come
+back in the same order as for a synchronous model. The instance is rebuilt once as a static field,
+as for `ValidationAttribute<T>`, and the call is statically bound, with no reflection, so it is
+safe under trimming and NativeAOT. `Message`, `[RuleMessage]` and its placeholders, `ErrorCode`,
+`Severity`, `When`, `Unless`, and `[StopOnFirstFailure]` on the property or the model behave
+exactly as for a synchronous rule. A `When` or `Unless` guard that is false, or an earlier failure
+under stop-on-first-failure, means the rule is not called at all. The same diagnostics apply:
+[ZV0021](diagnostics.md#zv0021), [ZV0022](diagnostics.md#zv0022), [ZV0023](diagnostics.md#zv0023)
+and the others.
+
+**Nested and collection models.** A model whose nested or collection `[Validate]` model has
+asynchronous rules, at any depth, validates asynchronously too: its `ValidateAsync` awaits the
+nested validators' `ValidateAsync`, and their failures are prefixed as usual, `Address.Street`
+or `Items[2].Sku`.
+
+**The synchronous `Validate` throws.** It cannot run an asynchronous rule, and skipping it would
+report a model valid that is not. So on a model with asynchronous rules, directly or through a
+nested model, `Validate` always throws `NotSupportedException`, whatever the values, naming
+`ValidateAsync` as the method to call. It throws even when every asynchronous rule would have
+been skipped by its `When` guard, so the failure shows up in the first test rather than in
+production. Call `ValidateAsync` wherever such a model is validated.
+
+- **ASP.NET Core:** the generated action filter already calls `ValidateAsync`, with the
+  request's `RequestAborted` token.
+- **Options:** options validation is synchronous, so calling `ValidateWithZeroAlloc()` for an
+  options model with asynchronous rules fails the build with [ZV0034](diagnostics.md#zv0034).
+- **`ValidationAssert`:** pass it the result of `await validator.ValidateAsync(model)`.
+
+**Cancellation.** The token passed to `ValidateAsync` reaches every asynchronous rule and nested
+validator. The rule decides how to honour it; the validator does not check it between rules.
+
+**Allocation.** An asynchronous rule whose `ValueTask` has already completed, such as a cache
+hit, keeps the valid path free of allocation: the generated method then completes
+synchronously. A rule that really suspends costs what any `async` method costs when it suspends.
+Failures are collected into a pooled buffer, as in `Validate`, and the result allocates its
+failures array.
+
+**The instance is shared,** as for `ValidationAttribute<T>`, so `IsValidAsync` must be stateless
+and thread-safe. An attribute cannot take constructor services, so reach what the check needs
+through state the rule class owns.
+
+**Pipeline behaviors.** Asynchronous pipeline behaviors wrap the asynchronous validation.
+Synchronous behaviors are not applied, since `Validate` only throws. As for any model, a behavior
+on a model with nested validators does not compile yet,
+[#294](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/294).
 
 ---
 

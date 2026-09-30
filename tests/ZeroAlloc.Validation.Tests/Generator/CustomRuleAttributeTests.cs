@@ -790,7 +790,7 @@ public class CustomRuleAttributeTests
         Assert.Equal(DiagnosticSeverity.Warning, zv0026.Severity);
         Assert.Equal("RuleMessage(\"{PropertyName} must not be blank.\")", SpanText(zv0026));
         Assert.Equal(
-            "'NotARule' has [RuleMessage] but does not derive from ValidationAttribute<T>, so the message is never used",
+            "'NotARule' has [RuleMessage] but does not derive from ValidationAttribute<T> or AsyncValidationAttribute<T>, so the message is never used",
             zv0026.GetMessage(System.Globalization.CultureInfo.InvariantCulture));
     }
 
