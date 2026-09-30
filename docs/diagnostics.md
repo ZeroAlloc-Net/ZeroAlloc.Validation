@@ -35,6 +35,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0031](#zv0031) | Error | Two [Validate] models whose validators would have the same name |
 | [ZV0032](#zv0032) | Warning | Validation call that raises a compiler warning in the generated validator |
 | [ZV0033](#zv0033) | Error | Numeric comparison rule on a type that is not a number |
+| [ZV0035](#zv0035) | Warning | [PipelineBehavior] type that does not implement IPipelineBehavior |
 
 A rule or attribute declared on a base type is checked by every `[Validate]` model that inherits it, and a diagnostic about the usage is reported once, however many models derive from the base type, and whether or not it is `[Validate]` itself. A `[Validate(IncludeBaseProperties = false)]` model does not see the types above it, so it does not report their usages; a model deriving from it that includes base properties does. A generic base type is checked for each type argument the models use, and a diagnostic that is the same for each is reported once.
 
@@ -907,6 +908,42 @@ public class Booking
 ```
 
 See [Custom validation](custom-validation.md) for custom rules.
+
+---
+
+## ZV0035
+
+**Severity:** Warning
+
+**Title:** [PipelineBehavior] type that does not implement IPipelineBehavior
+
+**When fired:** A class carries `[PipelineBehavior]`, or an attribute deriving from it, but does not implement `ZeroAlloc.Pipeline.IPipelineBehavior`. Only a type that implements the interface joins the pipeline of the generated validators, so this one is left out and its `Handle` method is never called. The most common case is a `static class`, which cannot implement an interface. It used to be dropped without a word. The diagnostic is reported once, at the `[PipelineBehavior]` attribute, whether or not the project has a `[Validate]` model:
+
+```csharp
+[PipelineBehavior(Order = 0)]        // ZV0035
+public static class LoggingBehavior
+{
+    public static ValidationResult Handle<TModel>(
+        TModel instance, Func<TModel, ValidationResult> next) => next(instance);
+}
+```
+
+> 'LoggingBehavior' has [PipelineBehavior] but does not implement IPipelineBehavior, so it never runs in a validator's pipeline; make the class non-static and implement IPipelineBehavior
+
+For a non-static class the message ends with "implement IPipelineBehavior". It is a warning rather than an error so that a build that compiled before still compiles.
+
+**Fix:** Make the class non-static and implement `IPipelineBehavior`. `Handle` stays static:
+
+```csharp
+[PipelineBehavior(Order = 0)]
+public class LoggingBehavior : IPipelineBehavior
+{
+    public static ValidationResult Handle<TModel>(
+        TModel instance, Func<TModel, ValidationResult> next) => next(instance);
+}
+```
+
+If the class is not meant to be a behavior, remove `[PipelineBehavior]`.
 
 ---
 
