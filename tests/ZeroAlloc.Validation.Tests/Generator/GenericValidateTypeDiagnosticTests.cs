@@ -12,31 +12,42 @@ namespace ZeroAlloc.Validation.Tests.Generator;
 /// <summary>
 /// Guards issues #219 and #238. A generic <c>[Validate]</c> model gets a validator generic over
 /// the type parameters of the model and of every type containing it, with their declared names;
-/// see <see cref="GenericValidateModelTests"/>. ZV0029 remains for the one shape that validator
-/// cannot declare: a type parameter whose name repeats along the containing chain, or one named
-/// like the validator itself. It reports the attribute, and no generator emits code that names
-/// the type.
+/// see <see cref="GenericValidateModelTests"/>. ZV0029 remains for the type parameters that
+/// validator cannot declare: one whose name repeats along the containing chain, one named like the
+/// validator itself, or one named like a member the validator declares or reserves, #299. It
+/// reports the attribute, and no generator emits code that names the type.
 /// </summary>
 public class GenericValidateTypeDiagnosticTests
 {
     private const string Rule = """[NotEmpty] public string Name { get; set; } = "";""";
 
+    private const string Repeated = "more than once along its containing types";
+    private const string MemberName = "with a name the generated validator declares or reserves for its members";
+
     /// <summary>
-    /// Each source declares one [Validate] type ZV0029 reports, the name it gives it, and the type
-    /// parameter it names.
+    /// Each source declares one [Validate] type ZV0029 reports, the name it gives it, the type
+    /// parameter it names, and why the validator cannot declare that type parameter.
     /// </summary>
-    public static TheoryData<string, string, string> UnsupportedTypes() => new()
+    public static TheoryData<string, string, string, string> UnsupportedTypes() => new()
     {
-        { $$"""public class Outer<T> { [Validate] public class Inner<T> { {{Rule}} } }""", "MyApp.Outer<T>.Inner<T>", "T" },
-        { $$"""public class Outer<T> { public class Mid { [Validate] internal class Inner<T> { {{Rule}} } } }""", "MyApp.Outer<T>.Mid.Inner<T>", "T" },
-        { $$"""public class Outer<T, U> { [Validate] public class Inner<V, U> { {{Rule}} } }""", "MyApp.Outer<T, U>.Inner<V, U>", "U" },
-        { $$"""[Validate] public class Box<BoxValidator> { {{Rule}} }""", "MyApp.Box<BoxValidator>", "BoxValidator" },
-        { $$"""public class Outer<T> { [Validate] public class Inner<Outer_InnerValidator> { {{Rule}} } }""", "MyApp.Outer<T>.Inner<Outer_InnerValidator>", "Outer_InnerValidator" },
+        { $$"""public class Outer<T> { [Validate] public class Inner<T> { {{Rule}} } }""", "MyApp.Outer<T>.Inner<T>", "T", Repeated },
+        { $$"""public class Outer<T> { public class Mid { [Validate] internal class Inner<T> { {{Rule}} } } }""", "MyApp.Outer<T>.Mid.Inner<T>", "T", Repeated },
+        { $$"""public class Outer<T, U> { [Validate] public class Inner<V, U> { {{Rule}} } }""", "MyApp.Outer<T, U>.Inner<V, U>", "U", Repeated },
+        { $$"""[Validate] public class Box<BoxValidator> { {{Rule}} }""", "MyApp.Box<BoxValidator>", "BoxValidator", "with the name of its generated validator 'BoxValidator'" },
+        { $$"""public class Outer<T> { [Validate] public class Inner<Outer_InnerValidator> { {{Rule}} } }""", "MyApp.Outer<T>.Inner<Outer_InnerValidator>", "Outer_InnerValidator", "with the name of its generated validator 'Outer_InnerValidator'" },
+        // A type parameter shares the member declaration space of the validator, CS0102, #299.
+        { $$"""[Validate] public class Box<Validate> { {{Rule}} }""", "MyApp.Box<Validate>", "Validate", MemberName },
+        { $$"""[Validate] public class Box<ValidateAsync> { {{Rule}} }""", "MyApp.Box<ValidateAsync>", "ValidateAsync", MemberName },
+        { $$"""public class Outer<ValidateAsync> { [Validate] public class Inner { {{Rule}} } }""", "MyApp.Outer<ValidateAsync>.Inner", "ValidateAsync", MemberName },
+        { $$"""[Validate] public class Box<__Regex_Name> { {{Rule}} }""", "MyApp.Box<__Regex_Name>", "__Regex_Name", MemberName },
+        { $$"""[Validate] public class Box<__Rule_Name_0> { {{Rule}} }""", "MyApp.Box<__Rule_Name_0>", "__Rule_Name_0", MemberName },
+        { $$"""[Validate] public class Box<__ValidateAsyncCore> { {{Rule}} }""", "MyApp.Box<__ValidateAsyncCore>", "__ValidateAsyncCore", MemberName },
+        { $$"""[Validate] public class Box<_nameValidator> { {{Rule}} }""", "MyApp.Box<_nameValidator>", "_nameValidator", MemberName },
     };
 
     [Theory]
     [MemberData(nameof(UnsupportedTypes))]
-    public void TypeParameterTheValidatorCannotDeclare_ReportsZV0029AtTheAttribute(string declaration, string displayName, string parameter)
+    public void TypeParameterTheValidatorCannotDeclare_ReportsZV0029AtTheAttribute(string declaration, string displayName, string parameter, string reason)
     {
         var (compilation, diagnostics, generated) = Run(Source(declaration), new ValidatorGenerator());
 
@@ -45,19 +56,44 @@ public class GenericValidateTypeDiagnosticTests
         Assert.Equal(DiagnosticSeverity.Error, zv0029.Severity);
         Assert.Equal("Validate", SourceAt(zv0029));
         Assert.Equal(
-            $"'{displayName}' declares type parameter '{parameter}' more than once along its containing types, "
-                + "so no validator is generated; rename one of them",
+            $"'{displayName}' declares type parameter '{parameter}' {reason}, so no validator is generated; rename it",
             zv0029.GetMessage(System.Globalization.CultureInfo.InvariantCulture));
         Assert.DoesNotContain(generated, s => s.Contains("Validator :", StringComparison.Ordinal));
         Assert.Empty(Errors(compilation));
     }
 
+    /// <summary>
+    /// A type parameter named like something the validator declares only as a parameter or a
+    /// local does not clash with it, and neither does a name that merely resembles a member's.
+    /// </summary>
+    [Theory]
+    [InlineData("instance")]
+    [InlineData("ct")]
+    [InlineData("nameValidator")]
+    [InlineData("Validator")]
+    [InlineData("TValidate")]
+    [InlineData("_Name")]
+    [InlineData("T__Rule")]
+    public void TypeParameterNamedLikeNoValidatorMember_GetsAValidator(string parameter)
+    {
+        var source = Source($$"""
+            [Validate] public class Box<{{parameter}}> { {{Rule}} public {{parameter}}? Payload { get; set; } }
+            """);
+
+        var (compilation, diagnostics, generated) = Run(source, new ValidatorGenerator());
+
+        Assert.Empty(diagnostics);
+        Assert.Contains(generated, s => s.Contains($"class BoxValidator<{parameter}>", StringComparison.Ordinal));
+        Assert.Empty(Errors(compilation));
+    }
+
     [Theory]
     [MemberData(nameof(UnsupportedTypes))]
-    public void TypeParameterTheValidatorCannotDeclare_IsLeftOutOfTheInjectAndOptionsGlue(string declaration, string displayName, string parameter)
+    public void TypeParameterTheValidatorCannotDeclare_IsLeftOutOfTheInjectAndOptionsGlue(string declaration, string displayName, string parameter, string reason)
     {
         _ = displayName;
         _ = parameter;
+        _ = reason;
         var source = Source(declaration) + """
 
             [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }
@@ -86,12 +122,13 @@ public class GenericValidateTypeDiagnosticTests
 
     [Theory]
     [MemberData(nameof(UnsupportedTypes))]
-    public void TypeParameterTheValidatorCannotDeclare_IsLeftOutOfTheAspNetCoreGlue(string declaration, string displayName, string parameter)
+    public void TypeParameterTheValidatorCannotDeclare_IsLeftOutOfTheAspNetCoreGlue(string declaration, string displayName, string parameter, string reason)
     {
         // This host does not reference ASP.NET Core, so only the emitted text is checked; the
         // glue is compiled and run for real in ZeroAlloc.Validation.Tests.AspNetCore.
         _ = displayName;
         _ = parameter;
+        _ = reason;
         var source = Source(declaration) + """
 
             [Validate] public class Customer { [NotEmpty] public string Name { get; set; } = ""; }

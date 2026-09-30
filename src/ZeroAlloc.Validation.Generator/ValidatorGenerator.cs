@@ -220,7 +220,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor ZV0029 = new DiagnosticDescriptor(
         id: "ZV0029",
         title: "[Validate] on a generic type whose type parameters the validator cannot declare",
-        messageFormat: "'{0}' declares type parameter '{1}' more than once along its containing types, so no validator is generated; rename one of them",
+        messageFormat: "'{0}' declares type parameter '{1}' {2}, so no validator is generated; rename it",
         category: "ZeroAlloc.Validation",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
@@ -229,8 +229,12 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             + "over the type parameters of the model and of every type containing it, with their "
             + "declared names. When two of them share a name, as in Outer<T>.Inner<T>, which the "
             + "compiler already warns about with CS0693, or one is named like the validator itself, "
-            + "the validator cannot declare them. No validator is generated, and the Inject, Options "
-            + "and ASP.NET Core glue leave the type out. Rename the type parameter.");
+            + "the validator cannot declare them. Nor can it declare one named like a member it "
+            + "declares or reserves, since a type parameter shares the validator's declaration "
+            + "space: Validate, ValidateAsync, a name starting with two underscores, or an "
+            + "underscore, a name and Validator, as in _addressValidator. No validator is generated, "
+            + "and the Inject, Options and ASP.NET Core glue leave the type out. Rename the type "
+            + "parameter.");
 
     private static readonly DiagnosticDescriptor ZV0037 = new DiagnosticDescriptor(
         id: "ZV0037",
@@ -1162,9 +1166,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// own file, so it cannot name a private, protected or private protected nested type, a type
     /// inside one, or a file-local type. ZV0029: the validator of a generic model redeclares the
     /// type parameters of the model and of every type containing it, so it cannot be declared when
-    /// two of them share a name or one is named like the validator, issues #219 and #238. A model
-    /// can hit both, and each names a change it needs, so both are reported rather than one hiding
-    /// the other.
+    /// two of them share a name or one is named like the validator, issues #219 and #238, or like
+    /// one of its members, #299. A model can hit both, and each names a change it needs, so both
+    /// are reported rather than one hiding the other.
     /// ZV0031: another model's validator would take the same name, issue #220. It is checked only
     /// for a model that would otherwise get a validator, since the others take no name. Each
     /// model involved reports it, naming the others.
@@ -1185,12 +1189,19 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             reported = true;
         }
 
-        if (GeneratedValidatorReach.UnsupportedTypeParameter(classSymbol) is { } parameter)
+        if (GeneratedValidatorReach.UnsupportedTypeParameter(classSymbol, out var clash) is { } parameter)
         {
             ctx.Report(ZV0029,
                 FindValidateAttributeLocation(classSymbol),
                 classSymbol.ToDisplayString(),
-                parameter.Name);
+                parameter.Name,
+                clash switch
+                {
+                    TypeParameterClash.Repeated => "more than once along its containing types",
+                    TypeParameterClash.ValidatorName =>
+                        $"with the name of its generated validator '{GeneratedValidatorNames.ValidatorName(classSymbol)}'",
+                    _ => "with a name the generated validator declares or reserves for its members",
+                });
             reported = true;
         }
 
