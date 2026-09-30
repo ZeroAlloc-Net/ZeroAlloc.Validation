@@ -249,6 +249,8 @@ public class GenericRegistrationHelperTests
             """.Replace("namespace Ns;", "using ZeroAlloc.Validation.Options;\nnamespace Ns;", StringComparison.Ordinal),
             new ValidatorGenerator(), new InjectGenerator(), new OptionsValidationEmitter()).Compiles();
 
+        // The names are renamed around, not reserved: ZV0029 does not report them.
+        Assert.Empty(output.Diagnostics);
         var helper = output.Source(HelperHint);
         Assert.Contains("IServiceCollection services3)", helper, StringComparison.Ordinal);
         Assert.Contains("static sp2 => ", helper, StringComparison.Ordinal);
