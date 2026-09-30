@@ -79,7 +79,7 @@ public class BehaviorDiscoveryTests
         var allSync = new System.Collections.Generic.List<ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo>
             { globalBehavior, orderBehavior, personBehavior };
 
-        var (orderSync, _) = BehaviorDiscoverer.ForModel(allSync, [], "global::TestModels.Order");
+        var (orderSync, _) = BehaviorDiscoverer.ForModel(allSync, [], "global::TestModels.Order", unboundName: null);
 
         Assert.Equal(2, orderSync.Count);  // global + order-specific
         Assert.DoesNotContain(orderSync, b => string.Equals(b.BehaviorTypeName, "PersonB", System.StringComparison.Ordinal));

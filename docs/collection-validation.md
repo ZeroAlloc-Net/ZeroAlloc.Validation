@@ -44,6 +44,8 @@ public class LineItem
 
 Because `LineItem` is annotated with `[Validate]`, the generator produces a `LineItemValidator`, and `CartValidator` takes it through its constructor as `ValidatorFor<LineItem>`. No configuration is required on the `Items` property.
 
+The element type can be a closing of a generic model. `List<Line<TItem>>` inside `Page<TItem>` is validated through `ValidatorFor<Line<TItem>>`, and `List<Line<Order>>` inside a non-generic model through `ValidatorFor<Line<Order>>`. An element whose type is a type parameter, `List<TItem>`, is validated only when `TItem` is constrained to a `[Validate]` class, as that class; see [nested validation](nested-validation.md#generic-models).
+
 ---
 
 ## Index-prefixed failure paths

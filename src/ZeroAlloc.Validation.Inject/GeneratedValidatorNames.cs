@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using Microsoft.CodeAnalysis;
 
@@ -30,6 +31,15 @@ namespace ZeroAlloc.Validation.Generator.Shared;
 /// into a hint name without the escape, which hint names do not allow, issue #242. Neither
 /// relies on the default display format escaping keywords.
 /// </para>
+/// <para>
+/// A generic model, or one declared inside a generic type, gets a generic validator with the same
+/// simple name, issue #238. Its type parameters are those of every containing type, outermost
+/// first, then the model's own, with their declared names: <c>Page&lt;TItem&gt;</c> gets
+/// <c>PageValidator&lt;TItem&gt;</c> and <c>Envelope&lt;T&gt;.Header</c> gets
+/// <c>Envelope_HeaderValidator&lt;T&gt;</c>. The arity sets it apart from the validator of a
+/// non-generic model of the same name, so the metadata and hint names carry it as a backtick
+/// suffix, <c>Ns.PageValidator`1</c>, and <c>Box</c> and <c>Box&lt;T&gt;</c> do not add the same file.
+/// </para>
 /// </remarks>
 internal static class GeneratedValidatorNames
 {
@@ -61,37 +71,98 @@ internal static class GeneratedValidatorNames
 
     /// <summary>
     /// The validator's fully qualified name, for example <c>global::Ns.Outer_RequestValidator</c>.
+    /// The validator of a generic model takes the model's type arguments: the declared names for
+    /// the model itself, <c>global::Ns.PageValidator&lt;TItem&gt;</c>, and the fully qualified
+    /// arguments for a closing of it, <c>global::Ns.PageValidator&lt;global::Ns.Order&gt;</c>.
     /// </summary>
-    public static string QualifiedValidatorName(INamedTypeSymbol model) =>
-        NamespaceName(model) is { } ns
+    public static string QualifiedValidatorName(INamedTypeSymbol model)
+    {
+        var name = NamespaceName(model) is { } ns
             ? $"global::{ns}.{ValidatorName(model)}"
             : $"global::{ValidatorName(model)}";
+
+        var arguments = TypeArguments(model);
+        if (arguments.Count == 0)
+            return name;
+
+        var sb = new StringBuilder(name).Append('<');
+        for (var i = 0; i < arguments.Count; i++)
+        {
+            if (i > 0) sb.Append(", ");
+            sb.Append(arguments[i].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+        }
+        return sb.Append('>').ToString();
+    }
+
+    /// <summary>
+    /// The type arguments of <paramref name="model"/> and of every type containing it, outermost
+    /// first: the validator's type arguments. For a generic model as declared they are its type
+    /// parameters; for a closing of it, the types it is closed over. Empty for a model that is not
+    /// generic and is not declared inside a generic type.
+    /// </summary>
+    public static List<ITypeSymbol> TypeArguments(INamedTypeSymbol model)
+    {
+        var arguments = new List<ITypeSymbol>();
+        AppendTypeArguments(arguments, model);
+        return arguments;
+    }
+
+    /// <summary>
+    /// The number of type parameters of <paramref name="model"/> and of every type containing it,
+    /// which is the arity of its validator.
+    /// </summary>
+    public static int TotalArity(INamedTypeSymbol model)
+    {
+        var arity = 0;
+        for (INamedTypeSymbol? type = model; type is not null; type = type.ContainingType)
+            arity += type.Arity;
+        return arity;
+    }
 
     /// <summary>
     /// The validator's metadata name, for <c>GetTypeByMetadataName</c>, for example
     /// <c>class.Models.Outer_RequestValidator</c>: namespace segments are never escaped there,
     /// so a keyword namespace written <c>@class.Models</c> in code is looked up as
-    /// <c>class.Models</c>, issue #246.
+    /// <c>class.Models</c>, issue #246. A generic validator's name ends with its arity,
+    /// <c>Ns.PageValidator`1</c>, as metadata names do.
     /// </summary>
     public static string MetadataName(INamedTypeSymbol model)
     {
         var ns = model.ContainingNamespace;
         return ns is null || ns.IsGlobalNamespace
-            ? ValidatorName(model)
-            : $"{ns.ToDisplayString(HintNamespaceFormat)}.{ValidatorName(model)}";
+            ? ValidatorName(model) + AritySuffix(model)
+            : $"{ns.ToDisplayString(HintNamespaceFormat)}.{ValidatorName(model)}{AritySuffix(model)}";
     }
 
     /// <summary>
     /// The hint name of the validator's generated file, for example
     /// <c>Ns.Outer_RequestValidator.g.cs</c>. It includes the namespace, so same-named models in
-    /// two namespaces do not produce the same hint name and fail the generator.
+    /// two namespaces do not produce the same hint name and fail the generator, and the arity of a
+    /// generic validator, <c>Ns.PageValidator`1.g.cs</c>, so <c>Box</c> and <c>Box&lt;T&gt;</c> do not either.
     /// </summary>
     public static string HintName(INamedTypeSymbol model)
     {
         var ns = model.ContainingNamespace;
         return ns is null || ns.IsGlobalNamespace
-            ? $"{ValidatorName(model)}.g.cs"
-            : $"{ns.ToDisplayString(HintNamespaceFormat)}.{ValidatorName(model)}.g.cs";
+            ? $"{ValidatorName(model)}{AritySuffix(model)}.g.cs"
+            : $"{ns.ToDisplayString(HintNamespaceFormat)}.{ValidatorName(model)}{AritySuffix(model)}.g.cs";
+    }
+
+    /// <summary>
+    /// The backtick and arity a generic validator's metadata name ends with, <c>`1</c>, or empty
+    /// for a validator that is not generic, whose names stay exactly as they were.
+    /// </summary>
+    private static string AritySuffix(INamedTypeSymbol model)
+    {
+        var arity = TotalArity(model);
+        return arity == 0 ? "" : "`" + arity.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private static void AppendTypeArguments(List<ITypeSymbol> arguments, INamedTypeSymbol type)
+    {
+        if (type.ContainingType is { } container)
+            AppendTypeArguments(arguments, container);
+        arguments.AddRange(type.TypeArguments);
     }
 
     private static void AppendContainers(StringBuilder sb, INamedTypeSymbol? container)

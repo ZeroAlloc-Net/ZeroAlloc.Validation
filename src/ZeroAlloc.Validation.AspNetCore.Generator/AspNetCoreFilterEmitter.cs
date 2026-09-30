@@ -26,8 +26,10 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
                 predicate: static (node, _) => node is ClassDeclarationSyntax
                                                     or RecordDeclarationSyntax,
                 // A model that gets no validator is left out here too: one the generated validator
-                // cannot reach, ZV0025 and #216, or a generic one, ZV0029 and #219. Naming it would
-                // only add compiler errors in generated code.
+                // cannot reach, ZV0025 and #216, or one whose type parameters it cannot redeclare,
+                // ZV0029 and #219. Naming it would only add compiler errors in generated code. A
+                // generic model is left out as a root, since nothing closed can be registered for
+                // it; its closings are registered by the models composing them, issue #238.
                 // Null marks it, and the step after Collect drops it.
                 // The transform extracts everything the output needs into an equatable model, so
                 // the output step stays cached while nothing it was read from changes, issue #209.
@@ -35,6 +37,7 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
                 // files, such as to a nested model, and into referenced assemblies, issue #246.
                 transform: static (ctx, _) =>
                     GeneratedValidatorReach.HasGeneratedValidator((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
+                    && !GeneratedValidatorReach.IsGeneric((INamedTypeSymbol)ctx.TargetSymbol)
                         ? ValidatedModelInfo.From((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
                         : null);
 

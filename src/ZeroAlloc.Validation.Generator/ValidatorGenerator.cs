@@ -219,15 +219,46 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
     private static readonly DiagnosticDescriptor ZV0029 = new DiagnosticDescriptor(
         id: "ZV0029",
-        title: "[Validate] on a generic type",
-        messageFormat: "'{0}' is generic or declared inside a generic type, so no validator is generated for it; validate a non-generic type instead",
+        title: "[Validate] on a generic type whose type parameters the validator cannot declare",
+        messageFormat: "'{0}' declares type parameter '{1}' more than once along its containing types, so no validator is generated; rename one of them",
         category: "ZeroAlloc.Validation",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description:
-            "The generated validator is a non-generic class, so it cannot name a model that has "
-            + "type parameters, or one whose containing type has them. No validator is generated, "
-            + "and the Inject, Options and ASP.NET Core glue leave the type out.");
+            "The validator of a generic model, or of one declared inside a generic type, is generic "
+            + "over the type parameters of the model and of every type containing it, with their "
+            + "declared names. When two of them share a name, as in Outer<T>.Inner<T>, which the "
+            + "compiler already warns about with CS0693, or one is named like the validator itself, "
+            + "the validator cannot declare them. No validator is generated, and the Inject, Options "
+            + "and ASP.NET Core glue leave the type out. Rename the type parameter.");
+
+    private static readonly DiagnosticDescriptor ZV0037 = new DiagnosticDescriptor(
+        id: "ZV0037",
+        title: "Nested model that nests its model inside itself without end",
+        messageFormat: "'{0}' nests '{1}' inside itself, so its validators would form an unbounded chain; validate it with [ValidateWith] or a [Must] rule",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description:
+            "A property of a generic model is validated by the generated validator of its own "
+            + "[Validate] model, closed over its type arguments. When that closing grows on every "
+            + "round of nesting, as Node<Node<T>> does inside Node<T>, every validator takes the "
+            + "validator of a larger closing, without end, so none of them could be constructed or "
+            + "registered. The property is not validated as a nested model. Validate it with "
+            + "[ValidateWith] or a [Must] rule.");
+
+    private static readonly DiagnosticDescriptor ZV0038 = new DiagnosticDescriptor(
+        id: "ZV0038",
+        title: "Pipeline behavior applied to a closed form of a generic model",
+        messageFormat: "'{0}' applies to '{1}', a closed form of the generic model '{2}'; a behaviour runs for every closing of a generic model, so name it as typeof({3})",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description:
+            "A generic [Validate] model has one generated validator, generic over its type "
+            + "parameters, so a pipeline behavior applies to all of its closings or to none. "
+            + "AppliesTo naming one closing, such as typeof(Page<Order>), matches no validator and "
+            + "the behavior never runs. Name the model's open form instead, typeof(Page<>).");
 
     private static readonly DiagnosticDescriptor ZV0031 = new DiagnosticDescriptor(
         id: "ZV0031",
@@ -318,17 +349,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 return new BehaviorCache(EquatableArray.From(sync), EquatableArray.From(async_));
             });
 
-        // ZV0035: a [PipelineBehavior] type without IPipelineBehavior, which DiscoverAll leaves
-        // out. Reported once per compilation, not per model, and whether or not there is any
-        // [Validate] model, issue #288.
-        var missingInterface = context.CompilationProvider
-            .Select(static (compilation, _) => FindMissingPipelineBehaviorInterface(compilation));
-
-        context.RegisterSourceOutput(missingInterface, static (ctx, diagnostics) =>
-        {
-            foreach (var diagnostic in diagnostics)
-                ctx.ReportDiagnostic(diagnostic.ToDiagnostic());
-        });
+        RegisterBehaviorDiagnostics(context);
 
         // Each validator is generated here, against the compilation, into a GeneratedValidator
         // that compares by value; the output step then only adds it. The generation depends on
@@ -354,6 +375,36 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         });
 
         RegisterDeclaringTypes(context, validators);
+    }
+
+    /// <summary>
+    /// The diagnostics about <c>[PipelineBehavior]</c> types, each reported once per compilation,
+    /// not per model, and whether or not there is any <c>[Validate]</c> model.
+    /// </summary>
+    private static void RegisterBehaviorDiagnostics(IncrementalGeneratorInitializationContext context)
+    {
+        // ZV0035: a [PipelineBehavior] type without IPipelineBehavior, which DiscoverAll leaves
+        // out, issue #288.
+        var missingInterface = context.CompilationProvider
+            .Select(static (compilation, _) => FindMissingPipelineBehaviorInterface(compilation));
+
+        context.RegisterSourceOutput(missingInterface, static (ctx, diagnostics) =>
+        {
+            foreach (var diagnostic in diagnostics)
+                ctx.ReportDiagnostic(diagnostic.ToDiagnostic());
+        });
+
+        // ZV0038: a [PipelineBehavior] whose AppliesTo names a closed form of a generic
+        // [Validate] model, which no validator matches. Reported once per compilation, as ZV0035
+        // is, issue #238.
+        var closedAppliesTo = context.CompilationProvider
+            .Select(static (compilation, _) => FindClosedGenericAppliesTo(compilation));
+
+        context.RegisterSourceOutput(closedAppliesTo, static (ctx, diagnostics) =>
+        {
+            foreach (var diagnostic in diagnostics)
+                ctx.ReportDiagnostic(diagnostic.ToDiagnostic());
+        });
     }
 
     /// <summary>
@@ -539,7 +590,8 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         }
 
         var modelFqn = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        var (syncBehaviors, asyncBehaviors) = BehaviorDiscoverer.ForModel(allBehaviors.Sync, allBehaviors.Async, modelFqn);
+        var (syncBehaviors, asyncBehaviors) = BehaviorDiscoverer.ForModel(
+            allBehaviors.Sync, allBehaviors.Async, modelFqn, BehaviorDiscoverer.UnboundName(classSymbol));
 
         ReportNestedDiagnostics(ctx, classSymbol, compilation);
         ReportDuplicateOrderDiagnostics(ctx, compilation, classSymbol, syncBehaviors, asyncBehaviors, classSymbol.ToDisplayString());
@@ -821,7 +873,17 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         var accessibility = mode == GeneratedAccessibilityMode.Public && NestedValidatorAccessibility.WouldBePublic(classSymbol, compilation)
             ? "public"
             : "internal";
-        sb.AppendLine($"{accessibility} sealed partial class {validatorName} : ValidatorFor<{modelName}>");
+
+        // A generic model's validator is generic over the model's type parameters and those of
+        // every type containing it, with their declared names and constraints, issue #238. One
+        // <typeparam> each: a partial set would raise CS1712.
+        var typeParameters = GenericSignature.TypeParameters(classSymbol);
+        for (var i = 0; i < typeParameters.Count; i++)
+            sb.AppendLine($"/// <typeparam name=\"{typeParameters[i].Name}\">The <c>{typeParameters[i].Name}</c> type parameter of the validated model.</typeparam>");
+        sb.AppendLine($"{accessibility} sealed partial class {validatorName}{GenericSignature.ParameterList(typeParameters)} : ValidatorFor<{modelName}>");
+        var clauses = GenericSignature.ConstraintClauses(typeParameters);
+        for (var i = 0; i < clauses.Count; i++)
+            sb.AppendLine($"    {clauses[i]}");
         sb.AppendLine("{");
     }
 
@@ -925,6 +987,38 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     }
 
     /// <summary>
+    /// ZV0038 for each <c>[PipelineBehavior]</c> whose <c>AppliesTo</c> names a closed form of a
+    /// generic <c>[Validate]</c> model, such as <c>typeof(Page&lt;Order&gt;)</c>, at its attribute.
+    /// The model has one validator for all of its closings, which matches the open form,
+    /// <c>typeof(Page&lt;&gt;)</c>, so the behavior applies to no validator, issue #238.
+    /// </summary>
+    private static EquatableArray<DiagnosticInfo> FindClosedGenericAppliesTo(Compilation compilation)
+    {
+        var diagnostics = new DiagnosticSink();
+        var (behaviors, async_) = BehaviorDiscoverer.DiscoverAll(compilation);
+        behaviors.AddRange(async_);
+        for (var i = 0; i < behaviors.Count; i++)
+        {
+            var behavior = behaviors[i];
+            if (behavior.AppliesTo is null
+                || BehaviorDiscoverer.ResolveSymbol(compilation, behavior.BehaviorTypeName) is not { } symbol
+                || BehaviorDiscoverer.AppliesToType(symbol) is not { } appliesTo
+                || !GeneratedValidatorReach.IsGeneric(appliesTo)
+                || BehaviorDiscoverer.IsOpenForm(appliesTo)
+                || !HasValidateAttribute(appliesTo.OriginalDefinition))
+                continue;
+
+            diagnostics.Report(ZV0038,
+                FindBehaviorAttributeLocation(behavior.BehaviorTypeName, compilation) ?? Location.None,
+                DescribeBehavior(behavior),
+                appliesTo.ToDisplayString(),
+                appliesTo.OriginalDefinition.ToDisplayString(),
+                BehaviorDiscoverer.UnboundName(appliesTo.OriginalDefinition, qualified: false));
+        }
+        return diagnostics.ToEquatableArray();
+    }
+
+    /// <summary>
     /// Resolves the location of the <c>[PipelineBehavior]</c> (or subclass) attribute applied to
     /// <paramref name="behavior"/>'s type, or null when the type has no such syntax in this
     /// compilation — either it could not be re-resolved (e.g. an ambiguous name across
@@ -972,12 +1066,32 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// </summary>
     private static void ReportNestedDiagnostics(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
+        ReportExpandingNesting(ctx, classSymbol, compilation);
         ReportCustomValidationDiagnostics(ctx, classSymbol, compilation);
         ReportInaccessibleBaseMemberDiagnostics(ctx, classSymbol, compilation);
         ReportSkipWhenDiagnostics(ctx, classSymbol, compilation);
         ReportMirroredCallWarnings(ctx, classSymbol, compilation);
         ReportObsoleteErrorRuleReads(ctx, classSymbol, compilation);
         ReportObsoleteErrorNestedReads(ctx, classSymbol, compilation);
+    }
+
+    /// <summary>
+    /// ZV0037 for each property of a generic model that <see cref="ExpandingComposition"/> finds
+    /// nesting a model inside itself without end, at the property. It is not composed, so the
+    /// validator takes no validator for it, issue #238. A property declared on a base type is
+    /// reported through that type's step, once however many models find it.
+    /// </summary>
+    private static void ReportExpandingNesting(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    {
+        var expanding = ExpandingComposition.Properties(classSymbol, compilation);
+        for (var i = 0; i < expanding.Count; i++)
+        {
+            var prop = expanding[i];
+            UsageSink(ctx, classSymbol, prop.ContainingType).Report(ZV0037,
+                prop.Locations.FirstOrDefault(l => l.IsInSource) ?? FindValidateAttributeLocation(classSymbol),
+                classSymbol.ToDisplayString(),
+                prop.Type.ToDisplayString());
+        }
     }
 
     /// <summary>
@@ -1050,9 +1164,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// <summary>
     /// Reports a model that gets no validator. ZV0025: the validator is a top-level class in its
     /// own file, so it cannot name a private, protected or private protected nested type, a type
-    /// inside one, or a file-local type. ZV0029: the validator is not generic, so it cannot name a
-    /// model that is generic or declared inside a generic type, issue #219. A model can hit both,
-    /// and each names a change it needs, so both are reported rather than one hiding the other.
+    /// inside one, or a file-local type. ZV0029: the validator of a generic model redeclares the
+    /// type parameters of the model and of every type containing it, so it cannot be declared when
+    /// two of them share a name or one is named like the validator, issues #219 and #238. A model
+    /// can hit both, and each names a change it needs, so both are reported rather than one hiding
+    /// the other.
     /// ZV0031: another model's validator would take the same name, issue #220. It is checked only
     /// for a model that would otherwise get a validator, since the others take no name. Each
     /// model involved reports it, naming the others.
@@ -1073,11 +1189,12 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             reported = true;
         }
 
-        if (GeneratedValidatorReach.IsGeneric(classSymbol))
+        if (GeneratedValidatorReach.UnsupportedTypeParameter(classSymbol) is { } parameter)
         {
             ctx.Report(ZV0029,
                 FindValidateAttributeLocation(classSymbol),
-                classSymbol.ToDisplayString());
+                classSymbol.ToDisplayString(),
+                parameter.Name);
             reported = true;
         }
 

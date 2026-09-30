@@ -321,6 +321,33 @@ using (var cancelled = new System.Threading.CancellationTokenSource())
     }
 }
 
+// Fixture 6: generic [Validate] models, issue #238. One validator per model, generic over its
+// type parameters, closed over a value type and over a class, composed by a non-generic model.
+var storeValidator = new SmokeStoreValidator(
+    new SmokeBinValidator<Address>(new SmokeQuantityValidator<int>()),
+    new SmokeQuantityValidator<long>());
+if (Expect(storeValidator.Validate(new SmokeStore
+    {
+        Bin = new SmokeBin<Address> { Label = "b", Item = new Address(), Count = new SmokeQuantity<int> { Amount = 2, Limit = 10 } },
+        Stock = new SmokeQuantity<long> { Amount = 5 },
+    }), "Store valid") is { } g0) return Fail(g0);
+if (Expect(storeValidator.Validate(new SmokeStore
+    {
+        Bin = new SmokeBin<Address> { Label = "", Item = null, Count = new SmokeQuantity<int> { Amount = 0 } },
+        Stock = new SmokeQuantity<long> { Amount = 5, Limit = 11 },
+    }), "Store invalid",
+        ("Bin.Label", "Label must not be empty.", null),
+        ("Bin.Item", "Item must not be null.", null),
+        ("Bin.Count.Amount", "Amount must be greater than 0.", null),
+        ("Stock.Limit", "Limit must be between 1 and 10.", null)) is { } g1) return Fail(g1);
+
+// The non-generic view of a validator, with a boxed value-type model.
+IModelValidator quantityValidator = new SmokeQuantityValidator<decimal>();
+if (quantityValidator.ModelType != typeof(SmokeQuantity<decimal>))
+    return Fail("SmokeQuantity<decimal>: IModelValidator.ModelType is " + quantityValidator.ModelType);
+if (Expect(await quantityValidator.ValidateAsync(new SmokeQuantity<decimal> { Amount = -0.5m }, default).ConfigureAwait(false), "Quantity decimal",
+        ("Amount", "Amount must be greater than 0.", null)) is { } g2) return Fail(g2);
+
 Console.WriteLine("AOT smoke: PASS");
 return 0;
 

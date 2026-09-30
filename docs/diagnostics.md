@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0035 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0038 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -30,13 +30,16 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0026](#zv0026) | Warning | [RuleMessage] on a class that is not a custom rule |
 | [ZV0027](#zv0027) | Error | Validation attribute applied to a property the generated validator cannot read |
 | [ZV0028](#zv0028) | Error | Validation method the generated validator cannot call |
-| [ZV0029](#zv0029) | Error | [Validate] on a generic type |
+| [ZV0029](#zv0029) | Error | [Validate] on a generic type whose type parameters the validator cannot declare |
 | [ZV0030](#zv0030) | Error | Validation method call that does not compile |
 | [ZV0031](#zv0031) | Error | Two [Validate] models whose validators would have the same name |
 | [ZV0032](#zv0032) | Warning | Validation call that raises a compiler warning in the generated validator |
 | [ZV0033](#zv0033) | Error | Numeric comparison rule on a type that is not a number |
 | [ZV0034](#zv0034) | Error | Options validation of a model with asynchronous rules |
 | [ZV0035](#zv0035) | Warning | [PipelineBehavior] type that does not implement IPipelineBehavior |
+| [ZV0036](#zv0036) | Error | Built-in rule on a value whose type is a type parameter |
+| [ZV0037](#zv0037) | Error | Nested model that nests its model inside itself without end |
+| [ZV0038](#zv0038) | Warning | Pipeline behavior applied to a closed form of a generic model |
 
 A rule or attribute declared on a base type is checked by every `[Validate]` model that inherits it, and a diagnostic about the usage is reported once, however many models derive from the base type, and whether or not it is `[Validate]` itself. A `[Validate(IncludeBaseProperties = false)]` model does not see the types above it, so it does not report their usages; a model deriving from it that includes base properties does. A generic base type is checked for each type argument the models use, and a diagnostic that is the same for each is reported once.
 
@@ -50,7 +53,7 @@ Most diagnostics depend on the usage alone. The ones about a method a rule calls
 
 **Title:** Redundant [ValidateWith] attribute
 
-**When fired:** `[ValidateWith]` is applied to a property whose type already carries `[Validate]`. The auto-generated validator is used by default — `[ValidateWith]` is only needed for types you do not control. A `[Validate]` type that gets no generated validator, [ZV0025](#zv0025) or [ZV0029](#zv0029), is not reported: `[ValidateWith]` is then the way to validate a property of that type.
+**When fired:** `[ValidateWith]` is applied to a property whose type already carries `[Validate]`. The auto-generated validator is used by default — `[ValidateWith]` is only needed for types you do not control. A `[Validate]` type that gets no generated validator, [ZV0025](#zv0025) or [ZV0029](#zv0029), is not reported: `[ValidateWith]` is then the way to validate a property of that type. A closing of a generic model, such as a `Page<Order>` property, is reported like any other: `PageValidator<Order>` is its generated validator.
 
 **Fix:** Remove `[ValidateWith]` from the property and rely on the auto-generated validator, or keep it only if you need to override the default with a custom implementation.
 
@@ -643,44 +646,41 @@ Leaving this to the final compilation too would fix the rare case where a second
 
 **Severity:** Error
 
-**Title:** [Validate] on a generic type
+**Title:** [Validate] on a generic type whose type parameters the validator cannot declare
 
-**When fired:** The generated `{Model}Validator` is a non-generic class, so it has no type parameters to name a generic model with. Support for generic models is tracked in [#238](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/238). ZV0029 is reported at the `[Validate]` attribute of a model that is generic, or that is declared inside a generic type:
+**When fired:** The validator of a generic model, or of a model declared inside a generic type, is generic over the type parameters of the model and of every type containing it, outermost first, with their declared names: `Page<TItem>` gets `PageValidator<TItem>`, and `Envelope<T>.Header` gets `Envelope_HeaderValidator<T>`. See [Generic models](getting-started.md#generic-models). One type parameter list cannot declare the same name twice, so ZV0029 is reported at the `[Validate]` attribute of a model whose type parameters repeat a name along the containing chain, which the compiler already warns about with CS0693, or one named like the validator itself:
 
 ```csharp
-[Validate]                            // ZV0029 — Page<T> is generic
-public class Page<T>
-{
-    [NotEmpty] public string Title { get; set; } = "";
-}
-
 public class Envelope<T>
 {
-    [Validate]                        // ZV0029 — Header is inside Envelope<T>
-    public class Header
+    [Validate]                        // ZV0029 — T is declared by Envelope<T> and by Part<T>
+    public class Part<T>
     {
         [NotEmpty] public string Id { get; set; } = "";
     }
 }
+
+[Validate]                            // ZV0029 — the validator is BoxValidator
+public class Box<BoxValidator> { }
 ```
 
-> '{0}' is generic or declared inside a generic type, so no validator is generated for it; validate a non-generic type instead
+> '{0}' declares type parameter '{1}' more than once along its containing types, so no validator is generated; rename one of them
 
-No validator is generated for the type, and a closed form such as `Page<Order>` has none either. `AddZeroAllocValidators()`, `ValidateWithZeroAlloc()` and the ASP.NET Core filter leave it out, and a property of that type is not validated as a nested model unless it names a hand-written validator with `[ValidateWith]`. The other diagnostics are not reported for the type's members, since there is no validator for them to describe. A non-generic `[Validate]` model that derives from the generic type, such as `class OrderPage : Page<Order>`, still gets a validator: it validates the inherited properties and reports their diagnostics itself.
+No validator is generated for the type, and a closed form such as `Envelope<int>.Part<string>` has none either. `AddZeroAllocValidators()`, `ValidateWithZeroAlloc()` and the ASP.NET Core filter leave it out, and a property of that type is not validated as a nested model unless it names a hand-written validator with `[ValidateWith]`. The other diagnostics are not reported for the type's members, since there is no validator for them to describe. A non-generic `[Validate]` model that derives from the type still gets a validator: it validates the inherited properties and reports their diagnostics itself.
+
+Until generic models were supported, [#238](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/238), ZV0029 was reported for every generic model and every model declared inside a generic type. Those now get a validator.
 
 A type the generated validator also cannot reach reports [ZV0025](#zv0025) as well, since it needs both changes.
 
-**Fix:** Put `[Validate]` on a non-generic type, and move a model out of a generic containing type. To share rules across models, declare them on a generic base type and put `[Validate]` on each non-generic model that derives from it:
+**Fix:** Rename the type parameter:
 
 ```csharp
-public class Page<T>
+public class Envelope<T>
 {
-    [NotEmpty] public string Title { get; set; } = "";
+    [Validate]
+    public class Part<TPart> { [NotEmpty] public string Id { get; set; } = ""; }
 }
-
-[Validate]
-public class OrderPage : Page<Order> { }
-// Generated: OrderPageValidator, which validates Title
+// Generated: Envelope_PartValidator<T, TPart>
 ```
 
 ---
@@ -770,7 +770,9 @@ public class Outer_Request { [NotEmpty] public string Name { get; set; } = ""; }
 
 > The validator for '{0}' would be named '{1}', the same as the validator for {2}, so no validator is generated for these types; rename one of them
 
-No validator is generated for any of them, so the build does not fail with a duplicate type or hint name inside generated code. `AddZeroAllocValidators()`, `ValidateWithZeroAlloc()` and the ASP.NET Core filter leave them out, and a property of one of those types is not validated as a nested model. A type that gets no validator anyway, because it is not `[Validate]`, is generic ([ZV0029](#zv0029)) or is out of the validator's reach ([ZV0025](#zv0025)), claims no name and does not collide. Neither does a type in another namespace.
+No validator is generated for any of them, so the build does not fail with a duplicate type or hint name inside generated code. `AddZeroAllocValidators()`, `ValidateWithZeroAlloc()` and the ASP.NET Core filter leave them out, and a property of one of those types is not validated as a nested model. A type that gets no validator anyway, because it is not `[Validate]`, has type parameters its validator cannot declare ([ZV0029](#zv0029)) or is out of the validator's reach ([ZV0025](#zv0025)), claims no name and does not collide. Neither does a type in another namespace.
+
+A generic validator's arity is part of its name, so `Box` and `Box<T>` get `BoxValidator` and `BoxValidator<T>` and do not collide. `Outer<T>.Inner` and a top-level `Outer_Inner<T>` both get `Outer_InnerValidator<T>` and do.
 
 The generator does not pick another name for one of them: that would rename a validator existing code already refers to.
 
@@ -894,6 +896,19 @@ public class Booking
 
 For a single-property value object the rule reads the wrapped value, so that value's type is checked. `[Equal("text")]` and `[NotEqual("text")]` compare strings and are not affected.
 
+A value whose type is a type parameter of a [generic model](getting-started.md#generic-models) is compared as `double.CreateChecked(value)`, which does not box a value-type closing. That needs the type parameter constrained to `System.Numerics.INumberBase<T>`, directly or through an interface such as `INumber<T>`. Any other type parameter, including one constrained to `IConvertible`, is reported, and the message then reads:
+
+> '{Attr}' compares '{Prop}' as a number, but its type '{Type}' cannot be converted to one; constrain it to System.Numerics.INumberBase\<T\>, or use [Must] or a custom ValidationAttribute\<T\> to compare it
+
+```csharp
+[Validate]
+public class Measure<T> where T : INumber<T>
+{
+    [GreaterThan(0)]                 // fine — double.CreateChecked(instance.Amount) <= 0
+    public T Amount { get; set; } = T.One;
+}
+```
+
 **Fix:** Compare the value with a `[Must]` predicate, or with a custom rule deriving from `ValidationAttribute<T>`, where the bound can be any type:
 
 ```csharp
@@ -974,6 +989,98 @@ public class LoggingBehavior : IPipelineBehavior
 ```
 
 If the class is not meant to be a behavior, remove `[PipelineBehavior]`.
+
+---
+
+## ZV0036
+
+**Severity:** Error
+
+**Title:** Built-in rule on a value whose type is a type parameter
+
+**When fired:** A generic model has one generated validator for all of its closings, so a rule on a property whose type is one of its type parameters must compile for whatever the type parameter is closed over. The rules that read a string, a length or a count have no such form, and are reported at the attribute and left out of the generated validator: `[NotEmpty]`, `[Empty]`, `[MinLength]`, `[MaxLength]`, `[Length]`, `[EmailAddress]`, `[Matches]`, `[IsEnumName]`, `[PrecisionScale]`, and `[Equal]` and `[NotEqual]` with a string. `[IsInEnum]` is reported unless the type parameter is constrained to `struct, Enum`. The value checked is the one the rule reads, after `Nullable<T>` and single-property value-object unwrapping, so `T?` and `Quantity<T>` count too.
+
+```csharp
+[Validate]
+public class Box<T>
+{
+    [NotEmpty]                        // ZV0036 — string.IsNullOrEmpty does not take a T
+    public T Value { get; set; } = default!;
+}
+```
+
+> '{0}' cannot validate '{1}': its type '{2}' is a type parameter, so the rule has no form that fits every closing; constrain the type parameter, use [Must] or a custom ValidationAttribute\<T\>
+
+What does work on a type parameter:
+
+| Rule | On a type parameter `T` |
+|---|---|
+| `[NotNull]`, `[Null]` | always; never fails for a value-type closing |
+| `[GreaterThan]` and the other numeric comparisons | when `T` is constrained to `INumberBase<T>`, see [ZV0033](#zv0033) |
+| `[IsInEnum]` | when `T : struct, Enum`, as `Enum.IsDefined<T>(value)` |
+| `[Must]` | always; the method takes the value as declared |
+| a custom `ValidationAttribute<TValue>` | when `T` converts to `TValue`, such as `object?` or an interface `T` is constrained to, see [ZV0021](#zv0021) |
+
+A possibly-null `T`, one without a `struct` or `unmanaged` constraint, is tested for null before it is compared, and a custom rule declared never to receive null, such as `ValidationAttribute<object>`, reports ZV0021: declare it as `ValidationAttribute<object?>`.
+
+**Fix:** Validate the value with `[Must]` or a custom `ValidationAttribute<T>`, or constrain the type parameter where the rule has a constrained form.
+
+---
+
+## ZV0037
+
+**Severity:** Error
+
+**Title:** Nested model that nests its model inside itself without end
+
+**When fired:** A property of a generic model is validated by the generated validator of its own `[Validate]` model, closed over its type arguments. When that closing grows on every round of nesting, every validator takes the validator of a larger closing, without end, so none of them could be constructed or registered:
+
+```csharp
+[Validate]
+public class Node<T>
+{
+    [NotEmpty] public string Name { get; set; } = "";
+
+    public Node<Node<T>>? Next { get; set; }  // ZV0037 — Node<T>, Node<Node<T>>, Node<Node<Node<T>>>...
+    public Node<T>? Parent { get; set; }      // fine — the same closing again
+}
+```
+
+The chain can run through other models too: `A<T>` holding a `B<List<T>>`, with `B<U>` holding an `A<U>`, grows by one `List` on every round, and `A<T>`'s property is reported. A property that reorders or replaces the type arguments, such as `Pair<U, T>` inside `Pair<T, U>` or `Node<string>` inside `Node<T>`, reaches finitely many closings and is composed.
+
+> '{0}' nests '{1}' inside itself, so its validators would form an unbounded chain; validate it with [ValidateWith] or a [Must] rule
+
+It is reported at the property, which is not validated as a nested model. The validator takes no validator for it.
+
+**Fix:** Validate the property with `[ValidateWith]` and a validator of your own, or check it with a `[Must]` rule.
+
+---
+
+## ZV0038
+
+**Severity:** Warning
+
+**Title:** Pipeline behavior applied to a closed form of a generic model
+
+**When fired:** A generic `[Validate]` model has one generated validator for all of its closings, so a pipeline behavior applies to every closing or to none. `AppliesTo` naming one closing matches no validator, and the behavior never runs. It is reported at the `[PipelineBehavior]` attribute:
+
+```csharp
+[PipelineBehavior(AppliesTo = typeof(Page<Order>))]   // ZV0038
+public sealed class AuditOrderPages : IPipelineBehavior { ... }
+```
+
+> 'AuditOrderPages' applies to 'Ns.Page\<Ns.Order\>', a closed form of the generic model 'Ns.Page\<TItem\>'; a behaviour runs for every closing of a generic model, so name it as typeof(Page\<\>)
+
+It is a warning, not an error: the same code compiled before and ran no behavior either.
+
+**Fix:** Name the model's open form. It runs in `PageValidator<TItem>` for every closing:
+
+```csharp
+[PipelineBehavior(AppliesTo = typeof(Page<>))]
+public sealed class AuditPages : IPipelineBehavior { ... }
+```
+
+A model declared inside a generic type is named the same way: `typeof(Outer<>.Inner<>)` or `typeof(Outer<>.Plain)`.
 
 ---
 

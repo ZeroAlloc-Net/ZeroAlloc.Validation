@@ -24,6 +24,9 @@ public class SampleController : ControllerBase
     [HttpPost("composed")]
     public IActionResult PostComposed([FromBody] Shipment model) => Ok(new { model.Parcel.Weight });
 
+    [HttpPost("delivery")]
+    public IActionResult PostDelivery([FromBody] Delivery model) => Ok(new { model.Crate.Label });
+
     [HttpPost("signup")]
     public IActionResult PostSignup([FromBody] Signup model) => Ok(new { model.UserName });
 

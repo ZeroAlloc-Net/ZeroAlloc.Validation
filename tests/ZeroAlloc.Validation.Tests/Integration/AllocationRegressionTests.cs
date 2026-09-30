@@ -53,6 +53,54 @@ public class AllocationRegressionTests
     }
 
     [Fact]
+    public void GenericValueTypeClosing_ValidPath_AllocatesNothing()
+    {
+        // Issue #238: an INumber<T> comparison is double.CreateChecked, a constrained call that
+        // does not box the value-type closing.
+        var validator = new GenericMeasureValidator<int>();
+        var model = new GenericMeasure<int> { Amount = 5, Optional = 50 };
+
+        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+    }
+
+    [Fact]
+    public void GenericValueTypeClosing_OfDecimal_ValidPath_AllocatesNothing()
+    {
+        var validator = new GenericMeasureValidator<decimal>();
+        var model = new GenericMeasure<decimal> { Amount = 5.5m, Optional = 99.5m };
+
+        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+    }
+
+    [Fact]
+    public void GenericReferenceTypeClosing_WithNestedClosings_ValidPath_AllocatesNothing()
+    {
+        var validator = new GenericPageValidator<GenericProduct>(
+            new GenericLineValidator<GenericProduct>(),
+            new GenericLineValidator<GenericProduct>());
+        var product = new GenericProduct();
+        var model = new GenericPage<GenericProduct>
+        {
+            Title = "t",
+            Selected = product,
+            Featured = new GenericLine<GenericProduct> { Item = product },
+            Lines = [new GenericLine<GenericProduct> { Item = product }, new GenericLine<GenericProduct> { Item = product }],
+        };
+
+        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+    }
+
+    [Fact]
+    public void GenericEnumClosing_ValidPath_AllocatesNothing()
+    {
+        // Enum.IsDefined<T> is compiled per closing, without the boxing of Enum.IsDefined(Type, object).
+        var validator = new GenericKindValidator<DayOfWeek>();
+        var model = new GenericKind<DayOfWeek>(DayOfWeek.Friday, DayOfWeek.Monday);
+
+        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+    }
+
+    [Fact]
     public void NestedModel_ValidPath_AllocatesNothing()
     {
         var validator = new AllocParentModelValidator(new AllocChildModelValidator());

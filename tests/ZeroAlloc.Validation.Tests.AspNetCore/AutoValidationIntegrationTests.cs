@@ -119,6 +119,27 @@ public class AutoValidationIntegrationTests : IAsyncLifetime
             Assert.Contains(failedPath, await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
+    // Issue #238: an argument whose validator composes a closing of a generic model, Crate<Parcel>,
+    // registered closed by AddZeroAllocAspNetCoreValidation().
+    [Theory]
+    [InlineData("{\"Crate\":{\"Label\":\"c\",\"Contents\":[{\"Weight\":1}]}}", HttpStatusCode.OK, null)]
+    [InlineData("{\"Crate\":{\"Label\":\"\",\"Contents\":[]}}", HttpStatusCode.UnprocessableEntity, "Crate.Label")]
+    public async Task ModelComposingAGenericClosing_IsValidatedByFilter(string json, HttpStatusCode expected, string? failedPath)
+    {
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        var response = await _client!.PostAsync("/sample/delivery", content);
+        Assert.Equal(expected, response.StatusCode);
+        if (failedPath is not null)
+            Assert.Contains(failedPath, await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AddZeroAllocAspNetCoreValidation_ListsTheGenericClosingAsAModelValidator()
+    {
+        var registry = _app!.Services.GetServices<IModelValidator>().ToList();
+        Assert.Contains(registry, v => v.ModelType == typeof(Crate<Parcel>));
+    }
+
     [Fact]
     public async Task UnknownModelType_FilterSkips_Returns200()
     {

@@ -11,3 +11,6 @@ ZeroAlloc.Validation.Internal.AsyncFailureBuffer.AsyncFailureBuffer() -> void
 ZeroAlloc.Validation.Internal.AsyncFailureBuffer.AsyncFailureBuffer(int initialCapacity) -> void
 ZeroAlloc.Validation.Internal.AsyncFailureBuffer.Count.get -> int
 ZeroAlloc.Validation.Internal.AsyncFailureBuffer.ToResult() -> ZeroAlloc.Validation.ValidationResult
+ZeroAlloc.Validation.IModelValidator
+ZeroAlloc.Validation.IModelValidator.ModelType.get -> System.Type!
+ZeroAlloc.Validation.IModelValidator.ValidateAsync(object! instance, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Validation.ValidationResult>

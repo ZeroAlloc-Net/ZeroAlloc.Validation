@@ -36,6 +36,10 @@
          ValidatorRegistrationEmitter can register them too, issue #246. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\ValidatorDependencies.cs"
              Link="Shared\ValidatorDependencies.cs" />
+    <!-- ExpandingComposition leaves out the properties ValidatorDependencies would compose into an
+         unbounded chain of validators, ZV0037, issue #238. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\ExpandingComposition.cs"
+             Link="Shared\ExpandingComposition.cs" />
     <!-- ObsoleteErrors finds [Obsolete(error: true)] properties, which ValidatorDependencies
          leaves out of the constructor, issue #267. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\ObsoleteErrors.cs"

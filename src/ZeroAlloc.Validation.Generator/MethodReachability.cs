@@ -32,9 +32,12 @@ internal static class MethodReachability
     /// of a <c>[Validate]</c> base type of <paramref name="model"/> in this compilation rather than
     /// by <paramref name="model"/>'s own; see <see cref="FindReportingBaseValidator"/>.
     /// A <c>[Validate]</c> base type that gets no validator reports nothing and leaves its usages to
-    /// <paramref name="model"/>: a generic one, ZV0029, issue #219, and one the validator cannot
-    /// reach, ZV0025, issue #236. C# rules out the second under a reachable model, since a type
-    /// cannot be more accessible than its base, but the check does not depend on that.
+    /// <paramref name="model"/>: one whose type parameters the validator cannot redeclare, ZV0029,
+    /// issue #219, and one the validator cannot reach, ZV0025, issue #236. C# rules out the second
+    /// under a reachable model, since a type cannot be more accessible than its base, but the check
+    /// does not depend on that. A generic <c>[Validate]</c> base type such as <c>Page&lt;T&gt;</c>
+    /// of <c>OrderPage : Page&lt;Order&gt;</c> gets a validator, issue #238, and reports its usages
+    /// itself.
     /// </summary>
     public static bool IsReportedByBaseValidator(Compilation compilation, INamedTypeSymbol model, INamedTypeSymbol? declaringType) =>
         FindReportingBaseValidator(compilation, model, declaringType) is not null;

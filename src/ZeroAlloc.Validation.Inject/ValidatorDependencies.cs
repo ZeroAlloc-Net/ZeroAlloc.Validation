@@ -34,6 +34,16 @@ namespace ZeroAlloc.Validation.Generator.Shared;
 /// for the property's model or element model, it is that validator, and the property takes the
 /// auto-composed path; see <see cref="GeneratedValidatorNamedBy"/>.
 /// </para>
+/// <para>
+/// A property of a generic model's type keeps its type arguments, issue #238: <c>Page&lt;Order&gt;</c>
+/// is taken as <c>ValidatorFor&lt;Page&lt;Order&gt;&gt;</c>, and a property of a generic model
+/// declared in terms of the model's own type parameters, such as <c>Line&lt;TItem&gt;</c>, as
+/// <c>ValidatorFor&lt;Line&lt;TItem&gt;&gt;</c>. A property whose type is a type parameter is
+/// composed only through the <c>[Validate]</c> class its constraint names: <c>TItem</c> with
+/// <c>where TItem : Address</c> is taken as <c>ValidatorFor&lt;Address&gt;</c>, exactly as a
+/// property declared <c>Address</c>. A property that would nest a model inside itself without end,
+/// ZV0037, is not composed; see <see cref="ExpandingComposition"/>.
+/// </para>
 /// </remarks>
 internal static class ValidatorDependencies
 {
@@ -64,8 +74,32 @@ internal static class ValidatorDependencies
             var validateWith = ValidateWithType(prop);
             if (validateWith is not null && GeneratedValidatorNamedBy(prop, validateWith, compilation) is null)
                 result.Add((prop, validateWith, true, validated));
-            else if (validated is not null)
+            else if (validated is not null && !ExpandingComposition.IsExpanding(model, prop, compilation))
                 result.Add((prop, validated, false, validated));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Each property of <paramref name="model"/> that <see cref="Of"/> would take the generated
+    /// validator of its <c>[Validate]</c> model for, with that model, before
+    /// <see cref="ExpandingComposition"/> leaves out the ones that nest a model inside itself
+    /// without end, which it finds from these.
+    /// </summary>
+    internal static List<(IPropertySymbol Property, INamedTypeSymbol Model)> AutoComposedCandidates(INamedTypeSymbol model, Compilation compilation)
+    {
+        var result = new List<(IPropertySymbol, INamedTypeSymbol)>();
+        foreach (var member in MemberWalker.GetMembersIncludingBase(model, compilation))
+        {
+            if (member is not IPropertySymbol prop || ObsoleteErrors.IsObsoleteError(prop))
+                continue;
+
+            var validated = ValidatedModel(prop, compilation);
+            if (validated is null)
+                continue;
+            var validateWith = ValidateWithType(prop);
+            if (validateWith is null || GeneratedValidatorNamedBy(prop, validateWith, compilation) is not null)
+                result.Add((prop, validated));
         }
         return result;
     }
@@ -90,21 +124,52 @@ internal static class ValidatorDependencies
 
     /// <summary>
     /// The <c>[Validate]</c> model with a generated validator that <paramref name="prop"/> holds,
-    /// directly or as its collection element type, or <see langword="null"/>.
+    /// directly or as its collection element type, or <see langword="null"/>. A closing of a
+    /// generic model is returned as it is, <c>Page&lt;Order&gt;</c>, not as the model's
+    /// definition, <c>Page&lt;TItem&gt;</c>, whose type parameters do not exist where the
+    /// property is validated; see <see cref="ComposedModel"/>.
     /// </summary>
-    private static INamedTypeSymbol? ValidatedModel(IPropertySymbol prop, Compilation compilation)
+    private static INamedTypeSymbol? ValidatedModel(IPropertySymbol prop, Compilation compilation) =>
+        ComposedModel(prop.Type, compilation)
+        ?? (CollectionElementType(prop.Type) is { } element ? ComposedModel(element, compilation) : null);
+
+    /// <summary>
+    /// The <c>[Validate]</c> model a value of <paramref name="type"/> is validated as, or
+    /// <see langword="null"/> when it is not validated as one: the type itself when it is a model
+    /// with a generated validator, closings of generic models included, and for a type parameter
+    /// the <c>[Validate]</c> class its constraint names, issue #238. A type parameter
+    /// unconstrained, or constrained only to other types, is not validated as a nested model: the
+    /// validator for whatever it is closed over is not known where the property is validated.
+    /// </summary>
+    public static INamedTypeSymbol? ComposedModel(ITypeSymbol type, Compilation compilation) =>
+        ComposedModel(type, compilation, depth: 0);
+
+    private static INamedTypeSymbol? ComposedModel(ITypeSymbol type, Compilation compilation, int depth)
     {
-        if (prop.Type is INamedTypeSymbol nested && HasGeneratedValidator(nested, compilation))
-            return (INamedTypeSymbol)nested.OriginalDefinition;
-        if (CollectionElementType(prop.Type) is INamedTypeSymbol element && HasGeneratedValidator(element, compilation))
-            return (INamedTypeSymbol)element.OriginalDefinition;
-        return null;
+        switch (type)
+        {
+            case INamedTypeSymbol named:
+                return HasGeneratedValidator(named, compilation) ? named : null;
+            case ITypeParameterSymbol parameter when depth < 8:
+                // A class constraint can itself be a type parameter, whose constraint is then the
+                // model: where T : U where U : Address. C# rejects a cycle of these, so the depth
+                // bound only guards against a compilation that already has errors.
+                foreach (var constraint in parameter.ConstraintTypes)
+                {
+                    if (constraint.TypeKind is TypeKind.Class or TypeKind.TypeParameter
+                        && ComposedModel(constraint, compilation, depth + 1) is { } model)
+                        return model;
+                }
+                return null;
+            default:
+                return null;
+        }
     }
 
     /// <summary>
     /// Whether <paramref name="type"/> is a <c>[Validate]</c> model that gets a generated validator.
-    /// One the generated validator cannot reach, ZV0025, or a generic one, ZV0029, gets none and
-    /// is never a constructor dependency, #216 and #219.
+    /// One the generated validator cannot reach, ZV0025, or one whose type parameters it cannot
+    /// redeclare, ZV0029, gets none and is never a constructor dependency, #216 and #219.
     /// </summary>
     public static bool HasGeneratedValidator(INamedTypeSymbol type, Compilation compilation) =>
         type.GetAttributes().Any(a =>

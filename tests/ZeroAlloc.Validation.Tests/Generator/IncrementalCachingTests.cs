@@ -367,6 +367,101 @@ public class IncrementalCachingTests
         Assert.DoesNotContain(GeneratedSources(run), s => s.Contains(registration, StringComparison.Ordinal));
     }
 
+    private const string GenericPageSource = """
+        using System.Collections.Generic;
+        using ZeroAlloc.Validation;
+        namespace TestModels;
+
+        [Validate]
+        public class Page<TItem> where TItem : class
+        {
+            [NotEmpty] public string Title { get; set; } = "";
+            public List<Line<TItem>> Lines { get; set; } = new();
+        }
+
+        [Validate]
+        public class Line<TItem> where TItem : class
+        {
+            [GreaterThan(0)] public int Quantity { get; set; }
+        }
+        """;
+
+    private const string OrderPageSource = """
+        using ZeroAlloc.Validation;
+        namespace TestModels;
+
+        public class Product { }
+
+        [Validate]
+        public class OrderPage
+        {
+            public Page<Product> Page { get; set; } = new();
+        }
+        """;
+
+    private static CSharpCompilation CreateGenericCompilation() =>
+        CSharpCompilation.Create(
+            "IncrementalCachingTests",
+            [Parse(GenericPageSource, "Page.cs"), Parse(OrderPageSource, "OrderPage.cs"), Parse(UnrelatedSource, "Unrelated.cs")],
+            GeneratorTestHelper.MinimalReferences,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+
+    [Fact]
+    public void Generic_validator_outputs_are_cached_when_an_unrelated_file_is_edited()
+    {
+        // Issue #238: a generic model's validator, and the closed composition of it, are values
+        // like any other and stay cached.
+        var compilation = CreateGenericCompilation();
+        var driver = CreateDriver(new ValidatorGenerator()).RunGenerators(compilation);
+        var before = GeneratedSources(driver.GetRunResult());
+        Assert.Contains(before, s => s.StartsWith("TestModels.PageValidator`1.g.cs", StringComparison.Ordinal));
+
+        var run = driver.RunGenerators(Edit(compilation, "Unrelated.cs", UnrelatedEdited)).GetRunResult();
+
+        AssertAllCached(run.Results[0], ValidatorGenerator.ValidatorTrackingName, expectedOutputs: 3);
+        Assert.Equal(before, GeneratedSources(run));
+    }
+
+    [Theory]
+    [MemberData(nameof(CompanionGenerators))]
+    public void Companion_output_with_a_generic_model_is_cached_when_an_edit_changes_no_registration(string generator, string trackingName)
+    {
+        var compilation = CreateGenericCompilation();
+        var driver = CreateDriver(Companion(generator)).RunGenerators(compilation);
+        var before = GeneratedSources(driver.GetRunResult());
+        Assert.Contains(before, s => s.Contains("global::TestModels.PageValidator<global::TestModels.Product>", StringComparison.Ordinal));
+
+        var unrelated = driver.RunGenerators(Edit(compilation, "Unrelated.cs", UnrelatedEdited)).GetRunResult();
+        AssertAllCached(unrelated.Results[0], trackingName, expectedOutputs: 1);
+        Assert.Equal(before, GeneratedSources(unrelated));
+
+        // A new rule on the generic model changes its validator, not how its closing is registered.
+        var edited = Edit(compilation, "Page.cs", GenericPageSource.Replace(
+            "[NotEmpty] public string Title",
+            "[NotEmpty][MaxLength(50)] public string Title",
+            StringComparison.Ordinal));
+        AssertAllCached(driver.RunGenerators(edited).GetRunResult().Results[0], trackingName, expectedOutputs: 1);
+    }
+
+    [Theory]
+    [MemberData(nameof(CompanionGenerators))]
+    public void Companion_output_follows_a_new_closing_of_a_generic_model(string generator, string trackingName)
+    {
+        var compilation = CreateGenericCompilation();
+        var driver = CreateDriver(Companion(generator)).RunGenerators(compilation);
+
+        var edited = Edit(compilation, "OrderPage.cs", OrderPageSource.Replace(
+            "public Page<Product> Page { get; set; } = new();",
+            "public Page<Product> Page { get; set; } = new();\n    public Page<string> Names { get; set; } = new();",
+            StringComparison.Ordinal));
+        var run = driver.RunGenerators(edited).GetRunResult();
+
+        Assert.Contains(
+            run.Results[0].TrackedSteps[trackingName].SelectMany(s => s.Outputs),
+            o => o.Reason == IncrementalStepRunReason.Modified);
+        Assert.Contains(GeneratedSources(run), s => s.Contains("global::TestModels.PageValidator<string>", StringComparison.Ordinal));
+    }
+
     private static IIncrementalGenerator Companion(string name) => name switch
     {
         "Inject" => new ZeroAlloc.Validation.Inject.InjectGenerator(),
