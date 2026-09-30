@@ -36,7 +36,9 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0032](#zv0032) | Warning | Validation call that raises a compiler warning in the generated validator |
 | [ZV0033](#zv0033) | Error | Numeric comparison rule on a type that is not a number |
 
-A rule or attribute declared on a base type is checked by every `[Validate]` model that inherits it. When that base type is itself `[Validate]`, a diagnostic about the usage is reported once, by the base type, not again by each derived model. If that base type sets `IncludeBaseProperties = false`, it does not see the types above it, so the derived model reports their usages.
+A rule or attribute declared on a base type is checked by every `[Validate]` model that inherits it, and a diagnostic about the usage is reported once, however many models derive from the base type, and whether or not it is `[Validate]` itself. A `[Validate(IncludeBaseProperties = false)]` model does not see the types above it, so it does not report their usages; a model deriving from it that includes base properties does. A generic base type is checked for each type argument the models use, and a diagnostic that is the same for each is reported once.
+
+Most diagnostics depend on the usage alone. The ones about a method a rule calls, or about the call the validator makes, depend on the model too: [ZV0013](#zv0013), [ZV0017](#zv0017), [ZV0028](#zv0028), [ZV0030](#zv0030) and [ZV0032](#zv0032). A model can declare a member that changes what the call binds to. When the base type is `[Validate]`, it reports the usage, and a derived model reports it only when the call fails there and not from the base type. Otherwise each model that finds the same diagnostic at the same place reports it once between them. ZV0017 names the model whose validator leaves the rule out, so it is reported for each such model.
 
 ---
 

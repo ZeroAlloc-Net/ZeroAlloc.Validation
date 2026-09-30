@@ -164,6 +164,74 @@ public class IncrementalCachingTests
         AssertCached(ValidatorStepReason(run.Results[0], CustomerHint));
     }
 
+    private const string EntitySource = """
+        using ZeroAlloc.Validation;
+        namespace TestModels;
+
+        public sealed class TaggedAttribute : ValidationAttribute<string?>
+        {
+            public override bool IsValid(string? value) => value is not null;
+        }
+
+        public class Entity
+        {
+            [Tagged(Message = "{nope}")] public string? Tenant { get; set; }
+        }
+        """;
+
+    private const string BookingSource = """
+        using ZeroAlloc.Validation;
+        namespace TestModels;
+
+        [Validate]
+        public class Booking : Entity
+        {
+            [NotEmpty] public string Reference { get; set; } = "";
+        }
+        """;
+
+    private const string InvoiceSource = """
+        using ZeroAlloc.Validation;
+        namespace TestModels;
+
+        [Validate]
+        public class Invoice : Entity { }
+        """;
+
+    private const string EntityKey = "global::TestModels.Entity";
+
+    [Fact]
+    public void Plain_base_type_diagnostics_stay_cached_when_a_derived_model_is_edited()
+    {
+        // Issue #290: the usages on a plain base type are reported by the base type's own step, so
+        // an edit to one of the models deriving from it does not report them again.
+        var compilation = CSharpCompilation.Create(
+            "IncrementalCachingTests",
+            [Parse(EntitySource, "Entity.cs"), Parse(BookingSource, "Booking.cs"), Parse(InvoiceSource, "Invoice.cs")],
+            GeneratorTestHelper.MinimalReferences,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+        var driver = CreateDriver(new ValidatorGenerator()).RunGenerators(compilation);
+        Assert.Equal(1, Count(driver.GetRunResult(), "ZV0022"));
+
+        var edited = Edit(compilation, "Booking.cs", BookingSource.Replace(
+            "[NotEmpty] public string Reference",
+            "[NotEmpty][MaxLength(50)] public string Reference",
+            StringComparison.Ordinal));
+        driver = driver.RunGenerators(edited);
+        var run = driver.GetRunResult();
+        var result = run.Results[0];
+
+        AssertCached(DeclaringTypeStepReason(result, EntityKey));
+        AssertCached(DeclaringTypeOutputStepReason(result, EntityKey));
+        Assert.Equal(1, Count(run, "ZV0022"));
+
+        // The base type's own edit is picked up.
+        var fixedEntity = Edit(edited, "Entity.cs", EntitySource.Replace("{nope}", "{PropertyName}", StringComparison.Ordinal));
+        run = driver.RunGenerators(fixedEntity).GetRunResult();
+        Assert.Equal(IncrementalStepRunReason.Modified, DeclaringTypeStepReason(run.Results[0], EntityKey));
+        Assert.Equal(0, Count(run, "ZV0022"));
+    }
+
     [Fact]
     public void Pragma_still_suppresses_warnings_reported_from_the_cache()
     {
@@ -354,6 +422,26 @@ public class IncrementalCachingTests
         Assert.True(
             reason is IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged,
             $"Expected a cached or unchanged step, got {reason}");
+
+    private static int Count(GeneratorDriverRunResult result, string id) =>
+        result.Diagnostics.Count(d => string.Equals(d.Id, id, StringComparison.Ordinal));
+
+    private static IncrementalStepRunReason DeclaringTypeStepReason(GeneratorRunResult result, string key) =>
+        Only(
+            result.TrackedSteps[ValidatorGenerator.DeclaringTypeTrackingName].SelectMany(s => s.Outputs),
+            o => string.Equals(((DeclaringTypeDiagnostics)o.Value).Key, key, StringComparison.Ordinal))
+            .Reason;
+
+    // The source-output step that reports the diagnostics of the declaring type key names.
+    private static IncrementalStepRunReason DeclaringTypeOutputStepReason(GeneratorRunResult result, string key)
+    {
+        var step = Only(
+            result.TrackedOutputSteps.SelectMany(kv => kv.Value),
+            s => s.Inputs.Any(i =>
+                i.Source.Outputs[i.OutputIndex].Value is DeclaringTypeDiagnostics d
+                && string.Equals(d.Key, key, StringComparison.Ordinal)));
+        return Only(step.Outputs, _ => true).Reason;
+    }
 
     private static IncrementalStepRunReason ValidatorStepReason(GeneratorRunResult result, string hintName) =>
         Only(
