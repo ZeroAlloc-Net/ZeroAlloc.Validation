@@ -342,7 +342,7 @@ internal static class MethodCallProbe
     private static ModelCallWarnings? CallProbeWarnings(Compilation compilation, INamedTypeSymbol model)
     {
         var calls = CallLineWriter.Recording();
-        RuleEmitter.EmitValidateBody(new StringBuilder(), model, compilation, Model, ctx: null, new GeneratedFields(), calls);
+        RuleEmitter.EmitValidateBody(new StringBuilder(), model, compilation, Model, new GeneratedFields(), calls);
 
         // Emitting the body resolved each of its calls, so the per-call probe has covered them.
         var found = ResultsFor(compilation).NoArgumentCallWarnings;

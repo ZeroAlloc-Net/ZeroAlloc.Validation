@@ -32,11 +32,23 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// adds it: the hint name and source, both <see langword="null"/> when the model gets no
     /// validator, and the diagnostics found. Every part compares by value, so the output step is
     /// cached while generating the model again produces the same result, issue #209.
+    /// <paramref name="Walks"/> are the types the validator walks, which the declaring-type step
+    /// reports the usages of, issue #290.
     /// </summary>
-    internal sealed record GeneratedValidator(string? HintName, string? Source, EquatableArray<DiagnosticInfo> Diagnostics);
+    internal sealed record GeneratedValidator(
+        string? HintName,
+        string? Source,
+        EquatableArray<DiagnosticInfo> Diagnostics,
+        EquatableArray<TypeWalk> Walks);
 
     /// <summary>Tracking name of the step that generates each validator, so tests can assert that it stays cached.</summary>
     internal const string ValidatorTrackingName = "GeneratedValidator";
+
+    /// <summary>
+    /// Tracking name of the step that reports the usages of each declaring type, so tests can
+    /// assert that it stays cached.
+    /// </summary>
+    internal const string DeclaringTypeTrackingName = "DeclaringTypeDiagnostics";
 
     private const string ValidateAttributeFqn = "ZeroAlloc.Validation.ValidateAttribute";
     private const string ValidateWithFqn      = "ZeroAlloc.Validation.ValidateWithAttribute";
@@ -313,6 +325,95 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             if (validator.HintName is not null && validator.Source is not null)
                 ctx.AddSource(validator.HintName, validator.Source);
         });
+
+        RegisterDeclaringTypes(context, validators);
+    }
+
+    /// <summary>
+    /// Reports the diagnostics about the usages on each type a validator walks, once per type,
+    /// issue #290. A plain base type is walked by every <c>[Validate]</c> model deriving from it,
+    /// and each model's generation runs on its own, so none of them can tell whether another
+    /// reports the usage. The types the validators walk are merged per declaring type instead,
+    /// and each one's usages are checked in its own step. A diagnostic that depends on the usage
+    /// alone, such as an unknown message placeholder, is found there; one that depends on the
+    /// model, such as a <c>[Must]</c> method the model cannot call, is found by the model's
+    /// generation and reported there once however many models find it. The step reruns for every
+    /// compilation, as the generation does, and its output is cached while it finds the same
+    /// diagnostics, so an edit to one derived model does not report the base type's usages again.
+    /// </summary>
+    private static void RegisterDeclaringTypes(
+        IncrementalGeneratorInitializationContext context,
+        IncrementalValuesProvider<GeneratedValidator> validators)
+    {
+        var declaringTypes = validators
+            .SelectMany(static (validator, _) => validator.Walks.Values)
+            .Collect()
+            .SelectMany(static (walks, _) => DeclaringTypes.Merge(walks))
+            .Combine(context.CompilationProvider)
+            .Select(static (input, ct) => ReportDeclaringType(input.Left, input.Right, ct))
+            .WithTrackingName(DeclaringTypeTrackingName);
+
+        context.RegisterSourceOutput(declaringTypes, static (ctx, type) =>
+        {
+            foreach (var diagnostic in type.Diagnostics)
+                ctx.ReportDiagnostic(diagnostic.ToDiagnostic());
+        });
+    }
+
+    /// <summary>
+    /// The diagnostics about the usages on the type <paramref name="usages"/> describes: those
+    /// <see cref="ReportUsageDiagnostics"/> finds for each construction the validators walk, and
+    /// the shared ones the models' generations found, each once.
+    /// </summary>
+    private static DeclaringTypeDiagnostics ReportDeclaringType(DeclaringTypeUsages usages, Compilation compilation, System.Threading.CancellationToken ct)
+    {
+        var sink = new DiagnosticSink();
+        foreach (var construction in usages.Constructions)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (DeclaringTypes.Resolve(construction, compilation) is { } type)
+                ReportUsageDiagnostics(sink, type, construction, compilation);
+        }
+
+        var diagnostics = new List<DiagnosticInfo>();
+        AddDistinct(diagnostics, sink.ToEquatableArray());
+        AddDistinct(diagnostics, usages.Shared);
+        return new DeclaringTypeDiagnostics(usages.Key, EquatableArray.From(diagnostics));
+    }
+
+    private static void AddDistinct(List<DiagnosticInfo> diagnostics, EquatableArray<DiagnosticInfo> found)
+    {
+        foreach (var diagnostic in found)
+        {
+            if (!diagnostics.Contains(diagnostic))
+                diagnostics.Add(diagnostic);
+        }
+    }
+
+    /// <summary>
+    /// The diagnostics about the usages on <paramref name="type"/> that depend on the usage alone,
+    /// not on the model walking it: for each property whose rules a validator reads, ZV0011 and
+    /// ZV0012 for its <c>[ValidateWith]</c>, ZV0018 for a repeated rule, and what
+    /// <see cref="RuleEmitter.ReportRuleUsageDiagnostics"/> finds in its rules; then ZV0024 and
+    /// ZV0027, from <see cref="ReportUnreadValidationAttributeDiagnostics"/>.
+    /// </summary>
+    private static void ReportUsageDiagnostics(DiagnosticSink ctx, INamedTypeSymbol type, TypeConstruction construction, Compilation compilation)
+    {
+        var ruleProperties = new HashSet<string>(construction.RuleProperties, StringComparer.Ordinal);
+        foreach (var member in type.GetMembers())
+        {
+            if (member is not IPropertySymbol prop || !ruleProperties.Contains(prop.Name)) continue;
+
+            if (FindValidateWithAttribute(prop) is { } validateWithAttr)
+            {
+                ReportZV0011IfApplicable(ctx, prop, member, validateWithAttr, compilation);
+                ReportZV0012IfApplicable(ctx, prop, member, validateWithAttr, compilation);
+            }
+            ReportDuplicateRuleAttributes(ctx, prop);
+            RuleEmitter.ReportRuleUsageDiagnostics(ctx, prop, compilation);
+        }
+
+        ReportUnreadValidationAttributeDiagnostics(ctx, type, construction, compilation);
     }
 
     // ZV0026: [RuleMessage] is read only for custom rules. Independent of [Validate], so a
@@ -373,7 +474,12 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         var diagnostics = new DiagnosticSink();
         var classSymbol = ResolveTarget(target, compilation, ct);
         var output = classSymbol is null ? default : Emit(diagnostics, classSymbol, allBehaviors, mode, compilation);
-        return new GeneratedValidator(output.HintName, output.Source, diagnostics.ToEquatableArray());
+
+        // A model that gets no validator walks nothing: its usages are moot until it gets one.
+        var walks = classSymbol is not null && output.HintName is not null
+            ? DeclaringTypes.Walk(classSymbol, compilation, diagnostics)
+            : EquatableArray<TypeWalk>.Empty;
+        return new GeneratedValidator(output.HintName, output.Source, diagnostics.ToEquatableArray(), walks);
     }
 
     /// <summary>
@@ -431,7 +537,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // run guarantees each field appears exactly once at class scope
         // (no CS0102 duplicate-member errors when both paths reference the same prop).
         var fields = new GeneratedFields();
-        EmitValidateMethod(ctx, sb, classSymbol, compilation, modelName, syncBehaviors, fields);
+        EmitValidateMethod(sb, classSymbol, compilation, modelName, syncBehaviors, fields);
         EmitValidateAsyncOverride(sb, classSymbol, compilation, modelName, asyncBehaviors, fields);
 
         fields.AppendDeclarations(sb);
@@ -442,7 +548,6 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     }
 
     private static void EmitValidateMethod(
-        DiagnosticSink ctx,
         System.Text.StringBuilder sb,
         INamedTypeSymbol classSymbol,
         Compilation compilation,
@@ -455,7 +560,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         sb.AppendLine("    {");
         if (syncBehaviors.Count == 0)
         {
-            RuleEmitter.EmitValidateBody(sb, classSymbol, compilation, "instance", ctx, fields);
+            RuleEmitter.EmitValidateBody(sb, classSymbol, compilation, "instance", fields);
         }
         else
         {
@@ -469,7 +574,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 {
                     var paramName = depth == 0 ? "instance" : $"r{depth}";
                     return "{\n"
-                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, ctx, fields)
+                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, fields)
                         + "        }";
                 }
             };
@@ -711,91 +816,72 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// The diagnostics about <paramref name="classSymbol"/>'s properties and methods. A usage
-    /// declared on a <c>[Validate]</c> base type is left to that type's own generation, as
-    /// <see cref="MethodReachability.IsReportedByBaseValidator"/> decides, so a usage walked by
-    /// several validators is reported once.
+    /// The diagnostics about <paramref name="classSymbol"/>'s methods, and about its properties'
+    /// usages that depend on the model: the methods the rules call and the calls the validator
+    /// makes. A usage declared on a <c>[Validate]</c> base type is left to that type's own
+    /// generation when it fails there too, as
+    /// <see cref="MethodReachability.FindReportingBaseValidator"/> decides. A usage declared on
+    /// another type than the model is recorded through <see cref="UsageSink"/>, so the step of
+    /// that type reports it once, however many models find it, issue #290. The usages that do not
+    /// depend on the model are reported by that step alone, from <see cref="ReportUsageDiagnostics"/>.
     /// </summary>
     private static void ReportNestedDiagnostics(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
-        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
-        {
-            if (member is not IPropertySymbol prop) continue;
-            if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, prop.ContainingType)) continue;
-
-            var validateWithAttr = FindValidateWithAttribute(prop);
-            if (validateWithAttr is null) continue;
-
-            ReportZV0011IfApplicable(ctx, prop, member, validateWithAttr, compilation);
-            ReportZV0012IfApplicable(ctx, prop, member, validateWithAttr, compilation);
-        }
         ReportCustomValidationDiagnostics(ctx, classSymbol, compilation);
         ReportInaccessibleBaseMemberDiagnostics(ctx, classSymbol, compilation);
         ReportSkipWhenDiagnostics(ctx, classSymbol, compilation);
         ReportMirroredCallWarnings(ctx, classSymbol, compilation);
         ReportObsoleteErrorRuleReads(ctx, classSymbol, compilation);
         ReportObsoleteErrorNestedReads(ctx, classSymbol, compilation);
-        ReportDuplicateRuleAttributeDiagnostics(ctx, classSymbol, compilation);
-        ReportUnreadValidationAttributeDiagnostics(ctx, classSymbol, compilation);
     }
+
+    /// <summary>
+    /// The sink for a diagnostic about a usage declared on <paramref name="declaringType"/> that
+    /// <paramref name="classSymbol"/>'s generation reports: its own for a usage on the model, and
+    /// otherwise one shared with every other model walking that type, whose step reports each
+    /// such diagnostic once, issue #290.
+    /// </summary>
+    private static DiagnosticSink UsageSink(DiagnosticSink ctx, INamedTypeSymbol classSymbol, INamedTypeSymbol? declaringType) =>
+        declaringType is null || SymbolEqualityComparer.Default.Equals(declaringType.OriginalDefinition, classSymbol.OriginalDefinition)
+            ? ctx
+            : ctx.SharedFor(DeclaringTypes.Key(declaringType));
 
     /// <summary>
     /// ZV0024: the generator reads rules from properties only. A <c>ValidationAttribute</c>
     /// subclass can widen its own <c>[AttributeUsage]</c>, so a rule can compile on a field, or
     /// on a constructor parameter such as a record's positional parameter written without the
     /// <c>property:</c> target, and would then be dropped with nothing to say so. Fields and
-    /// constructor parameters are searched on <paramref name="classSymbol"/> and on each base
-    /// type whose properties it validates. The same walk reports ZV0027 for the properties the
-    /// validator cannot read, on every type whose rules <paramref name="classSymbol"/>'s
-    /// validator inherits, and skips a property a more-derived declaration hides. Both skip a
-    /// base type that is not declared in source, which the user cannot change and which has no
-    /// location to report at, and a base type whose usages the generation of a <c>[Validate]</c>
-    /// base reports, as <see cref="MethodReachability.IsReportedByBaseValidator"/> decides. Each
-    /// usage is then reported once, including one above a <c>[Validate]</c> base type that sets
-    /// <c>IncludeBaseProperties = false</c> and so does not walk it.
-    /// A generic <c>[Validate]</c> base type gets no validator, ZV0029, so it reports nothing and
-    /// the walk does not defer to it.
+    /// constructor parameters are searched on every type a validator walks: the model, and each
+    /// base type whose properties it validates. The same walk reports ZV0027 for the properties the
+    /// validator cannot read, and skips a property every walking model's more-derived declaration
+    /// hides, as <paramref name="construction"/> records. On a base type, a property that is only
+    /// inaccessible is ZV0017's case, which names the model, so ZV0027 reports it only for a type
+    /// that is itself a model. Both skip a type that is not declared in source, which the user
+    /// cannot change and which has no location to report at. The type's step reports them, so
+    /// each usage is reported once, issue #290.
     /// </summary>
-    private static void ReportUnreadValidationAttributeDiagnostics(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    private static void ReportUnreadValidationAttributeDiagnostics(DiagnosticSink ctx, INamedTypeSymbol type, TypeConstruction construction, Compilation compilation)
     {
-        var includeBase = MemberWalker.IncludesBaseProperties(classSymbol);
-        var hidden = new HashSet<string>(StringComparer.Ordinal);
-        for (var type = classSymbol; type is not null && type.SpecialType != SpecialType.System_Object; type = type.BaseType)
+        if (!type.Locations.Any(l => l.IsInSource)) return;
+
+        var checkedProperties = new HashSet<string>(construction.CheckedProperties, StringComparer.Ordinal);
+        foreach (var member in type.GetMembers())
         {
-            bool isBase = !SymbolEqualityComparer.Default.Equals(type, classSymbol);
-            if (isBase && !includeBase)
-                break;
-
-            bool reportHere = type.Locations.Any(l => l.IsInSource)
-                && !(isBase && MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, type));
-
-            if (reportHere)
+            switch (member)
             {
-                foreach (var member in type.GetMembers())
-                {
-                    switch (member)
-                    {
-                        case IPropertySymbol property:
-                            if (!hidden.Contains(property.Name))
-                                ReportUnreadablePropertyAttributes(ctx, property, compilation, isBase);
-                            break;
-                        case IFieldSymbol field:
-                            // [field: Rule] on an auto-property lands on the compiler's backing
-                            // field, which is named after the property the user wrote.
-                            ReportUnreadValidationAttributes(ctx, field, field.AssociatedSymbol?.Name ?? field.Name);
-                            break;
-                        case IMethodSymbol { MethodKind: MethodKind.Constructor } constructor:
-                            foreach (var parameter in constructor.Parameters)
-                                ReportUnreadValidationAttributes(ctx, parameter, parameter.Name);
-                            break;
-                    }
-                }
-            }
-
-            foreach (var member in type.GetMembers())
-            {
-                if (MemberWalker.HidesBaseMembers(member, compilation))
-                    hidden.Add(member.Name);
+                case IPropertySymbol property:
+                    if (checkedProperties.Contains(property.Name))
+                        ReportUnreadablePropertyAttributes(ctx, property, compilation, isBase: !construction.AsModel);
+                    break;
+                case IFieldSymbol field:
+                    // [field: Rule] on an auto-property lands on the compiler's backing
+                    // field, which is named after the property the user wrote.
+                    ReportUnreadValidationAttributes(ctx, field, field.AssociatedSymbol?.Name ?? field.Name);
+                    break;
+                case IMethodSymbol { MethodKind: MethodKind.Constructor } constructor:
+                    foreach (var parameter in constructor.Parameters)
+                        ReportUnreadValidationAttributes(ctx, parameter, parameter.Name);
+                    break;
             }
         }
     }
@@ -928,31 +1014,25 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// Rule attributes are <c>AllowMultiple</c>, which they have to be — <c>[Must(nameof(A))]</c>
     /// alongside <c>[Must(nameof(B))]</c> is meaningful, and so is the same check with different
     /// arguments. Repeating one with *identical* arguments is not: the rule runs twice and the
-    /// same failure is reported twice. Only that exact-duplicate case is reported, and on a
-    /// <c>[Validate]</c> base type only by that type's own generation, so it is reported once.
+    /// same failure is reported twice. Only that exact-duplicate case is reported, as ZV0018, by
+    /// the step of the type declaring <paramref name="prop"/>, so it is reported once.
     /// </summary>
-    private static void ReportDuplicateRuleAttributeDiagnostics(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
+    private static void ReportDuplicateRuleAttributes(DiagnosticSink ctx, IPropertySymbol prop)
     {
-        foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var attr in prop.GetAttributes())
         {
-            if (member is not IPropertySymbol prop) continue;
-            if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, prop.ContainingType)) continue;
+            var ns = attr.AttributeClass?.ContainingNamespace?.ToDisplayString();
+            if (!string.Equals(ns, "ZeroAlloc.Validation", StringComparison.Ordinal)
+                && !CustomRules.IsCustomRule(attr)) continue;
 
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var attr in prop.GetAttributes())
-            {
-                var ns = attr.AttributeClass?.ContainingNamespace?.ToDisplayString();
-                if (!string.Equals(ns, "ZeroAlloc.Validation", StringComparison.Ordinal)
-                    && !CustomRules.IsCustomRule(attr)) continue;
+            if (seen.Add(DescribeAttribute(attr))) continue;
 
-                if (seen.Add(DescribeAttribute(attr))) continue;
-
-                ctx.Report(ZV0018,
-                    attr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
-                        ?? prop.Locations.FirstOrDefault(),
-                    prop.Name,
-                    attr.AttributeClass?.Name);
-            }
+            ctx.Report(ZV0018,
+                attr.ApplicationSyntaxReference?.GetSyntax().GetLocation()
+                    ?? prop.Locations.FirstOrDefault(),
+                prop.Name,
+                attr.AttributeClass?.Name);
         }
     }
 
@@ -1021,7 +1101,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
             // A member of a base type from a referenced assembly has no source location, so it is
             // reported at the model's [Validate] attribute.
-            ctx.Report(ZV0017,
+            UsageSink(ctx, classSymbol, member.ContainingType).Report(ZV0017,
                 member.Locations.FirstOrDefault(l => l.IsInSource) ?? FindValidateAttributeLocation(classSymbol),
                 member.ContainingType?.ToDisplayString(),
                 member.Name,
@@ -1041,7 +1121,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 // type, and the rule it then drops is reported here.
                 if (reportingBase is not null && FailsFrom(compilation, reportingBase, prop, in call)) continue;
 
-                ReportUnreachableCall(ctx, classSymbol, in call, prop, prop.Locations.FirstOrDefault());
+                ReportUnreachableCall(UsageSink(ctx, classSymbol, prop.ContainingType), classSymbol, in call, prop, prop.Locations.FirstOrDefault());
             }
         }
     }
@@ -1100,9 +1180,10 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 && method.Parameters.Length == 0
                 && IsSupportedCustomValidationReturnType(method.ReturnType);
 
+            var sink = UsageSink(ctx, classSymbol, declaration.ContainingType);
             if (!validSignature)
             {
-                ctx.Report(ZV0013,
+                sink.Report(ZV0013,
                     attrData.ApplicationSyntaxReference?.GetSyntax().GetLocation()
                         ?? member.Locations.FirstOrDefault(),
                     method.Name);
@@ -1114,7 +1195,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 && (SymbolEqualityComparer.Default.Equals(declaration, method)
                     || MethodReachability.Classify(compilation, classSymbol, declaration) == MethodReach.Callable))
             {
-                ReportZV0028(ctx, classSymbol, attrData, method, method.Name, "[CustomValidation]", reach);
+                ReportZV0028(sink, classSymbol, attrData, method, method.Name, "[CustomValidation]", reach);
             }
         }
     }
@@ -1219,12 +1300,13 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         foreach (var call in warnings.Warned)
         {
             var reportingBase = MethodReachability.FindReportingBaseValidator(compilation, classSymbol, call.Site.DeclaringType);
+            var sink = UsageSink(ctx, classSymbol, call.Site.DeclaringType);
             foreach (var warning in call.Warnings)
             {
                 if (reportingBase is not null && IsMirroredBy(compilation, reportingBase, call.Site, warning.Id)) continue;
 
                 // An error the generated call would raise stays an error, so the build still fails.
-                ctx.ReportWithSeverity(ZV0032,
+                sink.ReportWithSeverity(ZV0032,
                     AttributeLocation(call.Site.Attribute, call.Site.Target, classSymbol),
                     warning.IsError ? DiagnosticSeverity.Error : DiagnosticSeverity.Warning,
                     call.Site.Text,
@@ -1249,7 +1331,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         {
             if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, prop.ContainingType)) continue;
 
-            ctx.ReportWithSeverity(ZV0032,
+            UsageSink(ctx, classSymbol, prop.ContainingType).ReportWithSeverity(ZV0032,
                 AttributeLocation(attr, prop, classSymbol),
                 DiagnosticSeverity.Error,
                 rawAccess,
@@ -1274,7 +1356,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         {
             if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, prop.ContainingType)) continue;
 
-            ctx.ReportWithSeverity(ZV0032,
+            UsageSink(ctx, classSymbol, prop.ContainingType).ReportWithSeverity(ZV0032,
                 prop.Locations.FirstOrDefault(l => l.IsInSource) ?? FindValidateAttributeLocation(classSymbol),
                 DiagnosticSeverity.Error,
                 rawAccess,

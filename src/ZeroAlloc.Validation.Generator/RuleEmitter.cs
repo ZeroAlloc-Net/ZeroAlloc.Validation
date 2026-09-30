@@ -82,7 +82,7 @@ internal static class RuleEmitter
     /// ZV0032 mirrors at the attribute. <see cref="MethodCallProbe"/> passes a recording one to
     /// compile this same body.
     /// </summary>
-    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName = "instance", DiagnosticSink? ctx = null, GeneratedFields? fields = null, CallLineWriter? calls = null)
+    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName = "instance", GeneratedFields? fields = null, CallLineWriter? calls = null)
     {
         calls ??= CallLineWriter.Emitting(MethodCallProbe.CallWarnings(compilation, classSymbol));
 
@@ -97,7 +97,7 @@ internal static class RuleEmitter
             sb.AppendLine();
         }
 
-        var byProperty = CollectPropertyRules(classSymbol, compilation, ctx);
+        var byProperty = CollectPropertyRules(classSymbol, compilation);
         var nestedProperties = GetNestedValidateProperties(classSymbol, compilation).ToList();
         var collectionProperties = GetCollectionValidateProperties(classSymbol, compilation).ToList();
         var validatorFields = NestedValidatorFieldsByProperty(classSymbol, compilation);
@@ -118,66 +118,73 @@ internal static class RuleEmitter
     /// <summary>
     /// The rules to emit for each property, in declaration order. Every emit path, sync and async,
     /// builds its rule indices, and so its <c>__Rule_{Prop}_{i}</c> field names, from this one
-    /// filtered list, so both paths name the same fields. A custom rule the validator cannot emit
-    /// is left out and reported: ZV0021 for a property type with no implicit conversion to the
-    /// rule's <c>T</c>, ZV0023 for an attribute the validator cannot reach. A numeric comparison
-    /// rule on a type <c>Convert.ToDouble</c> cannot convert is left out and reported as ZV0033. A
-    /// <c>ValidationAttribute</c> subclass that is neither a built-in nor a custom rule is
-    /// reported as ZV0020. The rules that stay are checked for what their emitted code gets
-    /// wrong: ZV0016 for a built-in rule on a multi-property value object, ZV0022 for an unknown
-    /// placeholder in a custom rule's message. Both are decided before the rules' <c>When</c>,
-    /// <c>Unless</c> and <c>[Must]</c> methods are resolved on the model, so they depend on the
-    /// usage alone and a base type's validator decides them the same way. Diagnostics are
-    /// reported only when <paramref name="ctx"/> is set, which only the sync visit does, and a
-    /// usage declared on a <c>[Validate]</c> base type only by that type's validator, so each
-    /// usage reports once.
+    /// filtered list, so both paths name the same fields. The rules <see cref="UsableRules"/>
+    /// leaves out are left out here too, and so is a rule whose <c>When</c>, <c>Unless</c> or
+    /// <c>[Must]</c> method the validator cannot call. Nothing is reported here:
+    /// <see cref="ReportRuleUsageDiagnostics"/> reports a usage once, for the type declaring it,
+    /// however many validators walk it, issue #290.
     /// </summary>
     private static List<(IPropertySymbol Property, List<AttributeData> Rules)> CollectPropertyRules(
         INamedTypeSymbol classSymbol,
-        Compilation compilation,
-        DiagnosticSink? ctx)
+        Compilation compilation)
     {
         var byProperty = new List<(IPropertySymbol Property, List<AttributeData> Rules)>();
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IPropertySymbol prop) continue;
 
-            // A [Validate] base type's own validator runs the same checks over this property, so
-            // it reports them there, and the rule is still left out here.
-            var report = ctx is not null
-                && !MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, prop.ContainingType)
-                    ? ctx
-                    : null;
-
-            var usableRules = new List<AttributeData>();
-            foreach (var attr in prop.GetAttributes())
-            {
-                if (!IsRuleAttribute(attr))
-                {
-                    ReportZV0020IfApplicable(report, prop, attr);
-                    continue;
-                }
-
-                if (CustomRules.IsCustomRule(attr) && !CanEmitCustomRule(compilation, prop, attr, report))
-                    continue;
-
-                if (!CanCompareAsNumber(compilation, prop, attr, report))
-                    continue;
-
-                usableRules.Add(attr);
-            }
-
-            if (report is not null)
-            {
-                ReportZV0016IfApplicable(report, prop, usableRules);
-                ReportZV0022IfApplicable(report, prop, usableRules);
-            }
-
-            var propRules = usableRules.FindAll(attr => CallsOnlyReachableMethods(compilation, classSymbol, prop, attr));
+            var propRules = UsableRules(compilation, prop, ctx: null)
+                .FindAll(attr => CallsOnlyReachableMethods(compilation, classSymbol, prop, attr));
             if (propRules.Count > 0)
                 byProperty.Add((prop, propRules));
         }
         return byProperty;
+    }
+
+    /// <summary>
+    /// Reports what is wrong with the rules on <paramref name="prop"/>, for the pipeline step of
+    /// the type that declares it. A rule <see cref="UsableRules"/> leaves out is reported as ZV0020,
+    /// ZV0021, ZV0023 or ZV0033. The rules that stay are checked for what their emitted code gets
+    /// wrong: ZV0016 for a built-in rule on a multi-property value object, ZV0022 for an unknown
+    /// placeholder in a custom rule's message. Each depends on the usage alone, not on the model
+    /// or on whether the rule's <c>When</c>, <c>Unless</c> and <c>[Must]</c> methods can be called
+    /// from it, so every validator that walks the property would find the same ones.
+    /// </summary>
+    public static void ReportRuleUsageDiagnostics(DiagnosticSink ctx, IPropertySymbol prop, Compilation compilation)
+    {
+        var usableRules = UsableRules(compilation, prop, ctx);
+        ReportZV0016IfApplicable(ctx, prop, usableRules);
+        ReportZV0022IfApplicable(ctx, prop, usableRules);
+    }
+
+    /// <summary>
+    /// The rules on <paramref name="prop"/> a validator can emit, whatever the model. A custom rule
+    /// is left out for a property type with no implicit conversion to the rule's <c>T</c>, ZV0021,
+    /// or an attribute the validator cannot reach, ZV0023. A numeric comparison rule on a type
+    /// <c>Convert.ToDouble</c> cannot convert is left out, ZV0033. A <c>ValidationAttribute</c>
+    /// subclass that is neither a built-in nor a custom rule is not a rule, ZV0020. Each is
+    /// reported only when <paramref name="ctx"/> is set.
+    /// </summary>
+    private static List<AttributeData> UsableRules(Compilation compilation, IPropertySymbol prop, DiagnosticSink? ctx)
+    {
+        var usableRules = new List<AttributeData>();
+        foreach (var attr in prop.GetAttributes())
+        {
+            if (!IsRuleAttribute(attr))
+            {
+                ReportZV0020IfApplicable(ctx, prop, attr);
+                continue;
+            }
+
+            if (CustomRules.IsCustomRule(attr) && !CanEmitCustomRule(compilation, prop, attr, ctx))
+                continue;
+
+            if (!CanCompareAsNumber(compilation, prop, attr, ctx))
+                continue;
+
+            usableRules.Add(attr);
+        }
+        return usableRules;
     }
 
     private static void EmitNestedPath(
@@ -1119,7 +1126,7 @@ internal static class RuleEmitter
         sb.AppendLine("    {");
         var fields = new GeneratedFields();
         var calls = CallLineWriter.Recording();
-        EmitValidateBody(sb, classSymbol, compilation, MethodCallProbe.Model, ctx: null, fields, calls);
+        EmitValidateBody(sb, classSymbol, compilation, MethodCallProbe.Model, fields, calls);
         sb.AppendLine("    }");
         fields.AppendDeclarations(sb);
         sb.AppendLine("}");
@@ -1887,10 +1894,10 @@ internal static class RuleEmitter
     /// Returns the Validate method body as a string (multi-statement block WITHOUT outer braces),
     /// using <paramref name="modelParamName"/> as the instance variable.
     /// </summary>
-    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName, DiagnosticSink? ctx = null, GeneratedFields? fields = null)
+    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName, GeneratedFields? fields = null)
     {
         var sb = new System.Text.StringBuilder();
-        EmitValidateBody(sb, classSymbol, compilation, modelParamName, ctx, fields);
+        EmitValidateBody(sb, classSymbol, compilation, modelParamName, fields);
         return sb.ToString();
     }
 
