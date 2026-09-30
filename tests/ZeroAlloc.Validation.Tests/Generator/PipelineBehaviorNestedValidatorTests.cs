@@ -10,8 +10,9 @@ namespace ZeroAlloc.Validation.Tests.Generator;
 /// <summary>
 /// Pipeline behaviors on a model whose validation reads nested validators, issue #294. The body
 /// the behaviors wrap reads the validator's nested-validator fields, so the chain's lambdas cannot
-/// be <c>static</c>; they were, and the generated validator failed with CS8821. A model without
-/// nested validators keeps static lambdas, which capture nothing.
+/// be <c>static</c>; they were, and the generated validator failed with CS8821. Such a chain caches
+/// each level's delegate in an instance field, so it does not allocate them per call, issue #298.
+/// A model without nested validators keeps static lambdas, which capture nothing.
 /// </summary>
 public class PipelineBehaviorNestedValidatorTests
 {
@@ -85,6 +86,41 @@ public class PipelineBehaviorNestedValidatorTests
         var src = Generated(result);
         Assert.Contains("AuditBehavior.Handle", src, StringComparison.Ordinal);
         Assert.DoesNotContain("static (", src, StringComparison.Ordinal);
+        AssertCachedChains(src, sync: behaviors.Contains("Order = 0", StringComparison.Ordinal), async: behaviors.Contains("Order = 1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Behaviors_on_a_generic_model_with_a_nested_validator_cache_their_delegates()
+    {
+        var source = $$"""
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using ZeroAlloc.Pipeline;
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            [Validate] public sealed class Child { [NotEmpty] public string? Name { get; init; } }
+
+            [Validate]
+            public sealed class Request<T>
+            {
+                [NotEmpty] public string? Name { get; init; }
+                public Child? Child { get; init; }
+                public T? Payload { get; init; }
+            }
+
+            {{SyncBehavior.Replace("typeof(Request)", "typeof(Request<>)", StringComparison.Ordinal)}}
+            {{AsyncBehavior.Replace("typeof(Request)", "typeof(Request<>)", StringComparison.Ordinal)}}
+            """;
+
+        var (result, output) = Run(source);
+
+        AssertCleanCompile(output);
+        var src = GeneratorTestHelper.GetGeneratedSource(result, "TestModels.RequestValidator`1.g.cs");
+        Assert.Contains("private global::System.Func<global::TestModels.Request<T>, global::ZeroAlloc.Validation.ValidationResult>? __validateNext1;", src, StringComparison.Ordinal);
+        Assert.Contains("private global::System.Func<global::TestModels.Request<T>, global::System.Threading.CancellationToken, global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult>>? __validateAsyncNext1;", src, StringComparison.Ordinal);
+        Assert.DoesNotContain("static (", src, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -107,7 +143,9 @@ public class PipelineBehaviorNestedValidatorTests
             checker));
 
         AssertCleanCompile(output);
-        Assert.DoesNotContain("static (", Generated(result), StringComparison.Ordinal);
+        var src = Generated(result);
+        Assert.DoesNotContain("static (", src, StringComparison.Ordinal);
+        AssertCachedChains(src, sync: behavior.Contains("Order = 0", StringComparison.Ordinal), async: behavior.Contains("Order = 1", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -125,6 +163,7 @@ public class PipelineBehaviorNestedValidatorTests
         Assert.Contains("private async global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult> __ValidateAsyncCore(", src, StringComparison.Ordinal);
         Assert.Contains("return __ValidateAsyncCore(", src, StringComparison.Ordinal);
         Assert.DoesNotContain("static (", src, StringComparison.Ordinal);
+        AssertCachedChains(src, sync: false, async: true);
     }
 
     [Theory]
@@ -135,7 +174,37 @@ public class PipelineBehaviorNestedValidatorTests
         var (result, output) = Run(Source("[NotEmpty] public string? Name { get; init; }", behavior));
 
         AssertCleanCompile(output);
-        Assert.Contains("static (", Generated(result), StringComparison.Ordinal);
+        var src = Generated(result);
+        Assert.Contains("static (", src, StringComparison.Ordinal);
+        Assert.DoesNotContain("??=", src, StringComparison.Ordinal);
+        Assert.DoesNotContain("Next1", src, StringComparison.Ordinal);
+    }
+
+    /// <summary>The cache field of each emitted chain, typed as its <c>next</c> delegate, and read with <c>??=</c>.</summary>
+    private static void AssertCachedChains(string src, bool sync, bool async)
+    {
+        const string syncField = "private global::System.Func<global::TestModels.Request, global::ZeroAlloc.Validation.ValidationResult>? __validateNext1;";
+        const string asyncField = "private global::System.Func<global::TestModels.Request, global::System.Threading.CancellationToken, global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult>>? __validateAsyncNext1;";
+
+        if (sync)
+        {
+            Assert.Contains(syncField, src, StringComparison.Ordinal);
+            Assert.Contains("__validateNext1 ??= (r1) =>", src, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.DoesNotContain("__validateNext1", src, StringComparison.Ordinal);
+        }
+
+        if (async)
+        {
+            Assert.Contains(asyncField, src, StringComparison.Ordinal);
+            Assert.Contains("__validateAsyncNext1 ??= (r1, c1) =>", src, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.DoesNotContain("__validateAsyncNext1", src, StringComparison.Ordinal);
+        }
     }
 
     private static (GeneratorDriverRunResult Result, Compilation Output) Run(string source)

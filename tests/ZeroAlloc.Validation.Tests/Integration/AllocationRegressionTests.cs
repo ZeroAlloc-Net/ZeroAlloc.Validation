@@ -181,6 +181,66 @@ public class AllocationRegressionTests
         Assert.InRange(Measure(() => validator.ValidateAsync(model).Result.IsValid), 1, OneFailureCeiling + 32);
     }
 
+    // A behavior on a model with a nested validator: the chain reads the validator's fields, so
+    // its lambdas cannot be static, and it caches their delegates instead of allocating them on
+    // every call, issue #298.
+    [Fact]
+    public void BehaviorWithNestedValidator_Sync_ValidPath_AllocatesNothing()
+    {
+        NestedSyncAuditBehavior.CallLog = null;
+        var validator = new PipelineNestedOrderValidator(new PipelineNestedLineValidator(), new PipelineNestedLineValidator());
+        var model = new PipelineNestedOrder
+        {
+            Reference = "REF-001",
+            Line = new PipelineNestedLine { Sku = "A" },
+            Lines = [new PipelineNestedLine { Sku = "B" }],
+        };
+
+        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+    }
+
+    [Fact]
+    public void BehaviorWithNestedValidator_Async_ValidPath_AllocatesNothing()
+    {
+        NestedAsyncAuditBehavior.CallLog = null;
+        var validator = new PipelineNestedOrderValidator(new PipelineNestedLineValidator(), new PipelineNestedLineValidator());
+        var model = new PipelineNestedOrder
+        {
+            Reference = "REF-001",
+            Line = new PipelineNestedLine { Sku = "A" },
+            Lines = [new PipelineNestedLine { Sku = "B" }],
+        };
+
+        Assert.Equal(0, Measure(() => validator.ValidateAsync(model).Result.IsValid));
+    }
+
+    [Fact]
+    public void BehaviorWithNestedValidator_AsyncRuleModel_SynchronouslyCompletingValidPath_AllocatesNothing()
+    {
+        var validator = new AllocBehaviorAsyncRuleModelValidator(new PipelineNestedLineValidator());
+        var model = new AllocBehaviorAsyncRuleModel { Name = "ok", Line = new PipelineNestedLine { Sku = "A" } };
+
+        Assert.Equal(0, Measure(() => validator.ValidateAsync(model).Result.IsValid));
+    }
+
+    [Fact]
+    public void BehaviorWithNestedValidator_GenericModel_Sync_ValidPath_AllocatesNothing()
+    {
+        var validator = new AllocGenericBehaviorModelValidator<string>(new PipelineNestedLineValidator());
+        var model = new AllocGenericBehaviorModel<string> { Reference = "r", Line = new PipelineNestedLine { Sku = "A" } };
+
+        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+    }
+
+    [Fact]
+    public void BehaviorWithNestedValidator_GenericModel_Async_ValidPath_AllocatesNothing()
+    {
+        var validator = new AllocGenericBehaviorModelValidator<int>(new PipelineNestedLineValidator());
+        var model = new AllocGenericBehaviorModel<int> { Reference = "r", Line = new PipelineNestedLine { Sku = "A" } };
+
+        Assert.Equal(0, Measure(() => validator.ValidateAsync(model).Result.IsValid));
+    }
+
     /// <summary>Bytes allocated per call, averaged over a warmed-up run.</summary>
     private static long Measure(Func<bool> action)
     {

@@ -22,8 +22,8 @@
 
   <!-- Required so Roslyn can locate ZeroAlloc.Pipeline.Generators when loading ValidatorGenerator -->
   <ItemGroup>
-    <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="1.3.0" GeneratePathProperty="true" />
-    <PackageReference Include="ZeroAlloc.Pipeline" Version="1.3.0" GeneratePathProperty="true" />
+    <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="1.4.0" GeneratePathProperty="true" />
+    <PackageReference Include="ZeroAlloc.Pipeline" Version="1.4.0" GeneratePathProperty="true" />
   </ItemGroup>
 
   <ItemGroup>

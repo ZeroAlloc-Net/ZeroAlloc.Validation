@@ -133,11 +133,16 @@ A `[PipelineBehavior]` wraps the validation body in a chain of `next` delegates.
 without nested validators those delegates are `static` lambdas, which the compiler creates once,
 so the chain allocates nothing.
 
-On a model with a nested or collection `[Validate]` property, the body reads the nested
-validators through the validator's fields, so the delegates capture the validator. Each call then
-allocates one delegate per behavior, 64 B for one behavior on a 64-bit runtime, on the valid path
-too. Caching those delegates needs support from ZeroAlloc.Pipeline, tracked in
-[ZeroAlloc.Pipeline#117](https://github.com/ZeroAlloc-Net/ZeroAlloc.Pipeline/issues/117). Before
+On a model with a nested, collection or `[ValidateWith]` validator, the body reads those
+validators through the validator's fields, so the delegates capture the validator and cannot be
+`static`. The generated validator keeps each of them in a private field, created on the first
+call, so from then on the chain allocates nothing either, generic models included. This covers
+`Validate`, `ValidateAsync`, and the asynchronous validation of a model with asynchronous rules.
+
+The cached delegates live as long as the validator. Two threads that make a validator's first call
+together may each create one; they are equivalent, and one is kept. Before
+[#298](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/298) each call allocated one
+delegate per behavior, 64 B for one behavior on a 64-bit runtime, and before
 [#294](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/294) such a validator did not
 compile at all.
 

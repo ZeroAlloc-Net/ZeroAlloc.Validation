@@ -616,21 +616,22 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // run guarantees each field appears exactly once at class scope
         // (no CS0102 duplicate-member errors when both paths reference the same prop).
         var fields = new GeneratedFields();
-        // The body reads the nested validators through instance fields; every other field it
-        // uses is static. A pipeline chain around such a body cannot use static lambdas, #294.
-        var readsInstanceState = nestedFields.Count > 0;
+        // Only the nested validators are instance fields; a chain whose body reads them cannot
+        // use static lambdas, #294, so it caches its delegates in fields instead, #298.
+        var chains = new BehaviorChains(modelName, readsInstanceState: nestedFields.Count > 0);
         if (RuleEmitter.RequiresAsync(classSymbol, compilation))
         {
             EmitThrowingValidateMethod(sb, classSymbol, modelName);
-            EmitAsyncValidation(sb, classSymbol, compilation, modelName, asyncBehaviors, fields, readsInstanceState);
+            EmitAsyncValidation(sb, classSymbol, compilation, modelName, asyncBehaviors, fields, chains);
         }
         else
         {
-            EmitValidateMethod(sb, classSymbol, compilation, modelName, syncBehaviors, fields, readsInstanceState);
-            EmitValidateAsyncOverride(sb, classSymbol, compilation, modelName, asyncBehaviors, fields, readsInstanceState);
+            EmitValidateMethod(sb, classSymbol, compilation, modelName, syncBehaviors, fields, chains);
+            EmitValidateAsyncOverride(sb, classSymbol, compilation, modelName, asyncBehaviors, fields, chains);
         }
 
         fields.AppendDeclarations(sb);
+        chains.AppendDeclarations(sb);
 
         sb.AppendLine("}");
 
@@ -639,8 +640,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
     /// <summary>
     /// The synchronous <c>Validate</c>, with the body inlined into the chain of the model's
-    /// synchronous pipeline behaviors when it has any. The chain's lambdas are <c>static</c>
-    /// unless the body reads the nested validators, <paramref name="readsInstanceState"/>, #294.
+    /// synchronous pipeline behaviors when it has any, emitted through <paramref name="chains"/>.
     /// </summary>
     private static void EmitValidateMethod(
         System.Text.StringBuilder sb,
@@ -649,7 +649,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         string modelName,
         List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> syncBehaviors,
         GeneratedFields fields,
-        bool readsInstanceState)
+        BehaviorChains chains)
     {
         sb.AppendLine("    /// <inheritdoc/>");
         sb.AppendLine($"    public override global::ZeroAlloc.Validation.ValidationResult Validate({modelName} instance)");
@@ -666,7 +666,6 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 TypeArguments           = new[] { fullyQualifiedModel },
                 OuterParameterNames     = new[] { "instance" },
                 LambdaParameterPrefixes = new[] { "r" },
-                EmitStaticLambdas       = !readsInstanceState,
                 InnermostBodyFactory    = depth =>
                 {
                     var paramName = depth == 0 ? "instance" : $"r{depth}";
@@ -675,7 +674,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                         + "        }";
                 }
             };
-            var chain = global::ZeroAlloc.Pipeline.Generators.PipelineEmitter.EmitChain(syncBehaviors, syncShape);
+            var chain = chains.Emit(syncBehaviors, syncShape, BehaviorChains.Sync);
             sb.AppendLine($"        return {chain};");
         }
         sb.AppendLine("    }");
@@ -701,9 +700,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// The asynchronous validation of a model that must validate asynchronously: a private
     /// <c>async</c> method holding the body, which awaits each asynchronous rule and nested
     /// validator in declaration order, and the <c>ValidateAsync</c> override calling it, through
-    /// the model's asynchronous pipeline behaviors when it has any. The body is a static method,
-    /// called from <c>static</c> lambdas, unless it reads the nested validators,
-    /// <paramref name="readsInstanceState"/>; then both are instance-bound, issue #294.
+    /// the model's asynchronous pipeline behaviors when it has any, emitted through
+    /// <paramref name="chains"/>. The body is a static method unless it reads the nested
+    /// validators; then it is an instance method, issue #294.
     /// </summary>
     private static void EmitAsyncValidation(
         System.Text.StringBuilder sb,
@@ -712,7 +711,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         string modelName,
         List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> asyncBehaviors,
         GeneratedFields fields,
-        bool readsInstanceState)
+        BehaviorChains chains)
     {
         const string core = "__ValidateAsyncCore";
         const string ct = GeneratedCalls.CancellationToken;
@@ -729,12 +728,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 TypeArguments           = new[] { classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) },
                 OuterParameterNames     = new[] { "instance", ct },
                 LambdaParameterPrefixes = new[] { "r", "c" },
-                EmitStaticLambdas       = !readsInstanceState,
                 InnermostBodyFactory    = depth => depth == 0
                     ? $"{{\n            return {core}(instance, {ct});\n        }}"
                     : $"{{\n            return {core}(r{depth}, c{depth});\n        }}",
             };
-            call = global::ZeroAlloc.Pipeline.Generators.PipelineEmitter.EmitChain(asyncBehaviors, asyncShape);
+            call = chains.Emit(asyncBehaviors, asyncShape, BehaviorChains.Async);
         }
 
         sb.AppendLine();
@@ -742,7 +740,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         sb.AppendLine($"    public override {RuleEmitter.AsyncResultType} ValidateAsync({modelName} instance, global::System.Threading.CancellationToken {ct} = default)");
         sb.AppendLine($"        => {call};");
         sb.AppendLine();
-        var modifiers = readsInstanceState ? "private async" : "private static async";
+        var modifiers = chains.ReadsInstanceState ? "private async" : "private static async";
         sb.AppendLine($"    {modifiers} {RuleEmitter.AsyncResultType} {core}({modelName} instance, global::System.Threading.CancellationToken {ct})");
         sb.AppendLine("    {");
         RuleEmitter.EmitValidateBody(sb, classSymbol, compilation, "instance", fields);
@@ -751,8 +749,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
     /// <summary>
     /// The <c>ValidateAsync</c> override of a synchronous model with asynchronous pipeline
-    /// behaviors, with the body inlined into their chain. The chain's lambdas are <c>static</c>
-    /// unless the body reads the nested validators, <paramref name="readsInstanceState"/>, #294.
+    /// behaviors, with the body inlined into their chain, emitted through <paramref name="chains"/>.
     /// </summary>
     private static void EmitValidateAsyncOverride(
         System.Text.StringBuilder sb,
@@ -761,7 +758,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         string modelName,
         List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> asyncBehaviors,
         GeneratedFields fields,
-        bool readsInstanceState)
+        BehaviorChains chains)
     {
         if (asyncBehaviors.Count == 0)
             return;
@@ -772,7 +769,6 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             TypeArguments           = new[] { fullyQualifiedModel },
             OuterParameterNames     = new[] { "instance", "ct" },
             LambdaParameterPrefixes = new[] { "r", "c" },
-            EmitStaticLambdas       = !readsInstanceState,
             InnermostBodyFactory    = depth =>
             {
                 var paramName = depth == 0 ? "instance" : $"r{depth}";
@@ -788,7 +784,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 return "{\n" + asyncBody + "        }";
             }
         };
-        var chain = global::ZeroAlloc.Pipeline.Generators.PipelineEmitter.EmitChain(asyncBehaviors, asyncShape);
+        var chain = chains.Emit(asyncBehaviors, asyncShape, BehaviorChains.Async);
         sb.AppendLine();
         sb.AppendLine("    /// <inheritdoc/>");
         sb.AppendLine($"    public override global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult> ValidateAsync({modelName} instance, global::System.Threading.CancellationToken ct = default)");
