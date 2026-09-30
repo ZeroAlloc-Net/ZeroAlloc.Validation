@@ -127,6 +127,20 @@ How a collection property is declared decides how it is walked, and `foreach` ov
 
 A `[CustomValidation]` method written with `yield return` also allocates its iterator state machine on every call, even when it yields nothing. Declaring it to return `ValidationFailure[]` or `ReadOnlySpan<ValidationFailure>` instead, and handing back an empty one when there is nothing to report, costs 0 B. See [choosing a return type](./custom-validation.md#which-return-type-to-use).
 
+### Pipeline behaviors
+
+A `[PipelineBehavior]` wraps the validation body in a chain of `next` delegates. On a model
+without nested validators those delegates are `static` lambdas, which the compiler creates once,
+so the chain allocates nothing.
+
+On a model with a nested or collection `[Validate]` property, the body reads the nested
+validators through the validator's fields, so the delegates capture the validator. Each call then
+allocates one delegate per behavior, 64 B for one behavior on a 64-bit runtime, on the valid path
+too. Caching those delegates needs support from ZeroAlloc.Pipeline, tracked in
+[ZeroAlloc.Pipeline#117](https://github.com/ZeroAlloc-Net/ZeroAlloc.Pipeline/issues/117). Before
+[#294](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/294) such a validator did not
+compile at all.
+
 ## Running the benchmarks yourself
 
 ```bash

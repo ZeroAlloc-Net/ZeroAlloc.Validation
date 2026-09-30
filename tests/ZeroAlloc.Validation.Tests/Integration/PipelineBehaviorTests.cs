@@ -45,6 +45,44 @@ public class PipelineBehaviorTests
     }
 
     [Fact]
+    public void Validate_SyncBehavior_OnModelWithNestedValidators_RunsAndReportsNestedFailures()
+    {
+        NestedSyncAuditBehavior.CallLog = new System.Collections.Generic.List<string>();
+        var validator = new PipelineNestedOrderValidator(new PipelineNestedLineValidator(), new PipelineNestedLineValidator());
+        var order = new PipelineNestedOrder
+        {
+            Reference = "REF-001",
+            Line = new PipelineNestedLine { Sku = "" },
+            Lines = [new PipelineNestedLine { Sku = "A" }, new PipelineNestedLine { Sku = "" }],
+        };
+
+        var result = validator.Validate(order);
+
+        Assert.Equal(new[] { "sync" }, NestedSyncAuditBehavior.CallLog, StringComparer.Ordinal);
+        ValidationAssert.HasError(result, "Line.Sku");
+        ValidationAssert.HasError(result, "Lines[1].Sku");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_AsyncBehavior_OnModelWithNestedValidators_RunsAndReportsNestedFailures()
+    {
+        NestedAsyncAuditBehavior.CallLog = new System.Collections.Generic.List<string>();
+        var validator = new PipelineNestedOrderValidator(new PipelineNestedLineValidator(), new PipelineNestedLineValidator());
+        var order = new PipelineNestedOrder
+        {
+            Reference = "REF-001",
+            Line = new PipelineNestedLine { Sku = "" },
+            Lines = [new PipelineNestedLine { Sku = "" }],
+        };
+
+        var result = await validator.ValidateAsync(order);
+
+        Assert.Equal(new[] { "async" }, NestedAsyncAuditBehavior.CallLog, StringComparer.Ordinal);
+        ValidationAssert.HasError(result, "Line.Sku");
+        ValidationAssert.HasError(result, "Lines[0].Sku");
+    }
+
+    [Fact]
     public async Task ValidateAsync_AsyncBehavior_InvalidModel_ReturnsFailure()
     {
         var validator = new PipelineOrderValidator();
