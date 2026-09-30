@@ -15,12 +15,18 @@
   <ItemGroup>
     <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="1.4.0" GeneratePathProperty="true" />
     <PackageReference Include="ZeroAlloc.Pipeline" Version="1.4.0" GeneratePathProperty="true" />
+    <!-- Resolves closings of generic models registered through the generated helper, #238. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.Validation\ZeroAlloc.Validation.csproj"
                       SetTargetFramework="TargetFramework=net10.0" />
     <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Generator\ZeroAlloc.Validation.Generator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false"
+                      UndefineProperties="PublishAot" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.Validation.Inject\ZeroAlloc.Validation.Inject.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false"
                       UndefineProperties="PublishAot" />

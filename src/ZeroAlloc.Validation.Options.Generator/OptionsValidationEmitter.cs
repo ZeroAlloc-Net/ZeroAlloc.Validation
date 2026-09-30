@@ -33,7 +33,8 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
                 // cannot reach, ZV0025 and #216, or one whose type parameters it cannot redeclare,
                 // ZV0029 and #219. Naming it would only add compiler errors in generated code. A
                 // generic model is left out as a root, since nothing closed can be registered for
-                // it; its closings are registered by the models composing them, issue #238.
+                // it; its closings are registered by the models composing them, and it gets a generic
+                // overload, emitted from genericClasses below, issue #238.
                 // Null marks it, and the step after Collect drops it.
                 // The transform extracts everything the output needs into an equatable model, so
                 // the output step stays cached while nothing it was read from changes, issue #209.
@@ -45,17 +46,36 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
                         ? ValidatedModelInfo.From((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
                         : null);
 
+        // A generic model gets one overload generic over its type parameters, which inference
+        // closes from the builder, AddOptions<Page<Product>>().ValidateWithZeroAlloc(), issue #238.
+        var genericClasses = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                ValidateAttributeFqn,
+                predicate: static (node, _) => node is ClassDeclarationSyntax
+                                               || node.IsKind(SyntaxKind.RecordDeclaration),
+                transform: static (ctx, _) =>
+                    GeneratedValidatorReach.HasGeneratedValidator((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
+                    && GeneratedValidatorReach.IsGeneric((INamedTypeSymbol)ctx.TargetSymbol)
+                        ? GenericModelInfo.From((INamedTypeSymbol)ctx.TargetSymbol, ctx.SemanticModel.Compilation)
+                        : null);
+
         var collected = validateClasses.Collect()
             .Select(static (models, _) => ValidatedModelInfo.WithGeneratedValidator(models));
+        var collectedGeneric = genericClasses.Collect()
+            .Select(static (models, _) => GenericModelInfo.Collected(models));
         var isInternalMode = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => GeneratedAccessibilityOption.IsInternal(provider));
-        var combined = collected.Combine(isInternalMode).WithTrackingName(OutputTrackingName);
-        context.RegisterSourceOutput(combined, static (ctx, pair) => Emit(ctx, pair.Left, pair.Right));
+        var combined = collected.Combine(collectedGeneric).Combine(isInternalMode).WithTrackingName(OutputTrackingName);
+        context.RegisterSourceOutput(combined, static (ctx, input) => Emit(ctx, input.Left.Left, input.Left.Right, input.Right));
     }
 
-    private static void Emit(SourceProductionContext ctx, EquatableArray<ValidatedModelInfo> models, bool isInternalMode)
+    private static void Emit(
+        SourceProductionContext ctx,
+        EquatableArray<ValidatedModelInfo> models,
+        EquatableArray<GenericModelInfo> genericModels,
+        bool isInternalMode)
     {
-        if (models.Count == 0) return;
+        if (models.Count == 0 && genericModels.Count == 0) return;
 
         // An extension method cannot be more visible than the model in its signature, so
         // models that are not visible outside the assembly go in a separate internal class,
@@ -68,22 +88,29 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
         foreach (var model in models)
             (!isInternalMode && model.IsEffectivelyPublic ? publicModels : internalModels).Add(model);
 
-        if (publicModels.Count > 0)
+        // A generic model's overload goes in the same classes, by the same rule.
+        var publicGeneric   = new List<GenericModelInfo>();
+        var internalGeneric = new List<GenericModelInfo>();
+        foreach (var model in genericModels)
+            (!isInternalMode && model.IsEffectivelyPublic ? publicGeneric : internalGeneric).Add(model);
+
+        if (publicModels.Count > 0 || publicGeneric.Count > 0)
         {
             ctx.AddSource(
                 "ZeroAlloc.Validation.ZeroAllocOptionsValidationExtensions.g.cs",
-                EmitExtensionsClass("public", "ZeroAllocOptionsValidationExtensions", publicModels));
+                EmitExtensionsClass("public", "ZeroAllocOptionsValidationExtensions", publicModels, publicGeneric));
         }
 
-        if (internalModels.Count > 0)
+        if (internalModels.Count > 0 || internalGeneric.Count > 0)
         {
             ctx.AddSource(
                 "ZeroAlloc.Validation.InternalZeroAllocOptionsValidationExtensions.g.cs",
-                EmitExtensionsClass("internal", "InternalZeroAllocOptionsValidationExtensions", internalModels));
+                EmitExtensionsClass("internal", "InternalZeroAllocOptionsValidationExtensions", internalModels, internalGeneric));
         }
     }
 
-    private static string EmitExtensionsClass(string accessibility, string className, List<ValidatedModelInfo> models)
+    private static string EmitExtensionsClass(
+        string accessibility, string className, List<ValidatedModelInfo> models, List<GenericModelInfo> genericModels)
     {
         var sb = new StringBuilder();
         sb.AppendLine("// <auto-generated />");
@@ -129,7 +156,44 @@ public sealed class OptionsValidationEmitter : IIncrementalGenerator
                 sb.AppendLine();
         }
 
+        for (var i = 0; i < genericModels.Count; i++)
+        {
+            if (models.Count > 0 || i > 0)
+                sb.AppendLine();
+            AppendGenericOverload(sb, genericModels[i]);
+        }
+
         sb.AppendLine("}");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The overload for a generic model, issue #238: generic over the model's type parameters,
+    /// constrained like the model, so inference closes it from the builder it is called on. It
+    /// registers the same lines as the model's <c>Add…Validator&lt;…&gt;()</c> helper. It
+    /// coexists with the other overloads, since each takes a different <c>OptionsBuilder</c>.
+    /// </summary>
+    private static void AppendGenericOverload(StringBuilder sb, GenericModelInfo model)
+    {
+        var modelFqn = model.FullyQualifiedName;
+        var builder  = model.Names.Builder;
+        var services = model.Names.Services;
+
+        sb.AppendLine($"    /// <summary>Validates <c>{model.Name}</c> with its generated validator whenever the options instance is resolved.</summary>");
+        foreach (var parameter in model.TypeParameterNames)
+            sb.AppendLine($"    /// <typeparam name=\"{parameter}\">The type argument for the <c>{parameter}</c> type parameter of <c>{model.Name}</c>.</typeparam>");
+        sb.AppendLine($"    /// <param name=\"{builder}\">The options builder to attach validation to.</param>");
+        sb.AppendLine("    /// <returns>The same options builder, so calls can be chained.</returns>");
+        sb.AppendLine($"    public static global::Microsoft.Extensions.Options.OptionsBuilder<{modelFqn}> ValidateWithZeroAlloc{model.TypeParameterList}(");
+        sb.AppendLine($"        this global::Microsoft.Extensions.Options.OptionsBuilder<{modelFqn}> {builder})");
+        foreach (var clause in model.ConstraintClauses)
+            sb.AppendLine($"        {clause}");
+        sb.AppendLine("    {");
+        sb.AppendLine($"        var {services} = {builder}.Services;");
+        ValidatorRegistrationEmitter.AppendRegistrations(sb, model.Registrations);
+        sb.AppendLine($"        {builder}.Services.TryAddSingleton<global::Microsoft.Extensions.Options.IValidateOptions<{modelFqn}>,");
+        sb.AppendLine($"            global::ZeroAlloc.Validation.Options.ZeroAllocOptionsValidator<{modelFqn}>>();");
+        sb.AppendLine($"        return {builder};");
+        sb.AppendLine("    }");
     }
 }

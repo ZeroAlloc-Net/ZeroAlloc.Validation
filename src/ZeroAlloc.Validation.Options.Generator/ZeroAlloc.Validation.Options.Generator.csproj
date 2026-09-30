@@ -23,6 +23,14 @@
   <ItemGroup>
     <Compile Include="..\ZeroAlloc.Validation.Inject\ValidatorRegistrationEmitter.cs"
              Link="Shared\ValidatorRegistrationEmitter.cs" />
+    <!-- RegistrationNames keeps the registration lines free of a generic method's type parameter
+         names, issue #238. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\RegistrationNames.cs"
+             Link="Shared\RegistrationNames.cs" />
+    <!-- GenericModelInfo describes a generic model for its ValidateWithZeroAlloc<…>() overload,
+         issue #238. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\GenericModelInfo.cs"
+             Link="Shared\GenericModelInfo.cs" />
     <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedValidatorNames.cs"
              Link="Shared\GeneratedValidatorNames.cs" />
     <!-- GeneratedValidatorReach decides which [Validate] models get a validator, issue #216. -->
@@ -30,6 +38,10 @@
              Link="Shared\GeneratedValidatorReach.cs" />
     <Compile Include="..\ZeroAlloc.Validation.Inject\TypeParameterClash.cs"
              Link="Shared\TypeParameterClash.cs" />
+    <!-- GenericSignature declares the type parameters of a generic model, issue #238, for the
+         validator and its probes here, and for the registration helper and options overload. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\GenericSignature.cs"
+             Link="Shared\GenericSignature.cs" />
     <!-- GeneratedAccessibilityOption reads the org-wide ZeroAllocGeneratedAccessibility MSBuild
          property (issue #193). Shared the same way as ValidatorRegistrationEmitter above. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedAccessibilityOption.cs"

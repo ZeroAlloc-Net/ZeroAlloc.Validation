@@ -68,6 +68,10 @@
              Link="Shared\GeneratedValidatorReach.cs" />
     <Compile Include="..\ZeroAlloc.Validation.Inject\TypeParameterClash.cs"
              Link="Shared\TypeParameterClash.cs" />
+    <!-- GenericSignature declares the type parameters of a generic model, issue #238, for the
+         validator and its probes here, and for the registration helper and options overload. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\GenericSignature.cs"
+             Link="Shared\GenericSignature.cs" />
     <!-- EquatableArray keeps the pipeline's models comparable by value, issue #209. -->
     <Compile Include="..\ZeroAlloc.Validation.Inject\EquatableArray.cs"
              Link="Shared\EquatableArray.cs" />

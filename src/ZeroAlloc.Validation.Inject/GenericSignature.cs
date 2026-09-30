@@ -1,9 +1,9 @@
 using System.Collections.Generic;
 using System.Text;
 using Microsoft.CodeAnalysis;
-using ZeroAlloc.Validation.Generator.Shared;
+using Microsoft.CodeAnalysis.CSharp;
 
-namespace ZeroAlloc.Validation.Generator;
+namespace ZeroAlloc.Validation.Generator.Shared;
 
 /// <summary>
 /// The type parameters generated code declares to name a generic model, issue #238: the
@@ -12,7 +12,9 @@ namespace ZeroAlloc.Validation.Generator;
 /// model's own type parameters and those of every type containing it, outermost first, with their
 /// declared names, so every type the emitters write with
 /// <see cref="SymbolDisplayFormat.FullyQualifiedFormat"/>, such as <c>global::Ns.Page&lt;TItem&gt;</c>
-/// or <c>global::Ns.Line&lt;TItem&gt;</c>, is valid inside the declaration as it is.
+/// or <c>global::Ns.Line&lt;TItem&gt;</c>, is valid inside the declaration as it is. Shared with the
+/// Inject and Options generators, whose registration helper and options overload are generic
+/// methods over the same type parameters.
 /// </summary>
 internal static class GenericSignature
 {
@@ -58,7 +60,7 @@ internal static class GenericSignature
         for (var i = 0; i < parameters.Count; i++)
         {
             if (i > 0) sb.Append(", ");
-            sb.Append(GeneratedCalls.Identifier(parameters[i].Name));
+            sb.Append(Identifier(parameters[i].Name));
         }
         return sb.Append('>').ToString();
     }
@@ -97,10 +99,14 @@ internal static class GenericSignature
                 constraints.Add("allows ref struct");
 
             if (constraints.Count > 0)
-                clauses.Add($"where {GeneratedCalls.Identifier(parameter.Name)} : {string.Join(", ", constraints)}");
+                clauses.Add($"where {Identifier(parameter.Name)} : {string.Join(", ", constraints)}");
         }
         return clauses;
     }
+
+    /// <summary>A type parameter's name as C# code writes it, escaped where it is a keyword.</summary>
+    public static string Identifier(string name) =>
+        SyntaxFacts.GetKeywordKind(name) == SyntaxKind.None ? name : "@" + name;
 
     /// <summary>
     /// The type parameters of <paramref name="type"/> and of every type containing it, outermost

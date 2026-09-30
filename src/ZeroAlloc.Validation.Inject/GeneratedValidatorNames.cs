@@ -60,6 +60,16 @@ internal static class GeneratedValidatorNames
         return ns is null || ns.IsGlobalNamespace ? null : ns.ToDisplayString(CodeNamespaceFormat);
     }
 
+    /// <summary>
+    /// The namespace the validator for <paramref name="model"/> is declared in, as a hint name
+    /// writes it, never keyword-escaped, or <see langword="null"/> for the global namespace.
+    /// </summary>
+    public static string? HintNamespaceName(INamedTypeSymbol model)
+    {
+        var ns = model.ContainingNamespace;
+        return ns is null || ns.IsGlobalNamespace ? null : ns.ToDisplayString(HintNamespaceFormat);
+    }
+
     /// <summary>The validator's simple name, for example <c>Outer_RequestValidator</c>.</summary>
     public static string ValidatorName(INamedTypeSymbol model)
     {

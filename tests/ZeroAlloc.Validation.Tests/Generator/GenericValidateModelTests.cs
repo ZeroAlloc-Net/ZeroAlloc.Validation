@@ -798,7 +798,9 @@ public class GenericValidateModelTests
         Assert.Contains("global::Ns.PageValidator<global::Ns.Order>>();", options, StringComparison.Ordinal);
         Assert.Contains("global::Ns.LineValidator<global::Ns.Order>>();", options, StringComparison.Ordinal);
         Assert.Contains("TryAddEnumerable", options, StringComparison.Ordinal);
-        Assert.DoesNotContain("OptionsBuilder<global::Ns.Page<", options, StringComparison.Ordinal);
+        // The generic model gets one overload over its type parameters, phase 2, never one per closing.
+        Assert.Contains("OptionsBuilder<global::Ns.Page<TItem>> builder)", options, StringComparison.Ordinal);
+        Assert.DoesNotContain("OptionsBuilder<global::Ns.Page<global::", options, StringComparison.Ordinal);
 
         // This host does not reference ASP.NET Core, so the filter glue is checked as text; it is
         // compiled and run in ZeroAlloc.Validation.Tests.AspNetCore.

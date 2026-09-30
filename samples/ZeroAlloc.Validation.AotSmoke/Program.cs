@@ -1,4 +1,5 @@
 using System;
+using Microsoft.Extensions.DependencyInjection;
 using ZeroAlloc.Validation;
 using ZeroAlloc.Validation.AotSmoke;
 
@@ -347,6 +348,24 @@ if (quantityValidator.ModelType != typeof(SmokeQuantity<decimal>))
     return Fail("SmokeQuantity<decimal>: IModelValidator.ModelType is " + quantityValidator.ModelType);
 if (Expect(await quantityValidator.ValidateAsync(new SmokeQuantity<decimal> { Amount = -0.5m }, default).ConfigureAwait(false), "Quantity decimal",
         ("Amount", "Amount must be greater than 0.", null)) is { } g2) return Fail(g2);
+
+// Fixture 7: closings registered through the generated Add…Validator<…>() helpers and resolved
+// from the container, #238 phase 2. The closed registrations root each instantiation, value-type
+// closings included; there is no open-generic registration for the container to close at runtime.
+var services = new ServiceCollection();
+services.AddSmokeBinValidator<Address>().AddSmokeQuantityValidator<short>();
+using (var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true }))
+{
+    if (Expect(provider.GetRequiredService<ValidatorFor<SmokeQuantity<short>>>().Validate(new SmokeQuantity<short> { Amount = 0 }), "Quantity short",
+            ("Amount", "Amount must be greater than 0.", null)) is { } g3) return Fail(g3);
+    if (Expect(provider.GetRequiredService<ValidatorFor<SmokeBin<Address>>>().Validate(
+            new SmokeBin<Address> { Label = "b", Item = new Address(), Count = new SmokeQuantity<int> { Amount = 0 } }), "Bin from container",
+            ("Count.Amount", "Amount must be greater than 0.", null)) is { } g4) return Fail(g4);
+
+    var listed = System.Linq.Enumerable.Count(provider.GetServices<IModelValidator>());
+    if (listed != 3)
+        return Fail($"container: expected 3 IModelValidator entries, SmokeBin<Address>, SmokeQuantity<int> and SmokeQuantity<short>, got {listed}");
+}
 
 Console.WriteLine("AOT smoke: PASS");
 return 0;

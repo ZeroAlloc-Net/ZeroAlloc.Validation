@@ -23,6 +23,10 @@
   <ItemGroup>
     <Compile Include="..\ZeroAlloc.Validation.Inject\ValidatorRegistrationEmitter.cs"
              Link="Shared\ValidatorRegistrationEmitter.cs" />
+    <!-- RegistrationNames keeps the registration lines free of a generic method's type parameter
+         names, issue #238. -->
+    <Compile Include="..\ZeroAlloc.Validation.Inject\RegistrationNames.cs"
+             Link="Shared\RegistrationNames.cs" />
     <Compile Include="..\ZeroAlloc.Validation.Inject\GeneratedValidatorNames.cs"
              Link="Shared\GeneratedValidatorNames.cs" />
     <!-- GeneratedValidatorReach decides which [Validate] models get a validator, issue #216. -->

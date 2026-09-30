@@ -94,13 +94,63 @@ services.TryAddEnumerable(ServiceDescriptor.Singleton<IModelValidator, Validator
   one listed, and `TryAddEnumerable` lists each closing once. A non-generic model gets no entry.
 - A closing nothing registers, such as a `Page<Customer>` used only as a root, is not
   resolved: `GetService<ValidatorFor<Page<Customer>>>()` returns null, which ZeroAlloc.Mediator
-  reads as "no validation". Construct it yourself, `new PageValidator<Customer>(...)`, or
-  register it: `services.TryAddSingleton<ValidatorFor<Page<Customer>>, PageValidator<Customer>>()`.
+  reads as "no validation". Register it with the generated helper below.
 - A `[Transient]`, `[Scoped]` or `[Singleton]` attribute on a generic model is copied onto its
   validator, and ZeroAlloc.Inject then registers the open `PageValidator<>` as itself. Nothing
   generated resolves a validator by its own type, and under NativeAOT an open-generic
   resolution of a value-type closing fails, so resolve `ValidatorFor<Page<int>>`, never
   `PageValidator<int>`.
+
+### Registering a closing: `Add…Validator<…>()`
+
+Each generic model gets a registration helper, generic over its type parameters and constrained
+like the model, which you close with the type arguments you need:
+
+```csharp
+services
+    .AddZeroAllocValidators()
+    .AddPageValidator<Customer>()      // ValidatorFor<Page<Customer>>, and ValidatorFor<Line<Customer>>
+    .AddChargeValidator<decimal>();    // a value-type closing
+```
+
+The helper registers the closing's validator and every validator it takes, transitively, each
+closed over the same type arguments, and lists each closing as an `IModelValidator`, exactly as
+`AddZeroAllocValidators()` does for the closings it reaches. Every line is a `TryAdd`, so calling
+the helper twice, or for a closing `AddZeroAllocValidators()` already registered, adds nothing,
+and a registration you made first wins.
+
+```csharp
+// generated in your assembly, for Page<TItem> in namespace Shop
+namespace Shop;
+
+public static class ZeroAllocGenericValidatorRegistrationExtensions
+{
+    public static IServiceCollection AddPageValidator<TItem>(this IServiceCollection services)
+        where TItem : class
+    {
+        services.TryAddSingleton<ValidatorFor<Page<TItem>>, PageValidator<TItem>>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IModelValidator, ValidatorFor<Page<TItem>>>(
+            static sp => sp.GetRequiredService<ValidatorFor<Page<TItem>>>()));
+        services.TryAddSingleton<ValidatorFor<Line<TItem>>, LineValidator<TItem>>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IModelValidator, ValidatorFor<Line<TItem>>>(
+            static sp => sp.GetRequiredService<ValidatorFor<Line<TItem>>>()));
+        return services;
+    }
+}
+```
+
+- The helper is named `Add` and the validator's name: `AddPageValidator<TItem>()`, and
+  `AddEnvelope_HeaderValidator<T>()` for a model declared inside `Envelope<T>`. `Box<T>` and
+  `Box<T, U>` get two overloads.
+- It lives in a static class `ZeroAllocGenericValidatorRegistrationExtensions` **in the model's
+  namespace**, so it is in scope wherever the model is. Same-named models in two namespaces get
+  a class each. A model that is not public, or one inside a type that is not public, goes in an
+  `internal` class `InternalZeroAllocGenericValidatorRegistrationExtensions` beside it, and
+  `ZeroAllocGeneratedAccessibility=Internal` routes every helper there.
+- A model that gets no validator, [ZV0025](diagnostics.md#zv0025), [ZV0029](diagnostics.md#zv0029)
+  or [ZV0031](diagnostics.md#zv0031), gets no helper either.
+- The registrations are closed at your call site, so NativeAOT compiles each closing you name,
+  value types included. There is no open-generic registration and no `MakeGenericType`.
 
 ## Idempotency
 

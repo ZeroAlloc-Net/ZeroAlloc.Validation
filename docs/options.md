@@ -60,7 +60,29 @@ The generated method registers:
 1. The validator as `ValidatorFor<T>` (singleton) — so it can also be resolved by other consumers — and every validator it composes: each nested or collection `[Validate]` model's validator as `ValidatorFor<TNested>`, and each `[ValidateWith]` validator by its own type, so an options model with nested sections needs nothing else registered
 2. `ZeroAllocOptionsValidator<T>` as `IValidateOptions<T>` (singleton) — the bridge into the options pipeline
 
-A nested section whose type is a closing of a [generic model](getting-started.md#generic-models), such as `Endpoint<Tls>`, is registered closed, like any other nested model; see [Dependency injection](inject.md#generic-models). A generic options model itself gets no `ValidateWithZeroAlloc()` overload yet; that is tracked in [#238](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/238).
+A nested section whose type is a closing of a [generic model](getting-started.md#generic-models), such as `Endpoint<Tls>`, is registered closed, like any other nested model; see [Dependency injection](inject.md#generic-models).
+
+A generic options model gets one overload, generic over its type parameters and constrained like the model, which the compiler closes from the builder you call it on:
+
+```csharp
+services.AddOptions<Endpoint<Tls>>().BindConfiguration("Upstream").ValidateWithZeroAlloc();
+
+// generated
+public static OptionsBuilder<Endpoint<TSecurity>> ValidateWithZeroAlloc<TSecurity>(
+    this OptionsBuilder<Endpoint<TSecurity>> builder)
+    where TSecurity : class, new()
+{
+    var services = builder.Services;
+    services.TryAddSingleton<ValidatorFor<Endpoint<TSecurity>>, EndpointValidator<TSecurity>>();
+    services.TryAddEnumerable(ServiceDescriptor.Singleton<IModelValidator, ValidatorFor<Endpoint<TSecurity>>>(
+        static sp => sp.GetRequiredService<ValidatorFor<Endpoint<TSecurity>>>()));
+    builder.Services.TryAddSingleton<IValidateOptions<Endpoint<TSecurity>>,
+        ZeroAllocOptionsValidator<Endpoint<TSecurity>>>();
+    return builder;
+}
+```
+
+It registers the same validators as the model's [`Add…Validator<…>()` helper](inject.md#registering-a-closing-addvalidator), and goes in the public or internal class by the same rule as the other overloads. A generic `record struct` gets no overload, since `OptionsBuilder<T>` requires a reference type.
 
 ## How validation works at runtime
 
