@@ -36,6 +36,16 @@ public static class ValidatorRegistrationEmitter
     /// type, an interface or an open generic. Every line is a <c>TryAdd</c>, so a registration
     /// the application made first wins.
     /// </para>
+    /// <para>
+    /// A closing of a generic model, such as <c>Page&lt;Order&gt;</c> reached from a property of a
+    /// non-generic model, is registered closed, <c>ValidatorFor&lt;Page&lt;Order&gt;&gt;</c> as
+    /// <c>PageValidator&lt;Order&gt;</c>, issue #238. An open-generic registration cannot express it:
+    /// MS DI maps the service's type arguments to the implementation's by position. Each such line
+    /// is followed by a <c>TryAddEnumerable</c> entry that lists the validator as an
+    /// <c>IModelValidator</c>, resolved through the <c>ValidatorFor</c> registration, so a
+    /// registration the application made first is the one listed. <c>TryAddEnumerable</c> keeps
+    /// one entry per closing however many registrations name it. A non-generic model gets no entry.
+    /// </para>
     /// </remarks>
     public static void EmitRegistrations(StringBuilder sb, IEnumerable<INamedTypeSymbol> models, Compilation compilation)
     {
@@ -69,7 +79,7 @@ public static class ValidatorRegistrationEmitter
             var root = model.Registrations[0];
             if (registered.Add(root.Key))
             {
-                sb.AppendLine(root.Registration);
+                AppendNode(sb, root);
                 pending.Enqueue(root);
             }
         }
@@ -97,27 +107,37 @@ public static class ValidatorRegistrationEmitter
 
         void Register(string key)
         {
-            if (registered.Contains(key) || nodes[key].Registration is not { } line)
+            if (registered.Contains(key) || nodes[key].Registration is null)
                 return;
 
             registered.Add(key);
-            sb.AppendLine(line);
+            AppendNode(sb, nodes[key]);
             pending.Enqueue(nodes[key]);
         }
+    }
+
+    private static void AppendNode(StringBuilder sb, RegistrationNode node)
+    {
+        sb.AppendLine(node.Registration);
+        if (node.RegistryEntry is { } entry)
+            sb.AppendLine(entry);
     }
 
     /// <summary>
     /// The registrations <paramref name="model"/> needs, as data: its own node first, then one per
     /// model its validator's constructor takes, transitively, in the order they are reached. A
     /// model this compilation cannot name the validator of gets a node without a registration and
-    /// is not followed.
+    /// is not followed. So does a type that still holds a type parameter, such as the
+    /// <c>Line&lt;TItem&gt;</c> of an open <c>Page&lt;TItem&gt;</c>: nothing closed can be
+    /// registered for it. A closing of a generic model is walked as that closing, so its
+    /// properties have their substituted types, <c>Line&lt;Order&gt;</c> for <c>Page&lt;Order&gt;</c>.
     /// </summary>
     internal static EquatableArray<RegistrationNode> RegistrationGraph(INamedTypeSymbol model, Compilation compilation)
     {
         var nodes = new List<RegistrationNode>();
         var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default) { model.OriginalDefinition };
         var pending = new Queue<(INamedTypeSymbol Model, string? Registration)>();
-        pending.Enqueue((model, ValidatorForLine(model, GeneratedValidatorNames.QualifiedValidatorName(model))));
+        pending.Enqueue((model, RegistrableLine(model, GeneratedValidatorNames.QualifiedValidatorName(model))));
 
         while (pending.Count > 0)
         {
@@ -147,7 +167,7 @@ public static class ValidatorRegistrationEmitter
                 dependencies.Add(new RegistrationDependency(true, Key(type), line, followed));
             }
 
-            nodes.Add(new RegistrationNode(Key(current), registration, EquatableArray.From(dependencies)));
+            nodes.Add(new RegistrationNode(Key(current), registration, RegistryEntry(current), EquatableArray.From(dependencies)));
         }
 
         return EquatableArray.From(nodes);
@@ -157,7 +177,7 @@ public static class ValidatorRegistrationEmitter
             if (seen.Add(nested))
             {
                 var validatorName = ValidatorNameIfAccessible(nested, compilation);
-                pending.Enqueue((nested, validatorName is null ? null : ValidatorForLine(nested, validatorName)));
+                pending.Enqueue((nested, validatorName is null ? null : RegistrableLine(nested, validatorName)));
             }
             return Key(nested);
         }
@@ -172,6 +192,49 @@ public static class ValidatorRegistrationEmitter
     {
         var modelFqn = model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         return $"        services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<{modelFqn}>, {validatorFqn}>();";
+    }
+
+    /// <summary>
+    /// <see cref="ValidatorForLine"/>, or <see langword="null"/> when <paramref name="model"/> still
+    /// holds a type parameter, which no closed registration can name.
+    /// </summary>
+    private static string? RegistrableLine(INamedTypeSymbol model, string validatorFqn) =>
+        ContainsTypeParameter(model) ? null : ValidatorForLine(model, validatorFqn);
+
+    /// <summary>
+    /// The line listing a generic model's closing in the <c>IModelValidator</c> registry, or
+    /// <see langword="null"/> for a model that is not generic. The entry resolves the closing's
+    /// <c>ValidatorFor</c> registration rather than constructing the generated validator, so a
+    /// registration the application made first is the one listed.
+    /// </summary>
+    private static string? RegistryEntry(INamedTypeSymbol model)
+    {
+        if (!GeneratedValidatorReach.IsGeneric(model))
+            return null;
+
+        var service = $"global::ZeroAlloc.Validation.ValidatorFor<{model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>";
+        return "        services.TryAddEnumerable(global::Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<"
+            + $"global::ZeroAlloc.Validation.IModelValidator, {service}>("
+            + $"static sp => global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService<{service}>(sp)));";
+    }
+
+    private static bool ContainsTypeParameter(ITypeSymbol type) => type switch
+    {
+        ITypeParameterSymbol => true,
+        IArrayTypeSymbol array => ContainsTypeParameter(array.ElementType),
+        IPointerTypeSymbol pointer => ContainsTypeParameter(pointer.PointedAtType),
+        INamedTypeSymbol named => (named.ContainingType is { } container && ContainsTypeParameter(container))
+                                  || AnyContainsTypeParameter(named.TypeArguments),
+        _ => false,
+    };
+
+    private static bool AnyContainsTypeParameter(System.Collections.Immutable.ImmutableArray<ITypeSymbol> types)
+    {
+        foreach (var type in types)
+        {
+            if (ContainsTypeParameter(type)) return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -193,7 +256,8 @@ public static class ValidatorRegistrationEmitter
     /// <summary>
     /// <paramref name="model"/>'s generated validator, declared in the referenced assembly that
     /// declares the model, when this compilation can access it, otherwise <see langword="null"/>.
-    /// Looked up by metadata name, whose namespace is never keyword-escaped.
+    /// Looked up by metadata name, whose namespace is never keyword-escaped. For a closing of a
+    /// generic model it is the validator closed over the same type arguments.
     /// </summary>
     private static INamedTypeSymbol? ReferencedValidator(INamedTypeSymbol model, Compilation compilation)
     {
@@ -201,9 +265,13 @@ public static class ValidatorRegistrationEmitter
             return null;
 
         var validator = model.ContainingAssembly?.GetTypeByMetadataName(GeneratedValidatorNames.MetadataName(model));
-        return validator is not null && compilation.IsSymbolAccessibleWithin(validator, compilation.Assembly)
+        if (validator is null || !compilation.IsSymbolAccessibleWithin(validator, compilation.Assembly))
+            return null;
+
+        var arguments = GeneratedValidatorNames.TypeArguments(model);
+        return arguments.Count == 0 || arguments.Count != validator.Arity
             ? validator
-            : null;
+            : validator.Construct([.. arguments]);
     }
 
     private static bool IsConstructible(INamedTypeSymbol type, Compilation compilation) =>

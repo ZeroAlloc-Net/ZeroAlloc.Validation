@@ -84,8 +84,50 @@ The generator emits `RegisterUserRequestValidator` in the same namespace as your
 > must be `public`, `internal` or `protected internal`. A `private`, `protected` or
 > `private protected` nested model, a model inside such a type, or a `file`-local model or one
 > nested inside it fails the build with [ZV0025](diagnostics.md#zv0025), and no validator is
-> generated for it. A generic model, or one declared inside a generic type, fails the build
-> with [ZV0029](diagnostics.md#zv0029): the validator is not generic, so it cannot name one.
+> generated for it.
+
+## Generic models
+
+A generic model, or one declared inside a generic type, gets one validator, generic over the
+type parameters of the model and of every type containing it, with their declared names and
+constraints:
+
+```csharp
+[Validate]
+public class Page<TItem> where TItem : class
+{
+    [NotEmpty] public string Title { get; set; } = "";
+    [NotNull]  public TItem? Selected { get; set; }
+    public List<Line<TItem>> Lines { get; set; } = [];
+}
+// Generated: PageValidator<TItem> : ValidatorFor<Page<TItem>> where TItem : class
+
+var validator = new PageValidator<Product>(new LineValidator<Product>());
+```
+
+`Box` and `Box<T>` get `BoxValidator` and `BoxValidator<T>`. A model inside a generic type,
+`Envelope<T>.Header`, gets `Envelope_HeaderValidator<T>`.
+
+- **Rules on a type parameter** must compile for every closing. `[NotNull]`, `[Null]` and
+  `[Must]` always do, the numeric comparisons do when the type parameter is constrained to
+  `INumberBase<T>`, `[IsInEnum]` when it is `struct, Enum`, and a custom
+  `ValidationAttribute<TValue>` when it converts to `TValue`. Any other built-in rule on a type
+  parameter fails the build with [ZV0036](diagnostics.md#zv0036).
+- **Nested models** follow [nested validation](nested-validation.md#generic-models): a
+  property of a closed type such as `Page<Order>` is composed as `ValidatorFor<Page<Order>>`,
+  and a property whose type is a type parameter only through a `[Validate]` class it is
+  constrained to.
+- **Registration.** `AddZeroAllocValidators()` registers each closing the models you register
+  reach, such as `Page<Order>` held by a non-generic `OrderPage`, closed; see
+  [Dependency injection](inject.md#generic-models).
+- **Pipeline behaviors** name the open form, `AppliesTo = typeof(Page<>)`, and run for every
+  closing; a closed form is reported as [ZV0038](diagnostics.md#zv0038).
+- **NativeAOT.** A value-type closing gets its own compiled instantiation, rooted by the
+  closed registration or by `new PageValidator<int>()` in your code. There is no reflection and
+  no `MakeGenericType`.
+
+A type parameter whose name repeats along the containing chain, `Outer<T>.Inner<T>`, cannot be
+declared twice by the validator and fails the build with [ZV0029](diagnostics.md#zv0029).
 
 > **Target types.** `[Validate]` works on `class`, `record`, `readonly struct`, and
 > `readonly record struct`. Decorating a non-readonly `struct` or `record struct`

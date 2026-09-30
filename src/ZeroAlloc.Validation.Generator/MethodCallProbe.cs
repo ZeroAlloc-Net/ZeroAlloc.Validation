@@ -228,7 +228,8 @@ internal static class MethodCallProbe
         text.AppendLine($"internal static class {ObsoleteErrorProbeClass}");
         text.AppendLine("{");
         var modelName = property.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        text.AppendLine($"    private static void Read({modelName} {Model})");
+        text.AppendLine($"    private static void Read{GenericHeader(property.ContainingType)}({modelName} {Model})");
+        AppendConstraints(text, property.ContainingType);
         text.AppendLine("    {");
         text.AppendLine($"        _ = {GeneratedCalls.RawPropertyAccess(Model, property)};");
         text.AppendLine("    }");
@@ -477,7 +478,8 @@ internal static class MethodCallProbe
 
     /// <summary>
     /// The types in <paramref name="ns"/> and below that get a generated validator: declared
-    /// <c>[Validate]</c>, not generic (ZV0029), and reachable (ZV0025).
+    /// <c>[Validate]</c>, with type parameters the validator can redeclare (ZV0029), and reachable
+    /// (ZV0025). A generic model is probed generic over its type parameters, as its validator is.
     /// </summary>
     private static IEnumerable<INamedTypeSymbol> ValidatedTypes(INamespaceSymbol ns, Compilation compilation)
     {
@@ -498,7 +500,7 @@ internal static class MethodCallProbe
 
     private static IEnumerable<INamedTypeSymbol> ValidatedTypes(INamedTypeSymbol type, Compilation compilation)
     {
-        if (!type.IsGenericType && HasValidateAttribute(type) && GeneratedValidatorReach.HasGeneratedValidator(type, compilation))
+        if (HasValidateAttribute(type) && GeneratedValidatorReach.HasGeneratedValidator(type, compilation))
             yield return type;
         foreach (var nested in type.GetTypeMembers())
         {
@@ -599,7 +601,8 @@ internal static class MethodCallProbe
             {
                 var call = probed[indices[i]];
                 var modelName = call.Model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                text.AppendLine($"    private static void Call{indices[i].ToString(CultureInfo.InvariantCulture)}({modelName} {Model})");
+                text.AppendLine($"    private static void Call{indices[i].ToString(CultureInfo.InvariantCulture)}{GenericHeader(call.Model)}({modelName} {Model})");
+                AppendConstraints(text, call.Model);
                 text.AppendLine("    {");
                 text.AppendLine($"        {call.Statement}");
                 text.AppendLine("    }");
@@ -608,6 +611,20 @@ internal static class MethodCallProbe
             if (!global) text.AppendLine("}");
         }
         return text.ToString();
+    }
+
+    /// <summary>
+    /// The type parameter list a probe method declares to take <paramref name="model"/>: the
+    /// generic model's type parameters, as its validator declares them, issue #238, or empty.
+    /// </summary>
+    private static string GenericHeader(INamedTypeSymbol model) =>
+        GenericSignature.ParameterList(GenericSignature.TypeParameters(model));
+
+    private static void AppendConstraints(StringBuilder text, INamedTypeSymbol model)
+    {
+        var clauses = GenericSignature.ConstraintClauses(GenericSignature.TypeParameters(model));
+        for (var i = 0; i < clauses.Count; i++)
+            text.AppendLine($"        {clauses[i]}");
     }
 
     private static int CallIndex(MethodDeclarationSyntax declaration) =>

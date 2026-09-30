@@ -381,6 +381,129 @@ public class ComposedValidatorRegistrationTests
             "services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::MyApp.Order>, global::MyApp.OrderValidator>();"));
     }
 
+    private const string GenericLibrary = """
+        using System.Collections.Generic;
+        using ZeroAlloc.Validation;
+        namespace {0};
+        [Validate] public class Page<T> { [NotEmpty] public string Title { get; set; } = ""; public List<Line<T>> Lines { get; set; } = new(); }
+        [Validate] public class Line<T> { [GreaterThan(0)] public int Quantity { get; set; } }
+        """;
+
+    [Fact]
+    public async System.Threading.Tasks.Task ClosedGenericModel_IsRegisteredClosedOnce_AndListedOnceAsAModelValidator()
+    {
+        // Issue #238: the closings the registration graph reaches are registered closed, each
+        // followed by its IModelValidator entry, and each once however many properties hold it.
+        var source = GenericLibrary.Replace("{0}", "Generic238.Local", StringComparison.Ordinal) + """
+            public class Product { }
+            [Validate] public class Order
+            {
+                public Page<Product> Page { get; set; } = new();
+                public Page<Product> Other { get; set; } = new();
+                public List<Line<Product>> Direct { get; set; } = new();
+            }
+            """;
+
+        var (output, registration, _) = RunWithDiagnostics(source, "Generic238.Local");
+
+        Assert.Empty(Errors(output));
+        Assert.Equal(1, Occurrences(
+            registration,
+            "services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::Generic238.Local.Page<global::Generic238.Local.Product>>, global::Generic238.Local.PageValidator<global::Generic238.Local.Product>>();"));
+        Assert.Equal(1, Occurrences(
+            registration,
+            "services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::Generic238.Local.Line<global::Generic238.Local.Product>>, global::Generic238.Local.LineValidator<global::Generic238.Local.Product>>();"));
+        Assert.Equal(2, Occurrences(registration, "services.TryAddEnumerable("));
+
+        var (provider, assembly) = BuildProvider(output);
+        using (provider)
+        {
+            var order = assembly.GetType("Generic238.Local.Order")!;
+            var result = ResolveAndValidate(provider, order);
+            Assert.Equal(["Page.Title", "Other.Title"], result.Failures.ToArray().Select(f => f.PropertyName), StringComparer.Ordinal);
+
+            var pageOfProduct = assembly.GetType("Generic238.Local.Page`1")!.MakeGenericType(assembly.GetType("Generic238.Local.Product")!);
+            var lineOfProduct = assembly.GetType("Generic238.Local.Line`1")!.MakeGenericType(assembly.GetType("Generic238.Local.Product")!);
+            var registry = provider.GetServices<IModelValidator>().ToList();
+            Assert.Equal(2, registry.Count);
+            Assert.Contains(registry, v => v.ModelType == pageOfProduct);
+            Assert.Contains(registry, v => v.ModelType == lineOfProduct);
+
+            // The entry resolves the ValidatorFor registration: the same singleton.
+            Assert.Same(provider.GetRequiredService(typeof(ValidatorFor<>).MakeGenericType(pageOfProduct)), registry.First(v => v.ModelType == pageOfProduct));
+
+            // A closing nothing registered is not resolved, and does not break other lookups:
+            // ZeroAlloc.Mediator skips validation on null.
+            var pageOfString = assembly.GetType("Generic238.Local.Page`1")!.MakeGenericType(typeof(string));
+            Assert.Null(provider.GetService(typeof(ValidatorFor<>).MakeGenericType(pageOfString)));
+            Assert.Null(provider.GetService<ValidatorFor<string>>());
+
+            // Through the registry, with the model as object.
+            var page = Activator.CreateInstance(pageOfProduct)!;
+            var viaRegistry = await registry.First(v => v.ModelType == pageOfProduct).ValidateAsync(page, default);
+            Assert.Equal(["Title"], viaRegistry.Failures.ToArray().Select(f => f.PropertyName), StringComparer.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void ClosedGenericModelFromReferencedAssembly_IsRegisteredClosedAndResolves()
+    {
+        var library = GenericLibrary.Replace("{0}", "Generic238.Lib", StringComparison.Ordinal);
+        var application = """
+            using ZeroAlloc.Validation;
+            namespace Generic238.App;
+            public class Product { }
+            [Validate] public class Order { public Generic238.Lib.Page<Product> Page { get; set; } = new(); }
+            """;
+
+        var (libraryReference, libraryImage) = CompileLibraryImage(library, "Generic238.Lib");
+        var (output, registration, _) = RunWithDiagnostics(application, "Generic238.App", libraryReference);
+
+        Assert.Empty(Errors(output));
+        Assert.Equal(1, Occurrences(
+            registration,
+            "services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::Generic238.Lib.Page<global::Generic238.App.Product>>, global::Generic238.Lib.PageValidator<global::Generic238.App.Product>>();"));
+        Assert.Equal(1, Occurrences(
+            registration,
+            "services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::Generic238.Lib.Line<global::Generic238.App.Product>>, global::Generic238.Lib.LineValidator<global::Generic238.App.Product>>();"));
+
+        var (provider, assembly) = BuildProvider(output, libraryImage);
+        using (provider)
+        {
+            var result = ResolveAndValidate(provider, assembly.GetType("Generic238.App.Order")!);
+            Assert.Equal(1, result.Failures.Length);
+            Assert.Equal("Page.Title", result.Failures[0].PropertyName);
+            Assert.Equal(2, provider.GetServices<IModelValidator>().Count());
+        }
+    }
+
+    [Fact]
+    public void ValidateWithAReferencedClosedGenericValidator_FollowsItsModel()
+    {
+        // [ValidateWith] names the library's generated validator closed over the property's own
+        // type arguments, so the model's dependencies are followed and registered too.
+        var library = GenericLibrary.Replace("{0}", "Generic238.Follow.Lib", StringComparison.Ordinal);
+        var application = """
+            using ZeroAlloc.Validation;
+            namespace Generic238.Follow.App;
+            public class Product { }
+            [Validate] public class Order
+            {
+                [ValidateWith(typeof(Generic238.Follow.Lib.PageValidator<Product>))]
+                public Generic238.Follow.Lib.Page<Product> Page { get; set; } = new();
+            }
+            """;
+
+        var (libraryReference, _) = CompileLibraryImage(library, "Generic238.Follow.Lib");
+        var (output, registration, _) = RunWithDiagnostics(application, "Generic238.Follow.App", libraryReference);
+
+        Assert.Empty(Errors(output));
+        Assert.Equal(1, Occurrences(registration, "services.TryAddSingleton<global::Generic238.Follow.Lib.PageValidator<global::Generic238.Follow.App.Product>>();"));
+        Assert.Equal(1, Occurrences(
+            registration,
+            "services.TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::Generic238.Follow.Lib.Line<global::Generic238.Follow.App.Product>>, global::Generic238.Follow.Lib.LineValidator<global::Generic238.Follow.App.Product>>();"));
+    }
+
     private static MetadataReference CompileLibrary(string source) => CompileLibraryImage(source, "Lib").Reference;
 
     /// <summary>

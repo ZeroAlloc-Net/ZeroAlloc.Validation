@@ -74,6 +74,30 @@ The constructor takes the nested validator as `ValidatorFor<Address>`, the abstr
 
 Each nested validator's field and constructor parameter are named after the property in camel case, `shippingAddressValidator` for `ShippingAddress`. Two properties whose names differ only in the case of the first letter, such as `Address` and `address`, would get the same name, so the later one in declaration order takes the first free numeric suffix: `addressValidator` and `address2Validator`. Every other model keeps the plain names.
 
+## Generic models
+
+A validator composes a nested model by the type the property statically has, and nothing else:
+
+| Property | Composed? | Constructor parameter |
+|---|---|---|
+| `Line<TItem> Line` in `Page<TItem>` | yes | `ValidatorFor<Line<TItem>>` |
+| `List<Line<TItem>> Lines` | yes, element by element | `ValidatorFor<Line<TItem>>` |
+| `Page<Order> Page` in a non-generic `OrderPage` | yes | `ValidatorFor<Page<Order>>` |
+| `TItem Item`, `List<TItem> Items`, with `TItem` unconstrained or constrained to a type without `[Validate]` | **no**, rules only | none |
+| `TItem Item` with `where TItem : Address`, a `[Validate]` class | yes, as `Address` | `ValidatorFor<Address>`, as for a property declared `Address` |
+
+A bare type parameter is not validated with whatever `ValidatorFor<TItem>` a container happens
+to hold: whether the property is validated would then depend on what else is registered.
+Constrain it to a `[Validate]` class, or validate it with `[ValidateWith]` or `[Must]`.
+
+`PageValidator<TItem>` is public exactly when `Page<TItem>` and `Line<TItem>` are.
+`OrderPageValidator` is internal when it takes `ValidatorFor<Page<InternalOrder>>`.
+
+A property whose closing grows on every round of nesting, such as `Node<Node<T>>` inside
+`Node<T>`, would need an endless chain of validators. It fails the build with
+[ZV0037](diagnostics.md#zv0037) and is not composed. `Node<T>? Parent` inside `Node<T>` is the
+same closing again, and is composed as for a non-generic model.
+
 ## Failure path prefixing
 
 Failures from the nested validator are prefixed with the parent property name and a dot before being added to the outer result buffer. A failure on `Street` inside `ShippingAddress` surfaces as `"ShippingAddress.Street"`.
@@ -171,7 +195,7 @@ services.AddZeroAllocValidators();
 var orderValidator = provider.GetRequiredService<ValidatorFor<Order>>(); // gets its ValidatorFor<Address>
 ```
 
-A nested model declared in a referenced assembly is registered too, as long as its generated validator is accessible from the assembly calling `AddZeroAllocValidators()`. An internal one is left to that assembly's own registration.
+A nested model declared in a referenced assembly is registered too, as long as its generated validator is accessible from the assembly calling `AddZeroAllocValidators()`. An internal one is left to that assembly's own registration. A closing of a generic model is registered closed, `ValidatorFor<Page<Order>>` as `PageValidator<Order>`, with every closing its validator takes in turn; see [Dependency injection](inject.md#generic-models).
 
 Without DI, construct the dependency graph manually and pass each nested validator to the parent constructor. The generated `AddressValidator` converts to the `ValidatorFor<Address>` parameter:
 

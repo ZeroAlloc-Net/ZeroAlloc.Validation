@@ -221,9 +221,10 @@ internal static class RuleEmitter
     /// The rules on <paramref name="prop"/> a validator can emit, whatever the model. A custom rule
     /// is left out for a property type with no implicit conversion to the rule's <c>T</c>, ZV0021,
     /// or an attribute the validator cannot reach, ZV0023. A numeric comparison rule on a type
-    /// <c>Convert.ToDouble</c> cannot convert is left out, ZV0033. A <c>ValidationAttribute</c>
-    /// subclass that is neither a built-in nor a custom rule is not a rule, ZV0020. Each is
-    /// reported only when <paramref name="ctx"/> is set.
+    /// <c>Convert.ToDouble</c> cannot convert is left out, ZV0033, and so is a built-in rule that
+    /// has no form for a value whose type is a type parameter, ZV0036. A
+    /// <c>ValidationAttribute</c> subclass that is neither a built-in nor a custom rule is not a
+    /// rule, ZV0020. Each is reported only when <paramref name="ctx"/> is set.
     /// </summary>
     private static List<AttributeData> UsableRules(Compilation compilation, IPropertySymbol prop, DiagnosticSink? ctx)
     {
@@ -240,6 +241,9 @@ internal static class RuleEmitter
                 continue;
 
             if (!CanCompareAsNumber(compilation, prop, attr, ctx))
+                continue;
+
+            if (!HasTypeParameterForm(prop, attr, ctx))
                 continue;
 
             usableRules.Add(attr);
@@ -1222,7 +1226,12 @@ internal static class RuleEmitter
     {
         var ns = GeneratedCalls.NamespaceOf(classSymbol);
         if (ns is not null) sb.AppendLine($"namespace {ns}").AppendLine("{");
-        sb.AppendLine($"internal sealed class {className}");
+        // Generic over the generic model's type parameters, as the generated validator is.
+        var typeParameters = GenericSignature.TypeParameters(classSymbol);
+        sb.AppendLine($"internal sealed class {className}{GenericSignature.ParameterList(typeParameters)}");
+        var clauses = GenericSignature.ConstraintClauses(typeParameters);
+        for (var i = 0; i < clauses.Count; i++)
+            sb.AppendLine($"    {clauses[i]}");
         sb.AppendLine("{");
         AppendNestedValidatorFields(sb, CollectNestedValidatorFields(classSymbol, compilation));
         // A model that must validate asynchronously gets an awaiting body, compiled as the async
@@ -1545,19 +1554,19 @@ internal static class RuleEmitter
         // The type of the value the rule reads: for a single-property [ValueObject] that is the
         // unwrapped member, which access already reads through.
         var valueType = ValueTypeOf(propType);
-
+        var toDouble = ToDouble(valueType);
         return fqn switch
         {
             NotNullFqn               => $"{access} is null",
             NotEmptyFqn              => BuildNotEmptyCondition(access, propType),
             MinLengthFqn             => GuardAgainstNull(access, propType, $"{access}.Length < {GetIntArg(attr, 0)}"),
             MaxLengthFqn             => GuardAgainstNull(access, propType, $"{access}.Length > {GetIntArg(attr, 0)}"),
-            GreaterThanFqn           => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) <= {Number(attr, 0)}"),
-            LessThanFqn              => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) >= {Number(attr, 0)}"),
-            InclusiveBetweenFqn      => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) < {Number(attr, 0)} || System.Convert.ToDouble({v}) > {Number(attr, 1)}"),
-            GreaterThanOrEqualToFqn  => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) < {Number(attr, 0)}"),
-            LessThanOrEqualToFqn     => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) > {Number(attr, 0)}"),
-            ExclusiveBetweenFqn      => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) <= {Number(attr, 0)} || System.Convert.ToDouble({v}) >= {Number(attr, 1)}"),
+            GreaterThanFqn           => CompareValue(access, valueType, v => $"{toDouble(v)} <= {Number(attr, 0)}"),
+            LessThanFqn              => CompareValue(access, valueType, v => $"{toDouble(v)} >= {Number(attr, 0)}"),
+            InclusiveBetweenFqn      => CompareValue(access, valueType, v => $"{toDouble(v)} < {Number(attr, 0)} || {toDouble(v)} > {Number(attr, 1)}"),
+            GreaterThanOrEqualToFqn  => CompareValue(access, valueType, v => $"{toDouble(v)} < {Number(attr, 0)}"),
+            LessThanOrEqualToFqn     => CompareValue(access, valueType, v => $"{toDouble(v)} > {Number(attr, 0)}"),
+            ExclusiveBetweenFqn      => CompareValue(access, valueType, v => $"{toDouble(v)} <= {Number(attr, 0)} || {toDouble(v)} >= {Number(attr, 1)}"),
             LengthFqn                => GuardAgainstNull(access, propType, $"{access}.Length < {GetIntArg(attr, 0)} || {access}.Length > {GetIntArg(attr, 1)}"),
             EmailAddressFqn          => GuardAgainstNull(access, valueType, $"!global::ZeroAlloc.Validation.Internal.EmailValidator.IsValid({access})"),
             MatchesFqn               => GuardAgainstNull(access, valueType, BuildMatchesCondition(access, propName, attr, fields)),
@@ -1565,11 +1574,11 @@ internal static class RuleEmitter
             EmptyFqn                 => $"!string.IsNullOrEmpty({access})",
             EqualFqn                 => IsStringArg(attr, 0)
                 ? GuardAgainstNull(access, valueType, $"{access} != \"{EscapeString(GetStringArg(attr, 0))}\"")
-                : CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) != {Number(attr, 0)}"),
+                : CompareValue(access, valueType, v => $"{toDouble(v)} != {Number(attr, 0)}"),
             NotEqualFqn              => IsStringArg(attr, 0)
                 ? $"{access} == \"{EscapeString(GetStringArg(attr, 0))}\""
-                : CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) == {Number(attr, 0)}"),
-            IsInEnumFqn              => BuildIsInEnumCondition(access, propTypeFullName, propType),
+                : CompareValue(access, valueType, v => $"{toDouble(v)} == {Number(attr, 0)}"),
+            IsInEnumFqn              => BuildIsInEnumCondition(access, propTypeFullName, propType, valueType),
             IsEnumNameFqn            => GuardAgainstNull(access, valueType, $"!global::System.Enum.IsDefined(typeof({GetTypeArgFullName(attr, 0)}), {access})"),
             PrecisionScaleFqn        => CompareValue(access, valueType, v => $"global::ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale({v}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})"),
             MustFqn                  => GeneratedCalls.MustCondition(modelParamName, GetStringArg(attr, 0), rawForPredicate),
@@ -1673,6 +1682,27 @@ internal static class RuleEmitter
         GetDoubleArg(attr, index).ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
+    /// How a numeric comparison converts the value it compares to <c>double</c>:
+    /// <c>System.Convert.ToDouble(v)</c>, or for a type parameter constrained to
+    /// <c>INumberBase&lt;T&gt;</c>, which <see cref="CanCompareAsNumber"/> requires,
+    /// <c>double.CreateChecked(v)</c>, a constrained call that neither boxes nor allocates for a
+    /// value-type closing, issue #238.
+    /// </summary>
+    private static Func<string, string> ToDouble(ITypeSymbol? valueType) =>
+        Operand(valueType) is ITypeParameterSymbol
+            ? static v => $"double.CreateChecked({v})"
+            : static v => $"System.Convert.ToDouble({v})";
+
+    /// <summary>
+    /// The type a rule reads the value as: <paramref name="valueType"/>, with a
+    /// <c>Nullable&lt;T&gt;</c> unwrapped to its <c>T</c>.
+    /// </summary>
+    private static ITypeSymbol? Operand(ITypeSymbol? valueType) =>
+        valueType is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable
+            ? nullable.TypeArguments[0]
+            : valueType;
+
+    /// <summary>
     /// The type of the value a built-in rule reads. For a single-property <c>[ValueObject]</c> the
     /// rule reads the unwrapped member, see <see cref="BuildPropertyAccess"/>, so that member's type.
     /// </summary>
@@ -1690,19 +1720,43 @@ internal static class RuleEmitter
     /// the same split the length rules follow. Passing the <c>Nullable&lt;T&gt;</c> itself to
     /// <c>Enum.IsDefined</c> tripped CS8604, and a null value threw ArgumentNullException.
     /// </summary>
-    private static string BuildIsInEnumCondition(string access, string enumTypeFullName, ITypeSymbol? propType) =>
-        propType?.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+    private static string BuildIsInEnumCondition(string access, string enumTypeFullName, ITypeSymbol? propType, ITypeSymbol? valueType)
+    {
+        // A type parameter constrained to struct, Enum, which HasTypeParameterForm requires, is
+        // checked with the generic overload, compiled per closing without boxing, issue #238. It
+        // is the value the rule reads, access, so a generic value object's member is checked.
+        if (Operand(valueType) is ITypeParameterSymbol parameter)
+        {
+            var isDefined = $"global::System.Enum.IsDefined<{parameter.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>";
+            return valueType!.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+                ? $"{access}.HasValue && !{isDefined}({access}.Value)"
+                : $"!{isDefined}({access})";
+        }
+
+        return propType?.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
             ? $"{access}.HasValue && !global::System.Enum.IsDefined(typeof({enumTypeFullName}), {access}.Value)"
             : $"!global::System.Enum.IsDefined(typeof({enumTypeFullName}), {access})";
+    }
 
     /// <summary>
     /// Whether the value could be null at runtime, and so needs guarding before a dereference.
-    /// Non-nullable value types cannot, and guarding one would not compile.
+    /// Non-nullable value types cannot, and guarding one would not compile. A type parameter
+    /// without a <c>struct</c> or <c>unmanaged</c> constraint can: it may be closed over a
+    /// nullable reference type, whatever its constraints say, issue #238.
     /// </summary>
     private static bool CanBeNull(ITypeSymbol? propType) =>
         propType is not null
         && (propType.IsReferenceType
-            || propType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T);
+            || propType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+            || IsPossiblyNullTypeParameter(propType));
+
+    /// <summary>
+    /// Whether <paramref name="type"/> is a type parameter a closing may fill with a reference type
+    /// or <c>Nullable&lt;T&gt;</c>, so a value of it may be null: one without a <c>struct</c> or
+    /// <c>unmanaged</c> constraint.
+    /// </summary>
+    private static bool IsPossiblyNullTypeParameter(ITypeSymbol type) =>
+        type is ITypeParameterSymbol { HasValueTypeConstraint: false, HasUnmanagedTypeConstraint: false };
 
     /// <summary>
     /// Emits the right "is empty" predicate for the property's actual type.
@@ -1816,6 +1870,12 @@ internal static class RuleEmitter
         if (type.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String)
             return $"{access} ?? \"null\"";
 
+        // A type parameter that may be closed over a value type or a reference type, issue #238:
+        // ToString() through ?. would box the one and Convert.ToString(null) returns "" for the
+        // other, so null is tested first. This runs on the failure path only.
+        if (type is ITypeParameterSymbol)
+            return $"({access} is null ? \"null\" : System.Convert.ToString({access}, System.Globalization.CultureInfo.InvariantCulture))";
+
         // Any other reference type
         return $"{access}?.ToString() ?? \"null\"";
     }
@@ -1842,17 +1902,19 @@ internal static class RuleEmitter
             // First arm: type has [Validate] (auto-compose) — also covers the overlap where [ValidateWith] is present on a [Validate] type; [ValidateWith] wins in CollectNestedValidatorFields.
             // Second arm: [ValidateWith] on a non-collection property whose type has no [Validate].
             .Where(p =>
-                (p.Type is INamedTypeSymbol t && HasValidateAttribute(t, compilation))
+                (HasValidateAttribute(p.Type, compilation) && !ExpandingComposition.IsExpanding(classSymbol, p, compilation))
                 || (GetValidateWithType(p) is not null && GetCollectionElementType(p) is null));
 
     /// <summary>
-    /// Whether <paramref name="typeSymbol"/> has a generated validator this one can inject. A
+    /// Whether a value of <paramref name="type"/> is validated by a generated validator this one
+    /// can inject, as <see cref="ValidatorDependencies.ComposedModel"/> decides: a <c>[Validate]</c>
+    /// model, closings of generic ones included, or a type parameter whose constraint names one. A
     /// <c>[Validate]</c> type the generated validator cannot reach gets none, ZV0025, and neither
-    /// does a generic one, ZV0029, so a property of that type is not wired to a validator that
-    /// does not exist.
+    /// does one whose type parameters it cannot redeclare, ZV0029, so a property of that type is
+    /// not wired to a validator that does not exist.
     /// </summary>
-    private static bool HasValidateAttribute(INamedTypeSymbol typeSymbol, Compilation compilation) =>
-        ValidatorDependencies.HasGeneratedValidator(typeSymbol, compilation);
+    private static bool HasValidateAttribute(ITypeSymbol type, Compilation compilation) =>
+        ValidatorDependencies.ComposedModel(type, compilation) is not null;
 
     private static ITypeSymbol? GetCollectionElementType(IPropertySymbol prop) =>
         ValidatorDependencies.CollectionElementType(prop.Type);
@@ -1870,10 +1932,13 @@ internal static class RuleEmitter
             .OfType<IPropertySymbol>()
             .Select(p =>
             {
-                var elemType = GetCollectionElementType(p) as INamedTypeSymbol;
-                if (elemType is not null && HasValidateAttribute(elemType, compilation))
-                    return ((IPropertySymbol, INamedTypeSymbol)?)(p, elemType);
-                if (elemType is not null && GetValidateWithType(p) is not null)
+                var element = GetCollectionElementType(p);
+                // An element whose type is a type parameter is validated as the [Validate] class
+                // its constraint names, issue #238.
+                var composed = element is null ? null : ValidatorDependencies.ComposedModel(element, compilation);
+                if (composed is not null && !ExpandingComposition.IsExpanding(classSymbol, p, compilation))
+                    return ((IPropertySymbol, INamedTypeSymbol)?)(p, composed);
+                if (element is INamedTypeSymbol elemType && GetValidateWithType(p) is not null)
                     return (p, elemType);
                 return null;
             })
@@ -1921,10 +1986,11 @@ internal static class RuleEmitter
     /// fully qualified, the type the constructor takes its validator as. Not the model's generated
     /// validator, issue #246: <c>ValidatorFor&lt;TModel&gt;</c> is the service type every generated
     /// validator is registered under, so a container resolves it, and a caller can still pass the
-    /// generated validator itself, which converts to it.
+    /// generated validator itself, which converts to it. A closing of a generic model keeps its
+    /// type arguments, <c>ValidatorFor&lt;Page&lt;Order&gt;&gt;</c>, issue #238.
     /// </summary>
     private static string ValidatorForParameterType(INamedTypeSymbol model) =>
-        $"global::ZeroAlloc.Validation.ValidatorFor<{model.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>";
+        $"global::ZeroAlloc.Validation.ValidatorFor<{model.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>";
 
     /// <summary>
     /// One validator field and constructor parameter per nested or collection property, in
@@ -2123,7 +2189,7 @@ internal static class RuleEmitter
     private static readonly DiagnosticDescriptor ZV0033 = new DiagnosticDescriptor(
         id: "ZV0033",
         title: "Numeric comparison rule on a type that is not a number",
-        messageFormat: "'{0}' compares '{1}' as a number, but its type '{2}' cannot be converted to one; use [Must] or a custom ValidationAttribute<T> to compare it",
+        messageFormat: "'{0}' compares '{1}' as a number, but its type '{2}' cannot be converted to one; {3}",
         category: "ZeroAlloc.Validation",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
@@ -2134,7 +2200,32 @@ internal static class RuleEmitter
             + "types such as string and bool, but always throws InvalidCastException for DateTime, "
             + "char, and any type that does not implement IConvertible, such as DateOnly, TimeOnly, "
             + "TimeSpan, DateTimeOffset or Guid. The rule is left out of the generated validator. "
-            + "Compare such a value with [Must] or a custom ValidationAttribute<T>.");
+            + "Compare such a value with [Must] or a custom ValidationAttribute<T>. A value whose type "
+            + "is a type parameter of a generic model is compared as double.CreateChecked(value), "
+            + "which needs the type parameter constrained to System.Numerics.INumberBase<T>, "
+            + "directly or through an interface such as INumber<T>.");
+
+    private const string CompareHint = "use [Must] or a custom ValidationAttribute<T> to compare it";
+
+    private const string CompareTypeParameterHint =
+        "constrain it to System.Numerics.INumberBase<T>, or use [Must] or a custom ValidationAttribute<T> to compare it";
+
+    private static readonly DiagnosticDescriptor ZV0036 = new DiagnosticDescriptor(
+        id: "ZV0036",
+        title: "Built-in rule on a value whose type is a type parameter",
+        messageFormat: "'{0}' cannot validate '{1}': its type '{2}' is a type parameter, so the rule has no form that fits every closing; constrain the type parameter, use [Must] or a custom ValidationAttribute<T>",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description:
+            "A generic model has one generated validator for every closing, so a rule on a property "
+            + "whose type is a type parameter must compile for whatever the type parameter is closed "
+            + "over. NotEmpty, Empty, MinLength, MaxLength, Length, EmailAddress, Matches, "
+            + "IsEnumName, PrecisionScale, and Equal and NotEqual with a string have no such form; "
+            + "IsInEnum has one only when the type parameter is constrained to struct, Enum. The "
+            + "rule is left out of the generated validator. NotNull, Null and [Must] work on any "
+            + "type parameter, the numeric comparisons on one constrained to INumberBase<T>, and a "
+            + "custom ValidationAttribute<T> on one that converts to its T.");
 
     /// <summary>
     /// Whether a rule that is not a numeric comparison, or one over a type
@@ -2150,7 +2241,47 @@ internal static class RuleEmitter
         var valueType = ValueTypeOf(prop.Type) ?? prop.Type;
         if (ConvertsToDouble(compilation, valueType)) return true;
 
-        ctx?.Report(ZV0033, AttributeLocation(attr, prop), attr.AttributeClass!.Name, prop.Name, valueType.ToDisplayString());
+        ctx?.Report(ZV0033, AttributeLocation(attr, prop), attr.AttributeClass!.Name, prop.Name, valueType.ToDisplayString(),
+            Operand(valueType) is ITypeParameterSymbol ? CompareTypeParameterHint : CompareHint);
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the rule has a form for its operand, the value it reads after <c>Nullable&lt;T&gt;</c>
+    /// and single-property value-object unwrapping, when that is a type parameter of a generic
+    /// model, issue #238. The generated validator serves every closing, so the rule must compile
+    /// for each: <c>[NotNull]</c>, <c>[Null]</c> and <c>[Must]</c> always do, a custom rule is
+    /// checked by ZV0021, and a numeric comparison by ZV0033. <c>[IsInEnum]</c> needs
+    /// <c>struct, Enum</c>. Every other built-in rule reads a string, a length or a count, and is
+    /// left out and reported as ZV0036 when <paramref name="ctx"/> is set.
+    /// </summary>
+    private static bool HasTypeParameterForm(IPropertySymbol prop, AttributeData attr, DiagnosticSink? ctx)
+    {
+        if (Operand(ValueTypeOf(prop.Type)) is not ITypeParameterSymbol parameter) return true;
+
+        var fqn = attr.AttributeClass?.ToDisplayString();
+        var supported = fqn switch
+        {
+            NotNullFqn or NullFqn or MustFqn => true,
+            IsInEnumFqn => parameter.HasValueTypeConstraint && HasEnumConstraint(parameter),
+            // A number argument makes them numeric comparisons, which ZV0033 checked already.
+            EqualFqn or NotEqualFqn => attr.ConstructorArguments.Length == 0 || !IsStringArg(attr, 0),
+            GreaterThanFqn or GreaterThanOrEqualToFqn or LessThanFqn or LessThanOrEqualToFqn
+                or InclusiveBetweenFqn or ExclusiveBetweenFqn => true,
+            _ => CustomRules.IsCustomRule(attr),
+        };
+        if (supported) return true;
+
+        ctx?.Report(ZV0036, AttributeLocation(attr, prop), attr.AttributeClass!.Name, prop.Name, parameter.ToDisplayString());
+        return false;
+    }
+
+    private static bool HasEnumConstraint(ITypeParameterSymbol parameter)
+    {
+        foreach (var constraint in parameter.ConstraintTypes)
+        {
+            if (constraint.SpecialType == SpecialType.System_Enum) return true;
+        }
         return false;
     }
 
@@ -2182,6 +2313,12 @@ internal static class RuleEmitter
         if (type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable)
             type = nullable.TypeArguments[0];
 
+        // A type parameter has no AllInterfaces of its own, and Convert.ToDouble would box a
+        // value-type closing on every call, so only INumberBase<T>, compared through
+        // double.CreateChecked, counts, issue #238.
+        if (type is ITypeParameterSymbol parameter)
+            return IsGenericNumber(parameter);
+
         switch (type.SpecialType)
         {
             case SpecialType.System_SByte:
@@ -2210,6 +2347,30 @@ internal static class RuleEmitter
             && (SymbolEqualityComparer.Default.Equals(type, convertible)
                 || type.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, convertible)));
     }
+
+    /// <summary>
+    /// Whether <paramref name="parameter"/> is constrained to <c>System.Numerics.INumberBase&lt;T&gt;</c>
+    /// over itself, directly or through an interface that inherits it, such as <c>INumber&lt;T&gt;</c>,
+    /// so <c>double.CreateChecked</c> accepts it.
+    /// </summary>
+    private static bool IsGenericNumber(ITypeParameterSymbol parameter)
+    {
+        foreach (var constraint in parameter.ConstraintTypes)
+        {
+            if (constraint is not INamedTypeSymbol named) continue;
+            if (IsNumberBaseOf(named, parameter)) return true;
+            foreach (var inherited in named.AllInterfaces)
+            {
+                if (IsNumberBaseOf(inherited, parameter)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool IsNumberBaseOf(INamedTypeSymbol type, ITypeParameterSymbol parameter) =>
+        type.TypeArguments.Length == 1
+        && string.Equals(type.OriginalDefinition.ToDisplayString(), "System.Numerics.INumberBase<TSelf>", StringComparison.Ordinal)
+        && SymbolEqualityComparer.Default.Equals(type.TypeArguments[0], parameter);
 
     /// <summary>
     /// Fires ZV0020 for an attribute deriving from <c>ValidationAttribute</c> that is neither a
@@ -2284,13 +2445,15 @@ internal static class RuleEmitter
     /// whose <c>T</c> declares it never receives null, such as <c>ValidationAttribute&lt;string&gt;</c>.
     /// Conversion classification ignores nullable annotations, so this is checked separately.
     /// Both annotations exist only where the nullable context is enabled; in an oblivious or
-    /// disabled context they are <c>None</c> and this never fires.
+    /// disabled context they are <c>None</c> and this never fires. A property whose type is a type
+    /// parameter without a <c>struct</c> or <c>unmanaged</c> constraint holds null whenever it is
+    /// closed over a nullable type, so it counts as declared to hold null, issue #238.
     /// </summary>
     private static bool AcceptsNullRuleDoesNot(ITypeSymbol propertyType, ITypeSymbol valueType) =>
-        propertyType.IsReferenceType
-        && valueType.IsReferenceType
-        && propertyType.NullableAnnotation == NullableAnnotation.Annotated
-        && valueType.NullableAnnotation == NullableAnnotation.NotAnnotated;
+        valueType.IsReferenceType
+        && valueType.NullableAnnotation == NullableAnnotation.NotAnnotated
+        && ((propertyType.IsReferenceType && propertyType.NullableAnnotation == NullableAnnotation.Annotated)
+            || (IsPossiblyNullTypeParameter(propertyType) && propertyType.NullableAnnotation != NullableAnnotation.None));
 
     /// <summary>
     /// Whether <paramref name="attr"/>'s generated condition consumes the unwrapped operand

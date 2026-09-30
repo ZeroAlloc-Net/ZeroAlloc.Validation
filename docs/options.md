@@ -60,6 +60,8 @@ The generated method registers:
 1. The validator as `ValidatorFor<T>` (singleton) — so it can also be resolved by other consumers — and every validator it composes: each nested or collection `[Validate]` model's validator as `ValidatorFor<TNested>`, and each `[ValidateWith]` validator by its own type, so an options model with nested sections needs nothing else registered
 2. `ZeroAllocOptionsValidator<T>` as `IValidateOptions<T>` (singleton) — the bridge into the options pipeline
 
+A nested section whose type is a closing of a [generic model](getting-started.md#generic-models), such as `Endpoint<Tls>`, is registered closed, like any other nested model; see [Dependency injection](inject.md#generic-models). A generic options model itself gets no `ValidateWithZeroAlloc()` overload yet; that is tracked in [#238](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/238).
+
 ## How validation works at runtime
 
 `ZeroAllocOptionsValidator<T>` is a thin adapter:

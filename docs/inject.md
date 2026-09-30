@@ -66,6 +66,42 @@ services.TryAddSingleton<MoneyChecker>();                              // a [Val
 
 Before 2.0 the constructor took the nested validator's concrete type, which `AddZeroAllocValidators()` did not register, so resolving a composed validator threw. See [Migrating to v2](./migrating-to-v2.md).
 
+## Generic models
+
+A [generic model](getting-started.md#generic-models) is never registered as declared: nothing
+closed can be registered for `Page<TItem>`, and an open-generic registration of
+`ValidatorFor<>` to `PageValidator<>` cannot work, since the container maps the service's type
+arguments to the implementation's by position. It would also make every other
+`ValidatorFor<X>` lookup throw instead of returning null. Instead, each closing that a
+registered validator takes is registered closed, with every closing its own validator takes:
+
+```csharp
+// for [Validate] class OrderPage { Page<Order> Page; }, with Page<TItem> holding List<Line<TItem>>
+services.TryAddSingleton<ValidatorFor<OrderPage>, OrderPageValidator>();
+services.TryAddSingleton<ValidatorFor<Page<Order>>, PageValidator<Order>>();
+services.TryAddEnumerable(ServiceDescriptor.Singleton<IModelValidator, ValidatorFor<Page<Order>>>(
+    static sp => sp.GetRequiredService<ValidatorFor<Page<Order>>>()));
+services.TryAddSingleton<ValidatorFor<Line<Order>>, LineValidator<Order>>();
+services.TryAddEnumerable(ServiceDescriptor.Singleton<IModelValidator, ValidatorFor<Line<Order>>>(
+    static sp => sp.GetRequiredService<ValidatorFor<Line<Order>>>()));
+```
+
+- A closing is registered once, however many properties hold it, and a closing of a generic
+  model from a referenced assembly is registered the same way.
+- Each closing is also listed as an `IModelValidator`, the non-generic view every
+  `ValidatorFor<T>` implements: its `ModelType` and a `ValidateAsync(object, CancellationToken)`.
+  The entry resolves the `ValidatorFor` registration, so a registration you made first is the
+  one listed, and `TryAddEnumerable` lists each closing once. A non-generic model gets no entry.
+- A closing nothing registers, such as a `Page<Customer>` used only as a root, is not
+  resolved: `GetService<ValidatorFor<Page<Customer>>>()` returns null, which ZeroAlloc.Mediator
+  reads as "no validation". Construct it yourself, `new PageValidator<Customer>(...)`, or
+  register it: `services.TryAddSingleton<ValidatorFor<Page<Customer>>, PageValidator<Customer>>()`.
+- A `[Transient]`, `[Scoped]` or `[Singleton]` attribute on a generic model is copied onto its
+  validator, and ZeroAlloc.Inject then registers the open `PageValidator<>` as itself. Nothing
+  generated resolves a validator by its own type, and under NativeAOT an open-generic
+  resolution of a value-type closing fails, so resolve `ValidatorFor<Page<int>>`, never
+  `PageValidator<int>`.
+
 ## Idempotency
 
 All registrations use `TryAddSingleton`. Calling `AddZeroAllocValidators()` multiple times, or alongside `AddZeroAllocAspNetCoreValidation()` or `.ValidateWithZeroAlloc()`, produces no duplicate registrations.

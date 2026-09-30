@@ -43,6 +43,8 @@ The generated `ZeroAllocValidationActionFilter` implements `IAsyncActionFilter` 
 
 The type-switch is generated at build time — there is no reflection and no dictionary lookup at runtime.
 
+A closing of a [generic model](getting-started.md#generic-models), such as a `Page<Customer>` action argument, has no `case` in the type-switch: the closings an application uses are not all known where the filter is generated. The filter lets such an argument through unvalidated, so validate it in the action for now, with a `ValidatorFor<Page<Customer>>` you register or construct. Dispatch of generic closings through the `IModelValidator` registry is tracked in [#238](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/238). A generic closing nested inside a non-generic argument is validated as usual.
+
 ```mermaid
 sequenceDiagram
     participant Client

@@ -97,6 +97,26 @@ has no implicit conversion to `T` — including a nullable-annotated reference p
 a non-nullable reference `T` — fails the build with [ZV0021](diagnostics.md#zv0021); the
 diagnostic suggests declaring the rule as `ValidationAttribute<T?>` when that is the mismatch.
 
+**A rule on a type parameter.** On a [generic model](getting-started.md#generic-models), a
+custom rule can check a property whose type is one of the model's type parameters when that
+type parameter converts to the rule's `T`: to `object?`, or to an interface it is constrained
+to. `T` to `int` does not convert and reports ZV0021. A type parameter without a `struct` or
+`unmanaged` constraint may be closed over a nullable reference type, so a rule declared never
+to receive null, `ValidationAttribute<object>`, reports ZV0021 there too: declare it
+`ValidationAttribute<object?>`. A value-type closing is boxed on every call, as for any value
+type checked by a reference-type `T`.
+
+```csharp
+[Validate]
+public class Box<T> where T : ICoded
+{
+    [Coded] public T Value { get; set; } = default!;   // CodedAttribute : ValidationAttribute<ICoded?>
+}
+```
+
+`[Must]` works on a type parameter as well: the method takes the value as it is declared,
+`public bool IsKnown(T value)`, with no boxing.
+
 **Collections validate the property itself, not each element.** A custom rule on a
 `List<string>` property receives the whole list as `T`, the same as a built-in rule would; it
 does not iterate elements. Per-element validation is not supported by this mechanism.
