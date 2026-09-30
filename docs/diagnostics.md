@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0032 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0033 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -34,6 +34,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0030](#zv0030) | Error | Validation method call that does not compile |
 | [ZV0031](#zv0031) | Error | Two [Validate] models whose validators would have the same name |
 | [ZV0032](#zv0032) | Warning | Validation call that raises a compiler warning in the generated validator |
+| [ZV0033](#zv0033) | Error | Numeric comparison rule on a type that is not a number |
 
 ---
 
@@ -860,6 +861,48 @@ The fix is to stop validating the obsolete member: move the rule to its replacem
 A rule declared on a base type that is itself `[Validate]` is reported once, by that type, when the call warns there too.
 
 **Fix:** Change your code so the call no longer warns. For a nullability warning, let the method accept what it can receive, for example `IsKnownCode(string? code)`, or guard the rule with `When`, or use `[StopOnFirstFailure]` after `[NotNull]`. For an obsolete method or property, call its replacement. If the warning is expected, suppress ZV0032 where you can see it, with `#pragma warning disable ZV0032` around the attribute or `<NoWarn>$(NoWarn);ZV0032</NoWarn>` in the project. Under `TreatWarningsAsErrors`, ZV0032 is then the only thing left to deal with.
+
+---
+
+## ZV0033
+
+**Severity:** Error
+
+**Title:** Numeric comparison rule on a type that is not a number
+
+**When fired:** `[GreaterThan]`, `[GreaterThanOrEqualTo]`, `[LessThan]`, `[LessThanOrEqualTo]`, `[InclusiveBetween]`, `[ExclusiveBetween]`, and `[Equal]` and `[NotEqual]` with a number compare the value as `System.Convert.ToDouble(value)`, because their bounds are `double` attribute arguments. That conversion works for numbers, including `nint` and `nuint`, for `decimal` and enums, for their nullable forms, and for any other type that implements `IConvertible`, such as `string` and `bool`. It always throws `InvalidCastException` for `DateTime` and `char`, and for any type that does not implement `IConvertible`, such as `DateOnly`, `TimeOnly`, `TimeSpan`, `DateTimeOffset`, `Guid`, `object` or your own struct. Such a rule used to compile and then throw for every value that was present. It is now reported at the attribute and left out of the generated validator:
+
+```csharp
+[Validate]
+public class Booking
+{
+    [GreaterThan(0)]                 // ZV0033 — DateOnly cannot be converted to a number
+    public DateOnly? Arrival { get; set; }
+
+    [InclusiveBetween(1, 14)]        // fine — int
+    public int Nights { get; set; }
+}
+```
+
+> '{Attr}' compares '{Prop}' as a number, but its type '{Type}' cannot be converted to one; use [Must] or a custom ValidationAttribute\<T\> to compare it
+
+For a single-property value object the rule reads the wrapped value, so that value's type is checked. `[Equal("text")]` and `[NotEqual("text")]` compare strings and are not affected.
+
+**Fix:** Compare the value with a `[Must]` predicate, or with a custom rule deriving from `ValidationAttribute<T>`, where the bound can be any type:
+
+```csharp
+[Validate]
+public class Booking
+{
+    [Must(nameof(IsInTheFuture))]
+    public DateOnly? Arrival { get; set; }
+
+    public bool IsInTheFuture(DateOnly? arrival) =>
+        arrival is null || arrival > DateOnly.FromDateTime(DateTime.Today);
+}
+```
+
+See [Custom validation](custom-validation.md) for custom rules.
 
 ---
 

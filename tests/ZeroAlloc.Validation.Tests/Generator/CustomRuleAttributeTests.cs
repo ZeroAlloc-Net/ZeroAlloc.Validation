@@ -550,7 +550,7 @@ public class CustomRuleAttributeTests
             public partial class PriceCommand
             {
                 [Must(nameof(IsPositive))]
-                [GreaterThan(0)]
+                [NotEmpty]
                 public Money Total { get; set; }
 
                 public bool IsPositive(Money value) => value.Amount > 0;
@@ -2279,6 +2279,37 @@ public class CustomRuleAttributeTests
 
     private static string SpanText(Diagnostic diagnostic) =>
         diagnostic.Location.SourceTree!.GetText().ToString(diagnostic.Location.SourceSpan);
+
+    [Fact]
+    public void Rule_on_a_validated_base_type_is_reported_once_by_the_base_validator()
+    {
+        // Both validators walk Booking's properties; only Booking's reports its usages.
+        var source = $$"""
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+
+            {{NotBlankDeclaration}}
+
+            public sealed class LegacyAttribute : ValidationAttribute { }
+
+            [Validate]
+            public class Booking
+            {
+                [NotBlank] public int Nights { get; init; }
+                [Legacy] public string Code { get; init; } = "";
+            }
+
+            [Validate]
+            public class GroupBooking : Booking { }
+            """;
+
+        var (result, output) = RunGenerator(source);
+
+        Assert.Empty(CompileErrors(output));
+        Assert.Equal(1, CountDiagnostics(result, "ZV0020"));
+        Assert.Equal(1, CountDiagnostics(result, "ZV0021"));
+        Assert.DoesNotContain("__Rule_Nights_", GetGeneratedSource(result, "GroupBookingValidator.g.cs"), StringComparison.Ordinal);
+    }
 
     private static int CountDiagnostics(GeneratorDriverRunResult result, string id)
     {

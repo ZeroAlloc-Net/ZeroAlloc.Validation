@@ -30,6 +30,7 @@ public class NullableComparisonModel
     [Equal(5)] public int? EqualInt { get; set; }
     [NotEqual(0)] public int? NotEqualInt { get; set; }
     [Equal("expected")] public string? EqualString { get; set; }
+    [GreaterThan(0)] public string? GreaterThanNumericString { get; set; }
     [PrecisionScale(5, 2)] public decimal? PrecisionScaleDecimal { get; set; }
     [IsEnumName(typeof(TrafficLight))] public string? EnumName { get; set; }
 }

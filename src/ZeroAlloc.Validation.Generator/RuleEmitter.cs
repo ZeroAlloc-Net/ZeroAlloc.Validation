@@ -120,10 +120,12 @@ internal static class RuleEmitter
     /// builds its rule indices, and so its <c>__Rule_{Prop}_{i}</c> field names, from this one
     /// filtered list, so both paths name the same fields. A custom rule the validator cannot emit
     /// is left out and reported: ZV0021 for a property type with no implicit conversion to the
-    /// rule's <c>T</c>, ZV0023 for an attribute the validator cannot reach. A
+    /// rule's <c>T</c>, ZV0023 for an attribute the validator cannot reach. A numeric comparison
+    /// rule on a type <c>Convert.ToDouble</c> cannot convert is left out and reported as ZV0033. A
     /// <c>ValidationAttribute</c> subclass that is neither a built-in nor a custom rule is
     /// reported as ZV0020. Diagnostics are reported only when <paramref name="ctx"/> is set, which
-    /// only the sync visit does, so each usage reports once.
+    /// only the sync visit does, and a usage declared on a <c>[Validate]</c> base type only by
+    /// that type's validator, so each usage reports once.
     /// </summary>
     private static List<(IPropertySymbol Property, List<AttributeData> Rules)> CollectPropertyRules(
         INamedTypeSymbol classSymbol,
@@ -134,16 +136,27 @@ internal static class RuleEmitter
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IPropertySymbol prop) continue;
+
+            // A [Validate] base type's own validator runs the same checks over this property, so
+            // it reports them there, and the rule is still left out here.
+            var report = ctx is not null
+                && !MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, prop.ContainingType)
+                    ? ctx
+                    : null;
+
             var propRules = new List<AttributeData>();
             foreach (var attr in prop.GetAttributes())
             {
                 if (!IsRuleAttribute(attr))
                 {
-                    ReportZV0020IfApplicable(ctx, prop, attr);
+                    ReportZV0020IfApplicable(report, prop, attr);
                     continue;
                 }
 
-                if (CustomRules.IsCustomRule(attr) && !CanEmitCustomRule(compilation, prop, attr, ctx))
+                if (CustomRules.IsCustomRule(attr) && !CanEmitCustomRule(compilation, prop, attr, report))
+                    continue;
+
+                if (!CanCompareAsNumber(compilation, prop, attr, report))
                     continue;
 
                 if (CallsOnlyReachableMethods(compilation, classSymbol, prop, attr))
@@ -1506,12 +1519,13 @@ internal static class RuleEmitter
     /// <c>[IsInEnum]</c> follow, and FluentValidation's comparison validators pass on null too.
     /// Passing the <c>Nullable&lt;T&gt;</c> itself picked <c>Convert.ToDouble(object)</c>, which
     /// boxed on every call and read null as 0, so <c>[GreaterThan(0)]</c> rejected a missing value
-    /// while <c>[LessThan(5)]</c> accepted it, #276.
+    /// while <c>[LessThan(5)]</c> accepted it, #276. A reference type the conversion accepts, such
+    /// as <c>string</c>, is guarded the same way: <c>Convert.ToDouble((string)null)</c> is 0 too.
     /// </summary>
     private static string CompareValue(string access, ITypeSymbol? valueType, Func<string, string> comparison) =>
         valueType?.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
             ? $"{access}.HasValue && ({comparison($"{access}.Value")})"
-            : comparison(access);
+            : GuardAgainstNull(access, valueType, comparison(access));
 
     private static string Number(AttributeData attr, int index) =>
         GetDoubleArg(attr, index).ToString(CultureInfo.InvariantCulture);
@@ -1963,6 +1977,97 @@ internal static class RuleEmitter
         category: "ZeroAlloc.Validation",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor ZV0033 = new DiagnosticDescriptor(
+        id: "ZV0033",
+        title: "Numeric comparison rule on a type that is not a number",
+        messageFormat: "'{0}' compares '{1}' as a number, but its type '{2}' cannot be converted to one; use [Must] or a custom ValidationAttribute<T> to compare it",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description:
+            "GreaterThan, GreaterThanOrEqualTo, LessThan, LessThanOrEqualTo, InclusiveBetween, "
+            + "ExclusiveBetween, and Equal and NotEqual with a number compare the value as "
+            + "System.Convert.ToDouble(value). That works for numbers, enums and other IConvertible "
+            + "types such as string and bool, but always throws InvalidCastException for DateTime, "
+            + "char, and any type that does not implement IConvertible, such as DateOnly, TimeOnly, "
+            + "TimeSpan, DateTimeOffset or Guid. The rule is left out of the generated validator. "
+            + "Compare such a value with [Must] or a custom ValidationAttribute<T>.");
+
+    /// <summary>
+    /// Whether a rule that is not a numeric comparison, or one over a type
+    /// <c>Convert.ToDouble</c> can convert, can be emitted. A numeric comparison over any other
+    /// type compiled and then threw InvalidCastException for every value, #279, so it is left
+    /// out and, when <paramref name="ctx"/> is set, reported as ZV0033 at the attribute.
+    /// </summary>
+    private static bool CanCompareAsNumber(Compilation compilation, IPropertySymbol prop, AttributeData attr, DiagnosticSink? ctx)
+    {
+        if (!IsNumericComparison(attr)) return true;
+
+        // The rule reads the unwrapped member of a single-property value object.
+        var valueType = ValueTypeOf(prop.Type) ?? prop.Type;
+        if (ConvertsToDouble(compilation, valueType)) return true;
+
+        ctx?.Report(ZV0033, AttributeLocation(attr, prop), attr.AttributeClass!.Name, prop.Name, valueType.ToDisplayString());
+        return false;
+    }
+
+    /// <summary>
+    /// The rules <see cref="BuildCondition"/> emits as <c>System.Convert.ToDouble(value)</c>.
+    /// <c>[Equal]</c> and <c>[NotEqual]</c> are numeric only with a number argument; with a string
+    /// they compare strings. One whose argument did not bind is already a compiler error.
+    /// </summary>
+    private static bool IsNumericComparison(AttributeData attr) =>
+        attr.AttributeClass?.ToDisplayString() switch
+        {
+            GreaterThanFqn or GreaterThanOrEqualToFqn or LessThanFqn or LessThanOrEqualToFqn
+                or InclusiveBetweenFqn or ExclusiveBetweenFqn => true,
+            EqualFqn or NotEqualFqn => attr.ConstructorArguments.Length > 0 && !IsStringArg(attr, 0),
+            _ => false,
+        };
+
+    /// <summary>
+    /// Whether <c>System.Convert.ToDouble</c> can convert a value of <paramref name="type"/>, or
+    /// of the type a <c>Nullable&lt;T&gt;</c> wraps, which is what the rule compares. Numbers,
+    /// including <c>nint</c> and <c>nuint</c>, which bind to the <c>long</c> and <c>ulong</c>
+    /// overloads, enums and any other <c>IConvertible</c> type convert. <c>DateTime</c> and
+    /// <c>char</c> implement <c>IConvertible</c> but always throw. Every other type binds to
+    /// <c>Convert.ToDouble(object)</c>, which throws for a value that is not <c>IConvertible</c>.
+    /// An unresolved type is already a compiler error, so it is not reported again.
+    /// </summary>
+    private static bool ConvertsToDouble(Compilation compilation, ITypeSymbol type)
+    {
+        if (type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable)
+            type = nullable.TypeArguments[0];
+
+        switch (type.SpecialType)
+        {
+            case SpecialType.System_SByte:
+            case SpecialType.System_Byte:
+            case SpecialType.System_Int16:
+            case SpecialType.System_UInt16:
+            case SpecialType.System_Int32:
+            case SpecialType.System_UInt32:
+            case SpecialType.System_Int64:
+            case SpecialType.System_UInt64:
+            case SpecialType.System_Single:
+            case SpecialType.System_Double:
+            case SpecialType.System_Decimal:
+            case SpecialType.System_IntPtr:
+            case SpecialType.System_UIntPtr:
+                return true;
+            case SpecialType.System_Char:
+            case SpecialType.System_DateTime:
+                return false;
+        }
+
+        if (type.TypeKind is TypeKind.Enum or TypeKind.Error) return true;
+
+        var convertible = compilation.GetTypeByMetadataName("System.IConvertible");
+        return convertible is not null
+            && (SymbolEqualityComparer.Default.Equals(type, convertible)
+                || type.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, convertible)));
+    }
 
     /// <summary>
     /// Fires ZV0020 for an attribute deriving from <c>ValidationAttribute</c> that is neither a

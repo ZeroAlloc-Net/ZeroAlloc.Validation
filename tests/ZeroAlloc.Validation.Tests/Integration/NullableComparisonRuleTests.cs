@@ -34,6 +34,7 @@ public class NullableComparisonRuleTests
         nameof(NullableComparisonModel.EqualInt),
         nameof(NullableComparisonModel.NotEqualInt),
         nameof(NullableComparisonModel.EqualString),
+        nameof(NullableComparisonModel.GreaterThanNumericString),
         nameof(NullableComparisonModel.PrecisionScaleDecimal),
         nameof(NullableComparisonModel.EnumName),
     };
@@ -122,6 +123,7 @@ public class NullableComparisonRuleTests
         [nameof(NullableComparisonModel.EqualInt)] = (m => m.EqualInt = 5, m => m.EqualInt = 0),
         [nameof(NullableComparisonModel.NotEqualInt)] = (m => m.NotEqualInt = 1, m => m.NotEqualInt = 0),
         [nameof(NullableComparisonModel.EqualString)] = (m => m.EqualString = "expected", m => m.EqualString = "other"),
+        [nameof(NullableComparisonModel.GreaterThanNumericString)] = (m => m.GreaterThanNumericString = "1", m => m.GreaterThanNumericString = "0"),
         [nameof(NullableComparisonModel.PrecisionScaleDecimal)] = (m => m.PrecisionScaleDecimal = 123.45m, m => m.PrecisionScaleDecimal = 1.999m),
         [nameof(NullableComparisonModel.EnumName)] = (m => m.EnumName = "Green", m => m.EnumName = "Blue"),
     };

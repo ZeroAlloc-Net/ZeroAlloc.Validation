@@ -24,7 +24,6 @@ public class NullableComparisonEmissionTests
         [
             "int?", "long?", "short?", "byte?", "sbyte?", "ushort?", "uint?", "ulong?",
             "float?", "double?", "decimal?", "Color?",
-            "System.DateTime?", "System.DateOnly?", "System.TimeOnly?",
         ];
 
         var data = new TheoryData<string, string>();
