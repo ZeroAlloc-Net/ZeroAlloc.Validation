@@ -572,8 +572,7 @@ internal static class RuleEmitter
             var prefix = (stopMode && emitted > 0) ? "        else if" : "        if";
             var ruleMessage = FindCustomRuleMessage(attr);
             var message = ResolveRuleMessage(attr, fqn, displayName, ruleMessage);
-            var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, ruleIndex: i, fields: fields);
+            var condition = BuildCondition(fqn, attr, propAccess, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, ruleIndex: i, fields: fields);
             var propertyValueExpr = message.HasPropertyValue ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
@@ -871,8 +870,7 @@ internal static class RuleEmitter
             var prefix = (stopMode && emitted > 0) ? "        else if" : "        if";
             var ruleMessage = FindCustomRuleMessage(attr);
             var message = ResolveRuleMessage(attr, fqn, displayName, ruleMessage);
-            var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
-            var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, ruleIndex: i, fields: fields);
+            var condition = BuildCondition(fqn, attr, propAccess, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, ruleIndex: i, fields: fields);
             var propertyValueExpr = message.HasPropertyValue ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
             var unlessMethod = GetUnless(attr);
@@ -1523,7 +1521,7 @@ internal static class RuleEmitter
         return attr.ConstructorArguments[index].Type?.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String;
     }
 
-    private static string BuildCondition(string fqn, AttributeData attr, string access, string propTypeFullName = "", string modelParamName = "instance", ITypeSymbol? propType = null, string? rawAccess = null, string propName = "", int ruleIndex = 0, GeneratedFields? fields = null)
+    private static string BuildCondition(string fqn, AttributeData attr, string access, string modelParamName = "instance", ITypeSymbol? propType = null, string? rawAccess = null, string propName = "", int ruleIndex = 0, GeneratedFields? fields = null)
     {
         // Predicate-style validators (e.g. [Must]) pass the property value as an argument
         // to a user-defined method whose parameter type matches the declared property type.
@@ -1578,7 +1576,7 @@ internal static class RuleEmitter
             NotEqualFqn              => IsStringArg(attr, 0)
                 ? $"{access} == \"{EscapeString(GetStringArg(attr, 0))}\""
                 : CompareValue(access, valueType, v => $"{toDouble(v)} == {Number(attr, 0)}"),
-            IsInEnumFqn              => BuildIsInEnumCondition(access, propTypeFullName, propType, valueType),
+            IsInEnumFqn              => BuildIsInEnumCondition(access, valueType),
             IsEnumNameFqn            => GuardAgainstNull(access, valueType, $"!global::System.Enum.IsDefined(typeof({GetTypeArgFullName(attr, 0)}), {access})"),
             PrecisionScaleFqn        => CompareValue(access, valueType, v => $"global::ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale({v}, {GetIntArg(attr, 0)}, {GetIntArg(attr, 1)})"),
             MustFqn                  => GeneratedCalls.MustCondition(modelParamName, GetStringArg(attr, 0), rawForPredicate),
@@ -1638,15 +1636,6 @@ internal static class RuleEmitter
             MustFqn                  => InvalidFallbackMessage.Replace("{PropertyName}", propName),
             _                        => InvalidFallbackMessage.Replace("{PropertyName}", propName)
         };
-
-    private static string GetNullableUnwrappedFullTypeName(IPropertySymbol prop)
-    {
-        var type = prop.Type;
-        if (type is INamedTypeSymbol named && named.IsGenericType
-            && string.Equals(named.OriginalDefinition.ToDisplayString(), "System.Nullable<T>", StringComparison.Ordinal))
-            type = named.TypeArguments[0];
-        return type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-    }
 
     /// <summary>
     /// Guards a comparison that dereferences the value, so a null never reaches it. A length rule
@@ -1719,23 +1708,29 @@ internal static class RuleEmitter
     /// checks the underlying value and says nothing about null — that is <c>[NotNull]</c>'s job,
     /// the same split the length rules follow. Passing the <c>Nullable&lt;T&gt;</c> itself to
     /// <c>Enum.IsDefined</c> tripped CS8604, and a null value threw ArgumentNullException.
+    /// The enum is <paramref name="valueType"/>, the type of the value <paramref name="access"/>
+    /// reads: for a single-property <c>[ValueObject]</c> the unwrapped member, not the wrapper,
+    /// which <c>Enum.IsDefined</c> rejected with ArgumentException on every call, #300.
     /// </summary>
-    private static string BuildIsInEnumCondition(string access, string enumTypeFullName, ITypeSymbol? propType, ITypeSymbol? valueType)
+    private static string BuildIsInEnumCondition(string access, ITypeSymbol? valueType)
     {
+        var enumType = Operand(valueType);
+        var isNullable = valueType?.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T;
+
         // A type parameter constrained to struct, Enum, which HasTypeParameterForm requires, is
-        // checked with the generic overload, compiled per closing without boxing, issue #238. It
-        // is the value the rule reads, access, so a generic value object's member is checked.
-        if (Operand(valueType) is ITypeParameterSymbol parameter)
+        // checked with the generic overload, compiled per closing without boxing, issue #238.
+        if (enumType is ITypeParameterSymbol parameter)
         {
             var isDefined = $"global::System.Enum.IsDefined<{parameter.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>";
-            return valueType!.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+            return isNullable
                 ? $"{access}.HasValue && !{isDefined}({access}.Value)"
                 : $"!{isDefined}({access})";
         }
 
-        return propType?.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
-            ? $"{access}.HasValue && !global::System.Enum.IsDefined(typeof({enumTypeFullName}), {access}.Value)"
-            : $"!global::System.Enum.IsDefined(typeof({enumTypeFullName}), {access})";
+        var typeOf = $"typeof({enumType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})";
+        return isNullable
+            ? $"{access}.HasValue && !global::System.Enum.IsDefined({typeOf}, {access}.Value)"
+            : $"!global::System.Enum.IsDefined({typeOf}, {access})";
     }
 
     /// <summary>
