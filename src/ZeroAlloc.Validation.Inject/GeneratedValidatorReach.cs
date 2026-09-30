@@ -22,9 +22,10 @@ namespace ZeroAlloc.Validation.Generator.Shared;
 /// <para>
 /// A generic model, or one declared inside a generic type, gets a generic validator that
 /// redeclares the type parameters of the model and of every containing type, with their declared
-/// names, issue #238. That fails for one shape only, see <see cref="UnsupportedTypeParameter"/>:
-/// a type parameter whose name repeats along the containing chain, <c>Outer&lt;T&gt;.Inner&lt;T&gt;</c>,
-/// or one named like the validator. The companion generators never list a generic model as a
+/// names, issue #238. That fails only for a type parameter the validator cannot declare, see
+/// <see cref="UnsupportedTypeParameter(INamedTypeSymbol, out TypeParameterClash)"/>: one whose name
+/// repeats along the containing chain, <c>Outer&lt;T&gt;.Inner&lt;T&gt;</c>, or one named like the
+/// validator or like one of its members. The companion generators never list a generic model as a
 /// root of their registrations, <see cref="IsGeneric"/>: nothing closed can be registered for it,
 /// and its closings reach the container through the models that compose them.
 /// </para>
@@ -142,14 +143,31 @@ internal static class GeneratedValidatorReach
 
     /// <summary>
     /// The type parameter of <paramref name="model"/> or of a type containing it that the
-    /// generated validator cannot redeclare, or <see langword="null"/> when there is none: one
-    /// whose name a type parameter further out along the containing chain has too, the CS0693
-    /// case <c>Outer&lt;T&gt;.Inner&lt;T&gt;</c>, which the validator's one type parameter list
-    /// would declare twice, CS0692, or one named like the validator itself, CS0694. ZV0029
-    /// reports it.
+    /// generated validator cannot redeclare, or <see langword="null"/> when there is none. ZV0029
+    /// reports it. See the overload that also says why.
     /// </summary>
-    public static ITypeParameterSymbol? UnsupportedTypeParameter(INamedTypeSymbol model)
+    public static ITypeParameterSymbol? UnsupportedTypeParameter(INamedTypeSymbol model) =>
+        UnsupportedTypeParameter(model, out _);
+
+    /// <summary>
+    /// The type parameter of <paramref name="model"/> or of a type containing it that the
+    /// generated validator cannot redeclare, or <see langword="null"/> when there is none, and in
+    /// <paramref name="clash"/> why:
+    /// <list type="bullet">
+    /// <item><see cref="TypeParameterClash.Repeated"/>: a type parameter further out along the
+    /// containing chain has the same name, the CS0693 case <c>Outer&lt;T&gt;.Inner&lt;T&gt;</c>,
+    /// which the validator's one type parameter list would declare twice, CS0692.</item>
+    /// <item><see cref="TypeParameterClash.ValidatorName"/>: it is named like the validator
+    /// itself, CS0694.</item>
+    /// <item><see cref="TypeParameterClash.MemberName"/>: it is named like a member of the
+    /// validator, with which it shares a declaration space, CS0102, issue #299. See
+    /// <see cref="IsValidatorMemberName"/>.</item>
+    /// </list>
+    /// ZV0029 reports it.
+    /// </summary>
+    public static ITypeParameterSymbol? UnsupportedTypeParameter(INamedTypeSymbol model, out TypeParameterClash clash)
     {
+        clash = TypeParameterClash.None;
         model = model.OriginalDefinition;
         if (!IsGeneric(model))
             return null;
@@ -164,12 +182,36 @@ internal static class GeneratedValidatorReach
         {
             foreach (var parameter in chain[i].TypeParameters)
             {
-                if (!names.Add(parameter.Name) || string.Equals(parameter.Name, validatorName, StringComparison.Ordinal))
+                clash = !names.Add(parameter.Name) ? TypeParameterClash.Repeated
+                    : string.Equals(parameter.Name, validatorName, StringComparison.Ordinal) ? TypeParameterClash.ValidatorName
+                    : IsValidatorMemberName(parameter.Name) ? TypeParameterClash.MemberName
+                    : TypeParameterClash.None;
+                if (clash != TypeParameterClash.None)
                     return parameter;
             }
         }
         return null;
     }
+
+    /// <summary>
+    /// Whether a generated validator declares, or may declare, a member named
+    /// <paramref name="name"/>: <c>Validate</c> and <c>ValidateAsync</c>; a name starting with two
+    /// underscores, the prefix of its private members such as <c>__ValidateAsyncCore</c>,
+    /// <c>__Rule_Name_0</c>, <c>__Regex_Name</c> and the <c>__validateNext</c> delegate caches of its
+    /// behavior chains, which the C# specification reserves for the implementation anyway; or <c>_</c> + a name + <c>Validator</c>, the form of the field that
+    /// holds a nested model's validator, <c>_addressValidator</c>. Which of these members a
+    /// validator declares depends on the model's rules and properties, so every name of these
+    /// forms is reserved, and a model does not start failing when it gains a rule or a property.
+    /// A parameter or local of a generated method may share a type parameter's name, so those
+    /// names are not reserved.
+    /// </summary>
+    private static bool IsValidatorMemberName(string name) =>
+        string.Equals(name, "Validate", StringComparison.Ordinal)
+        || string.Equals(name, "ValidateAsync", StringComparison.Ordinal)
+        || name.StartsWith("__", StringComparison.Ordinal)
+        || (name.Length > "_Validator".Length
+            && name[0] == '_'
+            && name.EndsWith("Validator", StringComparison.Ordinal));
 
     /// <summary>Whether the generated validator can refer to <paramref name="model"/>.</summary>
     public static bool CanReach(INamedTypeSymbol model, Compilation compilation)

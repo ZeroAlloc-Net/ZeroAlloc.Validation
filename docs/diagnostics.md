@@ -648,7 +648,15 @@ Leaving this to the final compilation too would fix the rare case where a second
 
 **Title:** [Validate] on a generic type whose type parameters the validator cannot declare
 
-**When fired:** The validator of a generic model, or of a model declared inside a generic type, is generic over the type parameters of the model and of every type containing it, outermost first, with their declared names: `Page<TItem>` gets `PageValidator<TItem>`, and `Envelope<T>.Header` gets `Envelope_HeaderValidator<T>`. See [Generic models](getting-started.md#generic-models). One type parameter list cannot declare the same name twice, so ZV0029 is reported at the `[Validate]` attribute of a model whose type parameters repeat a name along the containing chain, which the compiler already warns about with CS0693, or one named like the validator itself:
+**When fired:** The validator of a generic model, or of a model declared inside a generic type, is generic over the type parameters of the model and of every type containing it, outermost first, with their declared names: `Page<TItem>` gets `PageValidator<TItem>`, and `Envelope<T>.Header` gets `Envelope_HeaderValidator<T>`. See [Generic models](getting-started.md#generic-models). One type parameter list cannot declare the same name twice, so ZV0029 is reported at the `[Validate]` attribute of a model whose type parameters repeat a name along the containing chain, which the compiler already warns about with CS0693, or one named like the validator itself.
+
+A type parameter also shares the validator's declaration space, so it cannot have the name of one of the validator's members, CS0102. ZV0029 reports a type parameter with a name the validator declares or reserves for its members:
+
+- `Validate` and `ValidateAsync`;
+- a name that starts with two underscores, the prefix of the validator's private members such as `__ValidateAsyncCore`, `__Rule_Name_0`, `__Regex_Name` and the `__validateNext` delegate caches of its behavior chains. The C# specification reserves identifiers with two consecutive underscores for the implementation anyway;
+- an underscore, a name and `Validator`, such as `_addressValidator`, the form of the field that holds a nested model's validator.
+
+Which of these members a validator declares depends on the model's rules and properties, so every name of these forms is reported, and a model does not start failing when it gains an asynchronous rule or a nested property. A name the validator only uses for a method parameter or a local, such as `instance` or `ct`, is fine.
 
 ```csharp
 public class Envelope<T>
@@ -662,9 +670,14 @@ public class Envelope<T>
 
 [Validate]                            // ZV0029 — the validator is BoxValidator
 public class Box<BoxValidator> { }
+
+[Validate]                            // ZV0029 — the validator declares Validate
+public class Crate<Validate> { }
 ```
 
-> '{0}' declares type parameter '{1}' more than once along its containing types, so no validator is generated; rename one of them
+> '{0}' declares type parameter '{1}' {2}, so no validator is generated; rename it
+
+`{2}` says why: `more than once along its containing types`, `with the name of its generated validator 'BoxValidator'`, or `with a name the generated validator declares or reserves for its members`. Before [#299](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/299), a type parameter named like a member of the validator failed the build with CS0102 inside generated code, and a type parameter named like the validator got the message for a repeated name.
 
 No validator is generated for the type, and a closed form such as `Envelope<int>.Part<string>` has none either. `AddZeroAllocValidators()`, `ValidateWithZeroAlloc()` and the ASP.NET Core filter leave it out, and a property of that type is not validated as a nested model unless it names a hand-written validator with `[ValidateWith]`. The other diagnostics are not reported for the type's members, since there is no validator for them to describe. A non-generic `[Validate]` model that derives from the type still gets a validator: it validates the inherited properties and reports their diagnostics itself.
 

@@ -127,7 +127,9 @@ var validator = new PageValidator<Product>(new LineValidator<Product>());
   no `MakeGenericType`.
 
 A type parameter whose name repeats along the containing chain, `Outer<T>.Inner<T>`, cannot be
-declared twice by the validator and fails the build with [ZV0029](diagnostics.md#zv0029).
+declared twice by the validator and fails the build with [ZV0029](diagnostics.md#zv0029). So
+does one named like the validator, or like a member it declares or reserves, such as
+`Box<Validate>`.
 
 > **Target types.** `[Validate]` works on `class`, `record`, `readonly struct`, and
 > `readonly record struct`. Decorating a non-readonly `struct` or `record struct`
