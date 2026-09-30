@@ -251,9 +251,9 @@ and thread-safe. An attribute cannot take constructor services, so reach what th
 through state the rule class owns.
 
 **Pipeline behaviors.** Asynchronous pipeline behaviors wrap the asynchronous validation.
-Synchronous behaviors are not applied, since `Validate` only throws. As for any model, a behavior
-on a model with nested validators does not compile yet,
-[#294](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/294).
+Synchronous behaviors are not applied, since `Validate` only throws. On a model with nested
+validators, the behaviors cost an allocation per call; see
+[Pipeline behaviors](./performance.md#pipeline-behaviors).
 
 ---
 

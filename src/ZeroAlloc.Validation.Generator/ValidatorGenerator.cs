@@ -564,15 +564,18 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // run guarantees each field appears exactly once at class scope
         // (no CS0102 duplicate-member errors when both paths reference the same prop).
         var fields = new GeneratedFields();
+        // The body reads the nested validators through instance fields; every other field it
+        // uses is static. A pipeline chain around such a body cannot use static lambdas, #294.
+        var readsInstanceState = nestedFields.Count > 0;
         if (RuleEmitter.RequiresAsync(classSymbol, compilation))
         {
             EmitThrowingValidateMethod(sb, classSymbol, modelName);
-            EmitAsyncValidation(sb, classSymbol, compilation, modelName, asyncBehaviors, fields, readsInstanceState: nestedFields.Count > 0);
+            EmitAsyncValidation(sb, classSymbol, compilation, modelName, asyncBehaviors, fields, readsInstanceState);
         }
         else
         {
-            EmitValidateMethod(sb, classSymbol, compilation, modelName, syncBehaviors, fields);
-            EmitValidateAsyncOverride(sb, classSymbol, compilation, modelName, asyncBehaviors, fields);
+            EmitValidateMethod(sb, classSymbol, compilation, modelName, syncBehaviors, fields, readsInstanceState);
+            EmitValidateAsyncOverride(sb, classSymbol, compilation, modelName, asyncBehaviors, fields, readsInstanceState);
         }
 
         fields.AppendDeclarations(sb);
@@ -582,13 +585,19 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         return (GeneratedValidatorNames.HintName(classSymbol), sb.ToString());
     }
 
+    /// <summary>
+    /// The synchronous <c>Validate</c>, with the body inlined into the chain of the model's
+    /// synchronous pipeline behaviors when it has any. The chain's lambdas are <c>static</c>
+    /// unless the body reads the nested validators, <paramref name="readsInstanceState"/>, #294.
+    /// </summary>
     private static void EmitValidateMethod(
         System.Text.StringBuilder sb,
         INamedTypeSymbol classSymbol,
         Compilation compilation,
         string modelName,
         List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> syncBehaviors,
-        GeneratedFields fields)
+        GeneratedFields fields,
+        bool readsInstanceState)
     {
         sb.AppendLine("    /// <inheritdoc/>");
         sb.AppendLine($"    public override global::ZeroAlloc.Validation.ValidationResult Validate({modelName} instance)");
@@ -605,6 +614,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 TypeArguments           = new[] { fullyQualifiedModel },
                 OuterParameterNames     = new[] { "instance" },
                 LambdaParameterPrefixes = new[] { "r" },
+                EmitStaticLambdas       = !readsInstanceState,
                 InnermostBodyFactory    = depth =>
                 {
                     var paramName = depth == 0 ? "instance" : $"r{depth}";
@@ -639,10 +649,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// The asynchronous validation of a model that must validate asynchronously: a private
     /// <c>async</c> method holding the body, which awaits each asynchronous rule and nested
     /// validator in declaration order, and the <c>ValidateAsync</c> override calling it, through
-    /// the model's asynchronous pipeline behaviors when it has any. The behaviors' chain calls the
-    /// body from <c>static</c> lambdas, so the body is a static method unless it reads the nested
-    /// validators, <paramref name="readsInstanceState"/>, which the synchronous body inlined into
-    /// such a chain cannot do either, issue #294.
+    /// the model's asynchronous pipeline behaviors when it has any. The body is a static method,
+    /// called from <c>static</c> lambdas, unless it reads the nested validators,
+    /// <paramref name="readsInstanceState"/>; then both are instance-bound, issue #294.
     /// </summary>
     private static void EmitAsyncValidation(
         System.Text.StringBuilder sb,
@@ -668,6 +677,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 TypeArguments           = new[] { classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) },
                 OuterParameterNames     = new[] { "instance", ct },
                 LambdaParameterPrefixes = new[] { "r", "c" },
+                EmitStaticLambdas       = !readsInstanceState,
                 InnermostBodyFactory    = depth => depth == 0
                     ? $"{{\n            return {core}(instance, {ct});\n        }}"
                     : $"{{\n            return {core}(r{depth}, c{depth});\n        }}",
@@ -687,13 +697,19 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         sb.AppendLine("    }");
     }
 
+    /// <summary>
+    /// The <c>ValidateAsync</c> override of a synchronous model with asynchronous pipeline
+    /// behaviors, with the body inlined into their chain. The chain's lambdas are <c>static</c>
+    /// unless the body reads the nested validators, <paramref name="readsInstanceState"/>, #294.
+    /// </summary>
     private static void EmitValidateAsyncOverride(
         System.Text.StringBuilder sb,
         INamedTypeSymbol classSymbol,
         Compilation compilation,
         string modelName,
         List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> asyncBehaviors,
-        GeneratedFields fields)
+        GeneratedFields fields,
+        bool readsInstanceState)
     {
         if (asyncBehaviors.Count == 0)
             return;
@@ -704,6 +720,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             TypeArguments           = new[] { fullyQualifiedModel },
             OuterParameterNames     = new[] { "instance", "ct" },
             LambdaParameterPrefixes = new[] { "r", "c" },
+            EmitStaticLambdas       = !readsInstanceState,
             InnermostBodyFactory    = depth =>
             {
                 var paramName = depth == 0 ? "instance" : $"r{depth}";
