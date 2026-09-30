@@ -710,11 +710,18 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         return lastSeparator >= 0 ? name.Substring(lastSeparator + 1) : name;
     }
 
+    /// <summary>
+    /// The diagnostics about <paramref name="classSymbol"/>'s properties and methods. A usage
+    /// declared on a <c>[Validate]</c> base type is left to that type's own generation, as
+    /// <see cref="MethodReachability.IsReportedByBaseValidator"/> decides, so a usage walked by
+    /// several validators is reported once.
+    /// </summary>
     private static void ReportNestedDiagnostics(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IPropertySymbol prop) continue;
+            if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, prop.ContainingType)) continue;
 
             var validateWithAttr = FindValidateWithAttribute(prop);
             if (validateWithAttr is null) continue;
@@ -921,13 +928,15 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// Rule attributes are <c>AllowMultiple</c>, which they have to be — <c>[Must(nameof(A))]</c>
     /// alongside <c>[Must(nameof(B))]</c> is meaningful, and so is the same check with different
     /// arguments. Repeating one with *identical* arguments is not: the rule runs twice and the
-    /// same failure is reported twice. Only that exact-duplicate case is reported.
+    /// same failure is reported twice. Only that exact-duplicate case is reported, and on a
+    /// <c>[Validate]</c> base type only by that type's own generation, so it is reported once.
     /// </summary>
     private static void ReportDuplicateRuleAttributeDiagnostics(DiagnosticSink ctx, INamedTypeSymbol classSymbol, Compilation compilation)
     {
         foreach (var member in MemberWalker.GetMembersIncludingBase(classSymbol, compilation))
         {
             if (member is not IPropertySymbol prop) continue;
+            if (MethodReachability.IsReportedByBaseValidator(compilation, classSymbol, prop.ContainingType)) continue;
 
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (var attr in prop.GetAttributes())

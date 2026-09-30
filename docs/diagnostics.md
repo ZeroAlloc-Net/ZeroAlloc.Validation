@@ -36,6 +36,8 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0032](#zv0032) | Warning | Validation call that raises a compiler warning in the generated validator |
 | [ZV0033](#zv0033) | Error | Numeric comparison rule on a type that is not a number |
 
+A rule or attribute declared on a base type is checked by every `[Validate]` model that inherits it. When that base type is itself `[Validate]`, a diagnostic about the usage is reported once, by the base type, not again by each derived model. If that base type sets `IncludeBaseProperties = false`, it does not see the types above it, so the derived model reports their usages.
+
 ---
 
 ## ZV0011
@@ -376,7 +378,7 @@ public class Article
 
 `{minWords}` — the constructor parameter's own name — would have resolved. `{MinWords}` — the property — resolves only when the usage writes it as a named argument, and a get-only property such as this one cannot be written there: matching is case-sensitive, and the generator never reads a property's runtime value.
 
-The warning is reported at the attribute usage, `[MinWords(3)]`, so a property with several rules points at the one whose message has the unknown placeholder.
+The warning is reported at the attribute usage, `[MinWords(3)]`, so a property with several rules points at the one whose message has the unknown placeholder. It is reported even when the rule is left out because its `When`, `Unless` or `[Must]` method cannot be called, [ZV0017](#zv0017), [ZV0028](#zv0028) or [ZV0030](#zv0030), so fixing the method does not reveal a second warning. [ZV0016](#zv0016) is reported the same way.
 
 > Placeholder '{0}' in the message for '{1}' on '{2}' does not match any argument; it is emitted literally
 
