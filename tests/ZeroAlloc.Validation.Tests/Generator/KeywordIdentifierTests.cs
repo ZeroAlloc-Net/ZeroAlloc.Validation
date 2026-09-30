@@ -179,7 +179,8 @@ public class KeywordIdentifierTests
             KeywordNamespaceSource,
             new global::ZeroAlloc.Validation.AspNetCore.Generator.AspNetCoreFilterEmitter());
 
-        Assert.Equal(2, generated.Count);
+        // The filter, its dispatch of generic closings, #238, and the registration extension.
+        Assert.Equal(3, generated.Count);
         Assert.Empty(SyntaxErrors(generated));
         Assert.Contains(generated, s => s.Contains(
             "TryAddSingleton<global::ZeroAlloc.Validation.ValidatorFor<global::@class.@event.@record>, global::@class.@event.recordValidator>",

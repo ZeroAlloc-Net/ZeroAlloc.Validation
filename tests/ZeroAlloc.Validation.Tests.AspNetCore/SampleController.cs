@@ -30,6 +30,19 @@ public class SampleController : ControllerBase
     [HttpPost("signup")]
     public IActionResult PostSignup([FromBody] Signup model) => Ok(new { model.UserName });
 
+    // Generic closings as action arguments, dispatched through the IModelValidator registry, #238.
+    [HttpPost("crate/parcel")]
+    public IActionResult PostParcelCrate([FromBody] Crate<Parcel> model) => Ok(new { model.Label });
+
+    [HttpPost("crate/sample")]
+    public IActionResult PostSampleCrate([FromBody] Crate<SampleModel> model) => Ok(new { model.Label });
+
+    [HttpPost("crate/special")]
+    public IActionResult PostSpecialCrate([FromBody] SpecialCrate model) => Ok(new { model.Label });
+
+    [HttpPost("crate/signup")]
+    public IActionResult PostSignupCrate([FromBody] Crate<Signup> model) => Ok(new { model.Label });
+
     [HttpPost("unknown")]
     public IActionResult PostUnknown([FromBody] string raw) => Ok(raw);
 }

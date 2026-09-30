@@ -92,6 +92,8 @@ services.TryAddEnumerable(ServiceDescriptor.Singleton<IModelValidator, Validator
   `ValidatorFor<T>` implements: its `ModelType` and a `ValidateAsync(object, CancellationToken)`.
   The entry resolves the `ValidatorFor` registration, so a registration you made first is the
   one listed, and `TryAddEnumerable` lists each closing once. A non-generic model gets no entry.
+  The ASP.NET Core filter looks generic closings up in this registry; see
+  [ASP.NET Core](aspnetcore.md#generic-models).
 - A closing nothing registers, such as a `Page<Customer>` used only as a root, is not
   resolved: `GetService<ValidatorFor<Page<Customer>>>()` returns null, which ZeroAlloc.Mediator
   reads as "no validation". Register it with the generated helper below.

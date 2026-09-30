@@ -29,6 +29,7 @@ builder.Services.AddZeroAllocAspNetCoreValidation();
 `AddZeroAllocAspNetCoreValidation()` is source-generated — it lives in the generated code, not in a library method. It:
 
 - Registers each discovered validator as `Singleton` via `TryAddSingleton<ValidatorFor<T>, TValidator>()`, together with every validator a composed one takes in its constructor — see [Composed validators](./inject.md#composed-validators)
+- Registers `ZeroAllocGenericModelDispatch`, which validates closings of generic models, as `Singleton`
 - Registers `ZeroAllocValidationActionFilter` as `Transient`
 - Adds `ZeroAllocValidationActionFilter` to `MvcOptions.Filters`
 
@@ -41,9 +42,28 @@ The generated `ZeroAllocValidationActionFilter` implements `IAsyncActionFilter` 
 - If validation fails: short-circuits the request and returns HTTP **422 Unprocessable Entity** with `ValidationProblemDetails`
 - On success: the request proceeds to the controller
 
-The type-switch is generated at build time — there is no reflection and no dictionary lookup at runtime.
+The type-switch is generated at build time: a non-generic `[Validate]` model is matched by a `case`, with no reflection and no dictionary lookup.
 
-A closing of a [generic model](getting-started.md#generic-models), such as a `Page<Customer>` action argument, has no `case` in the type-switch: the closings an application uses are not all known where the filter is generated. The filter lets such an argument through unvalidated, so validate it in the action for now, with a `ValidatorFor<Page<Customer>>` you register with the generated `services.AddPageValidator<Customer>()`; see [Dependency injection](inject.md#registering-a-closing-addvalidator). Dispatch of generic closings through the `IModelValidator` registry is tracked in [#238](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/238). A generic closing nested inside a non-generic argument is validated as usual.
+### Generic models
+
+A closing of a [generic model](getting-started.md#generic-models), such as a `Page<Customer>` action argument, cannot be a `case`: the closings an application uses are not all known where the filter is generated. Every argument no `case` matches goes to the generated `ZeroAllocGenericModelDispatch` instead, which looks its runtime type up among the validators registered as `IModelValidator`. Every closed registration of a generic closing lists one: those `AddZeroAllocAspNetCoreValidation()` and `AddZeroAllocValidators()` make for the closings your models compose, and those the [`Add…Validator<…>()` helper](inject.md#registering-a-closing-addvalidator) makes for a closing used only as an argument:
+
+```csharp
+builder.Services.AddZeroAllocAspNetCoreValidation();
+builder.Services.AddPageValidator<Customer>();   // from ZeroAlloc.Validation.Inject
+
+[HttpPost] public IActionResult Post([FromBody] Page<Customer> page) => ...  // validated, 422 when invalid
+```
+
+- The lookup tries the argument's type, then each base type, as a `case` matches a derived type: a non-generic `CustomerPage : Page<Customer>` argument is validated as `Page<Customer>`.
+- A closing of one of **your project's** generic models that nothing registered, such as a `Page<Supplier>` argument with no `AddPageValidator<Supplier>()`, throws `InvalidOperationException`, naming the type and how to register it. Letting it through would skip its validation silently.
+- An argument of any other type passes as before: a string, a number, a model of a type without a validator. A registered closing of a referenced library's generic model is validated too.
+- The registry is a frozen dictionary built once, in a singleton. The lookup is one `GetType()` and a probe per type in the argument's hierarchy, with no allocation and no `MakeGenericType`, so NativeAOT and trimming are unaffected. When nothing is registered and your project has no generic models, the dispatch returns at once.
+- Without the Inject package there is no helper: register a closing by hand with both lines the helper writes, `TryAddSingleton<ValidatorFor<Page<Customer>>, PageValidator<Customer>>()` and the `IModelValidator` entry shown in [Dependency injection](inject.md#generic-models). A `ValidatorFor` registration without the entry is not found by the dispatch.
+
+A generic closing nested inside a non-generic argument is validated by that argument's validator, as before.
+
+Until the filter dispatched generic closings, a generic closing as the argument itself passed it unvalidated, [#238](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/238).
 
 ```mermaid
 sequenceDiagram

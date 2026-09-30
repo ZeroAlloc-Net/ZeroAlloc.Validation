@@ -122,6 +122,9 @@ var validator = new PageValidator<Product>(new LineValidator<Product>());
   at the root is registered with the generated helper, `services.AddPageValidator<Customer>()`,
   and an options model with `AddOptions<Page<Customer>>().ValidateWithZeroAlloc()`; see
   [Dependency injection](inject.md#generic-models) and [Options](options.md).
+- **ASP.NET Core.** A registered closing as an action argument, `[FromBody] Page<Customer>`, is
+  validated by the filter, and an unregistered closing of one of your generic models throws;
+  see [ASP.NET Core](aspnetcore.md#generic-models).
 - **Pipeline behaviors** name the open form, `AppliesTo = typeof(Page<>)`, and run for every
   closing; a closed form is reported as [ZV0038](diagnostics.md#zv0038).
 - **NativeAOT.** A value-type closing gets its own compiled instantiation, rooted by the
