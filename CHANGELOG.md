@@ -1,5 +1,36 @@
 # Changelog
 
+## [2.1.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.0.3...v2.1.0) (2026-09-30)
+
+
+### Features
+
+* add async custom rule attributes via AsyncValidationAttribute&lt;T&gt; ([#296](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/296)) ([d930ad9](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/d930ad9b8a650381479c601d42563388bb8ec8da)), closes [#202](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/202)
+* **generator:** generate validators for generic [Validate] models ([#302](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/302)) ([4ce648e](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/4ce648e190f311f04a8e9c6ef1b218a550314a21))
+* **generator:** register closings of generic models through generated helpers ([#307](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/307)) ([2dda86b](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/2dda86b985f5aa74642baf3a38b9f71259ce694d))
+* **generator:** validate generic closings as ASP.NET Core action arguments ([#308](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/308)) ([a53c8b6](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/a53c8b6d8da564e8134f04468ec134920e221974)), closes [#238](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/238)
+
+
+### Bug Fixes
+
+* [IsInEnum] on a single-property value object checks the unwrapped enum ([#304](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/304)) ([126ad38](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/126ad38eca6efd881c03ba18a63ec94871abae18)), closes [#300](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/300)
+* **generator:** report a [PipelineBehavior] type without IPipelineBehavior as ZV0035 ([#293](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/293)) ([69c3dab](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/69c3dab853c166042b607a2f3fd566bb4f406bdf)), closes [#288](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/288)
+* **generator:** report diagnostics once for a usage on a plain base type ([#292](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/292)) ([824d37d](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/824d37d61e072f47a18c41c2fd47423154848d35)), closes [#290](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/290)
+* **generator:** report ZV0011, ZV0012 and ZV0018 once for a property of a validated base type ([da9610c](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/da9610c99ff28617b7865f78bcf3493eabb28671))
+* **generator:** report ZV0016 and ZV0022 once for a rule on a validated base type ([da9610c](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/da9610c99ff28617b7865f78bcf3493eabb28671))
+* pipeline behaviors on a model with nested validators no longer fail with CS8821 ([#297](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/297)) ([3f6ac31](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/3f6ac3134e70c8a4cafa8b394e8bdca65796d21a)), closes [#294](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/294)
+* report a generic model's type parameter named like a validator member as ZV0029 ([#305](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/305)) ([6823087](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/68230879cde62d5162cf20112c819be6742f0a82))
+
+
+### Performance Improvements
+
+* cache pipeline behavior delegates of validators with nested validators ([#306](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/306)) ([1a04104](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/1a04104b1d457354da007b450ae5b6c194c999b6)), closes [#298](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/298)
+
+
+### Documentation
+
+* design generic [Validate] model support ([#295](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/295)) ([3672a80](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/3672a801b1c3a5f209a2946bf04f4ee72d1bf72d))
+
 ## [2.0.3](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.0.2...v2.0.3) (2026-09-30)
 
 
