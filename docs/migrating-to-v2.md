@@ -261,3 +261,31 @@ public int? Quantity { get; set; }
 
 A null then reports one failure, `Quantity must not be null.`, instead of the comparison's
 message.
+
+## A numeric comparison rule on a type that is not a number now fails the build (ZV0033)
+
+Shipped in the release after 2.0.2.
+
+`[GreaterThan]`, `[GreaterThanOrEqualTo]`, `[LessThan]`, `[LessThanOrEqualTo]`,
+`[InclusiveBetween]`, `[ExclusiveBetween]`, and `[Equal]` and `[NotEqual]` with a number compare
+the value as `Convert.ToDouble(value)`. On a `DateTime`, `DateOnly`, `TimeOnly`, `TimeSpan`,
+`Guid` or another type that conversion cannot handle, nullable or not, the generated validator
+compiled and then threw `InvalidCastException` for every value that was present. Such a rule is
+now reported as [ZV0033](diagnostics.md#zv0033) at the attribute and left out of the generated
+validator.
+
+A comparison rule on a `string` is now also passed when the string is `null`, as on a nullable
+number. It used to read a `null` string as 0.
+
+### What to do
+
+Nothing for code that validates numbers, `decimal` or enums. Where ZV0033 is reported, the rule
+never worked; compare the value with `[Must]` or a custom `ValidationAttribute<T>` rule:
+
+```csharp
+[Must(nameof(IsInTheFuture))]
+public DateOnly? Arrival { get; set; }
+
+public bool IsInTheFuture(DateOnly? arrival) =>
+    arrival is null || arrival > DateOnly.FromDateTime(DateTime.Today);
+```

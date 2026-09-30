@@ -82,12 +82,45 @@ public class ValueObjectPropertyDiagnosticTests
 
             [Validate]
             public readonly record struct PriceCommand(
-                [property: GreaterThan(0)] Money Total);
+                [property: NotEmpty] Money Total);
             """;
 
         var result = GeneratorTestHelper.RunGenerator(source, extraSources: [ValueObjectStub]);
 
         Assert.Contains(result.Diagnostics, d => string.Equals(d.Id, "ZV0016", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MultiProperty_ValueObject_With_Numeric_Comparison_Reports_ZV0033_Not_ZV0016()
+    {
+        // Convert.ToDouble cannot convert the wrapper, so the comparison is left out as ZV0033,
+        // see #279, and no rule that needs auto-unwrap is left for ZV0016 to report.
+        var source = """
+            using ZeroAlloc.Validation;
+            using ZeroAlloc.ValueObjects;
+            namespace TestModels;
+
+            [ValueObject]
+            public readonly partial struct Money
+            {
+                public decimal Amount { get; }
+                public string Currency { get; }
+                public Money(decimal amount, string currency)
+                {
+                    Amount = amount;
+                    Currency = currency;
+                }
+            }
+
+            [Validate]
+            public readonly record struct PriceCommand(
+                [property: GreaterThan(0)] Money Total);
+            """;
+
+        var result = GeneratorTestHelper.RunGenerator(source, extraSources: [ValueObjectStub]);
+
+        Assert.Contains(result.Diagnostics, d => string.Equals(d.Id, "ZV0033", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Diagnostics, d => string.Equals(d.Id, "ZV0016", StringComparison.Ordinal));
     }
 
     [Fact]

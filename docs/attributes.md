@@ -72,6 +72,13 @@ public class ContactForm
 > missing value while `[LessThan(5)]` accepted it. If you relied on a comparison rule to reject
 > null, add `[NotNull]`.
 
+> **Comparison rules compare numbers.** Their bounds are `double` arguments, and the value is
+> compared as `Convert.ToDouble(value)`. Use them on numbers, `decimal`, enums and their nullable
+> forms. On a type the conversion cannot handle, such as `DateTime`, `DateOnly`, `TimeOnly`,
+> `TimeSpan` or `Guid`, the build fails with [ZV0033](diagnostics.md#zv0033); compare such a value
+> with `[Must]` or a [custom rule](custom-validation.md). `[Equal("text")]` and
+> `[NotEqual("text")]` compare strings.
+
 ```csharp
 [Validate]
 public class OrderLine
