@@ -1098,9 +1098,11 @@ public class GeneratorRuleEmissionTests
             """;
         var generated = RunGeneratorGetSource(source);
         // 1.5.3: [Matches] emits a `private static readonly Regex __Regex_<Prop>` field
-        // initialised with RegexOptions.Compiled, plus a call site `!__Regex_<Prop>.IsMatch(input ?? "")`.
+        // initialised with RegexOptions.Compiled. The call site lets null through rather than
+        // matching it as "", see #280.
         Assert.Contains("__Regex_Zip", generated, StringComparison.Ordinal);
-        Assert.Contains("__Regex_Zip.IsMatch(", generated, StringComparison.Ordinal);
+        Assert.Contains("instance.Zip is not null && (!__Regex_Zip.IsMatch(instance.Zip))", generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("?? \"\"", generated, StringComparison.Ordinal);
         Assert.Contains("private static readonly global::System.Text.RegularExpressions.Regex __Regex_Zip", generated, StringComparison.Ordinal);
         Assert.Contains("global::System.Text.RegularExpressions.RegexOptions.Compiled", generated, StringComparison.Ordinal);
         // EscapeString in the generator converts \ to \\, so the emitted literal contains ^\\d{5}$
@@ -1119,7 +1121,10 @@ public class GeneratorRuleEmissionTests
             public class Foo { [EmailAddress] public string Email { get; set; } = ""; }
             """;
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("EmailValidator.IsValid", generated, StringComparison.Ordinal);
+        // A null passes, as it passes the length and comparison rules, see #280.
+        Assert.Contains(
+            "instance.Email is not null && (!global::ZeroAlloc.Validation.Internal.EmailValidator.IsValid(instance.Email))",
+            generated, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -59,9 +59,16 @@ public class MatchesTests
     }
 
     [Fact]
-    public void Null_Value_FailsMatches()
+    public void Null_Value_PassesMatches()
     {
-        // Generator emits: !Regex.IsMatch(access ?? "", pattern) — null is treated as empty string
-        ValidationAssert.HasError(_validator.Validate(new MatchesModel { ZipCode = null!, CountryCode = "US" }), "ZipCode");
+        // A null is not matched, whatever the pattern; rejecting it is [NotNull]'s or [NotEmpty]'s
+        // job. It used to be matched as "", so it failed only a pattern that rejects "". See #280.
+        ValidationAssert.NoErrors(_validator.Validate(new MatchesModel { ZipCode = null!, CountryCode = "US" }));
+    }
+
+    [Fact]
+    public void Empty_Value_FailsMatches()
+    {
+        ValidationAssert.HasError(_validator.Validate(new MatchesModel { ZipCode = "", CountryCode = "US" }), "ZipCode");
     }
 }

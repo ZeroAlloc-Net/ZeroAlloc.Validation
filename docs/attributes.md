@@ -17,8 +17,8 @@ All validation attributes live in the `ZeroAlloc.Validation` namespace and inher
 | `[MaxLength(n)]` | Length ≤ n, null ignored | `PropertyName must not exceed n characters.` |
 | `[MinLength(n)]` | Length ≥ n, null ignored | `PropertyName must be at least n characters.` |
 | `[Length(min,max)]` | min ≤ length ≤ max, null ignored | `PropertyName must be between min and max characters.` |
-| `[Matches(pattern)]` | Must match regex pattern | `PropertyName does not match the required pattern.` |
-| `[EmailAddress]` | Must be a valid email address | `PropertyName must be a valid email address.` |
+| `[Matches(pattern)]` | Must match regex pattern, null ignored | `PropertyName does not match the required pattern.` |
+| `[EmailAddress]` | Must be a valid email address, null ignored | `PropertyName must be a valid email address.` |
 
 > **Length rules and null.** `[MinLength]`, `[MaxLength]` and `[Length]` constrain the length of a value that is present; they report nothing for `null`. Whether a missing value is acceptable is `[NotEmpty]`'s or `[NotNull]`'s decision, so the two compose without reporting the same problem twice:
 >
@@ -29,6 +29,25 @@ All validation attributes live in the `ZeroAlloc.Validation` namespace and inher
 > ```
 >
 > A length rule on its own therefore treats `null` as valid. Add `[NotEmpty]` or `[NotNull]` when a missing value should be rejected.
+
+> **Format rules and null.** `[EmailAddress]` and `[Matches]` follow the same split: they check a
+> string that is present and report nothing for `null`. An empty string is a value, so it is still
+> checked: `[EmailAddress]` rejects `""`, and `[Matches]` rejects it unless the pattern matches the
+> empty string. An optional field needs no `When` guard, and a required one pairs the rule with
+> `[NotEmpty]`, which reports a `null` once:
+>
+> ```csharp
+> [EmailAddress]          // null passes; "" and "not-an-email" fail
+> public string? BackupEmail { get; init; }
+>
+> [NotEmpty]              // null or empty -> "Email must not be empty."
+> [EmailAddress]          // only applies once a value is present
+> public string? Email { get; init; }
+> ```
+>
+> Up to 2.0.2 `[EmailAddress]` rejected `null`, and `[Matches]` matched it as `""`, so whether it
+> passed depended on the pattern: `[Matches(@"^\d+$")]` rejected it and `[Matches(".*")]`
+> accepted it. If you relied on either rule to reject `null`, add `[NotEmpty]` or `[NotNull]`.
 
 ```csharp
 [Validate]

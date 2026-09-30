@@ -1419,8 +1419,8 @@ internal static class RuleEmitter
             LessThanOrEqualToFqn     => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) > {Number(attr, 0)}"),
             ExclusiveBetweenFqn      => CompareValue(access, valueType, v => $"System.Convert.ToDouble({v}) <= {Number(attr, 0)} || System.Convert.ToDouble({v}) >= {Number(attr, 1)}"),
             LengthFqn                => GuardAgainstNull(access, propType, $"{access}.Length < {GetIntArg(attr, 0)} || {access}.Length > {GetIntArg(attr, 1)}"),
-            EmailAddressFqn          => $"!global::ZeroAlloc.Validation.Internal.EmailValidator.IsValid({access})",
-            MatchesFqn               => BuildMatchesCondition(access, propName, attr, fields),
+            EmailAddressFqn          => GuardAgainstNull(access, valueType, $"!global::ZeroAlloc.Validation.Internal.EmailValidator.IsValid({access})"),
+            MatchesFqn               => GuardAgainstNull(access, valueType, BuildMatchesCondition(access, propName, attr, fields)),
             NullFqn                  => $"{access} is not null",
             EmptyFqn                 => $"!string.IsNullOrEmpty({access})",
             EqualFqn                 => IsStringArg(attr, 0)
@@ -1456,7 +1456,7 @@ internal static class RuleEmitter
             fields.RegexPatterns[fieldName] = pattern;
         }
 
-        return $"!{fieldName}.IsMatch({access} ?? \"\")";
+        return $"!{fieldName}.IsMatch({access})";
     }
 
     private static string GetDefaultMessage(string fqn, AttributeData attr, string propName) =>
@@ -1505,8 +1505,10 @@ internal static class RuleEmitter
     /// which keeps the two composable and matches FluentValidation, where length validators pass on
     /// null. Without the guard the generated validator threw NullReferenceException on exactly the
     /// input it exists to reject, and tripped CS8602 in any consumer with nullable warnings as
-    /// errors. <c>[Equal("text")]</c> and <c>[IsEnumName]</c> are guarded the same way, as
-    /// <see cref="CompareValue"/> guards the numeric comparisons: a null string passes them.
+    /// errors. <c>[Equal("text")]</c>, <c>[IsEnumName]</c>, <c>[EmailAddress]</c> and
+    /// <c>[Matches]</c> are guarded the same way, as <see cref="CompareValue"/> guards the numeric
+    /// comparisons: a null string passes them, and an empty one is still checked. <c>[Matches]</c>
+    /// used to match a null as "", so whether null passed depended on the pattern, #280.
     /// </summary>
     private static string GuardAgainstNull(string access, ITypeSymbol? propType, string comparison) =>
         CanBeNull(propType) ? $"{access} is not null && ({comparison})" : comparison;
