@@ -105,6 +105,20 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
+    private static readonly DiagnosticDescriptor ZV0035 = new DiagnosticDescriptor(
+        id: "ZV0035",
+        title: "[PipelineBehavior] type that does not implement IPipelineBehavior",
+        messageFormat: "'{0}' has [PipelineBehavior] but does not implement IPipelineBehavior, so it never runs in a validator's pipeline; {1}",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description:
+            "Only a type that implements ZeroAlloc.Pipeline.IPipelineBehavior joins the pipeline of "
+            + "the generated validators. A [PipelineBehavior] type without it is left out, so its "
+            + "Handle method is never called. A static class cannot implement an interface; make it "
+            + "non-static. It is a warning, not an error, so a build that compiled before keeps "
+            + "compiling.");
+
     private static readonly DiagnosticDescriptor ZV0017 = new DiagnosticDescriptor(
         id: "ZV0017",
         title: "Validation rules depending on an inaccessible base member are ignored",
@@ -302,6 +316,18 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 var (sync, async_) = BehaviorDiscoverer.DiscoverAll(compilation);
                 return new BehaviorCache(EquatableArray.From(sync), EquatableArray.From(async_));
             });
+
+        // ZV0035: a [PipelineBehavior] type without IPipelineBehavior, which DiscoverAll leaves
+        // out. Reported once per compilation, not per model, and whether or not there is any
+        // [Validate] model, issue #288.
+        var missingInterface = context.CompilationProvider
+            .Select(static (compilation, _) => FindMissingPipelineBehaviorInterface(compilation));
+
+        context.RegisterSourceOutput(missingInterface, static (ctx, diagnostics) =>
+        {
+            foreach (var diagnostic in diagnostics)
+                ctx.ReportDiagnostic(diagnostic.ToDiagnostic());
+        });
 
         // Each validator is generated here, against the compilation, into a GeneratedValidator
         // that compares by value; the output step then only adds it. The generation depends on
@@ -785,6 +811,26 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             ?? FindValidateAttributeLocation(classSymbol);
 
     /// <summary>
+    /// ZV0035 for each <c>[PipelineBehavior]</c> type in <paramref name="compilation"/> that does
+    /// not implement <c>IPipelineBehavior</c>, at its attribute, as ZV0015 is. The fix named
+    /// depends on whether the type is static, since a static class cannot implement an interface.
+    /// </summary>
+    private static EquatableArray<DiagnosticInfo> FindMissingPipelineBehaviorInterface(Compilation compilation)
+    {
+        var diagnostics = new DiagnosticSink();
+        foreach (var candidate in BehaviorDiscoverer.DiscoverMissingInterface(compilation))
+        {
+            diagnostics.Report(ZV0035,
+                FindBehaviorAttributeLocation(candidate.BehaviorTypeName, compilation),
+                DescribeBehavior(candidate.BehaviorTypeName),
+                candidate.IsStatic
+                    ? "make the class non-static and implement IPipelineBehavior"
+                    : "implement IPipelineBehavior");
+        }
+        return diagnostics.ToEquatableArray();
+    }
+
+    /// <summary>
     /// Resolves the location of the <c>[PipelineBehavior]</c> (or subclass) attribute applied to
     /// <paramref name="behavior"/>'s type, or null when the type has no such syntax in this
     /// compilation — either it could not be re-resolved (e.g. an ambiguous name across
@@ -792,8 +838,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     /// </summary>
     internal static Location? FindBehaviorAttributeLocation(
         global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo behavior, Compilation compilation)
+        => FindBehaviorAttributeLocation(behavior.BehaviorTypeName, compilation);
+
+    private static Location? FindBehaviorAttributeLocation(string behaviorTypeName, Compilation compilation)
     {
-        var symbol = BehaviorDiscoverer.ResolveSymbol(compilation, behavior.BehaviorTypeName);
+        var symbol = BehaviorDiscoverer.ResolveSymbol(compilation, behaviorTypeName);
         if (symbol is null) return null;
 
         foreach (var attr in symbol.GetAttributes())
@@ -809,8 +858,10 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
     /// <summary>The simple type name the user wrote, e.g. "LoggingBehavior" from "global::App.LoggingBehavior".</summary>
     internal static string DescribeBehavior(global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo behavior)
+        => DescribeBehavior(behavior.BehaviorTypeName);
+
+    private static string DescribeBehavior(string name)
     {
-        var name = behavior.BehaviorTypeName;
         var lastSeparator = name.LastIndexOfAny(['.', '+']);
         return lastSeparator >= 0 ? name.Substring(lastSeparator + 1) : name;
     }

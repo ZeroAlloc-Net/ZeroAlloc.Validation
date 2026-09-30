@@ -52,18 +52,44 @@ internal static class BehaviorDiscoverer
     }
 
     /// <summary>
-    /// Re-resolves a <see cref="PipelineBehaviorInfo.BehaviorTypeName"/> (e.g.
-    /// <c>"global::App.Outer+Inner"</c>) back to its symbol in <paramref name="compilation"/>, or
-    /// null when it cannot be found — e.g. the type came from a stale cache entry. Shared by
-    /// <see cref="DiscoverAll"/> and ZV0015's location lookup in <c>ValidatorGenerator</c>.
+    /// The <c>[PipelineBehavior]</c> types that do not implement <c>IPipelineBehavior</c>.
+    /// <see cref="DiscoverAll"/> leaves them out of every pipeline, so they never run; ZV0035
+    /// reports them, issue #288.
     /// </summary>
+    public static IEnumerable<PipelineBehaviorCandidateInfo> DiscoverMissingInterface(Compilation compilation) =>
+        PipelineDiagnosticRules.FindMissingPipelineBehaviorInterface(
+            PipelineBehaviorDiscoverer.DiscoverCandidates(compilation));
+
+    /// <summary>
+    /// Re-resolves a <see cref="PipelineBehaviorInfo.BehaviorTypeName"/> (e.g.
+    /// <c>"global::App.Outer.Inner"</c>) back to its symbol in <paramref name="compilation"/>, or
+    /// null when it cannot be found — e.g. the type came from a stale cache entry. Shared by
+    /// <see cref="DiscoverAll"/> and the location lookup of ZV0015 and ZV0035 in
+    /// <c>ValidatorGenerator</c>.
+    /// </summary>
+    /// <remarks>
+    /// The name is in <see cref="SymbolDisplayFormat.FullyQualifiedFormat"/>, which separates a
+    /// nested type from its containing type with a dot, where its metadata name has a plus:
+    /// <c>App.Outer+Inner</c>. So each dot, from the right, is tried as a nesting separator.
+    /// </remarks>
     internal static INamedTypeSymbol? ResolveSymbol(Compilation compilation, string behaviorTypeName)
     {
-        var cleanName = behaviorTypeName
-            .Replace("global::", string.Empty)
-            .Replace("+", ".");   // handle nested types
+        const string GlobalPrefix = "global::";
+        var name = behaviorTypeName.StartsWith(GlobalPrefix, System.StringComparison.Ordinal)
+            ? behaviorTypeName.Substring(GlobalPrefix.Length)
+            : behaviorTypeName;
 
-        return compilation.GetTypeByMetadataName(cleanName);
+        var metadataName = name.ToCharArray();
+        var dot = metadataName.Length;
+        while (true)
+        {
+            var symbol = compilation.GetTypeByMetadataName(new string(metadataName));
+            if (symbol is not null || dot == 0) return symbol;
+
+            dot = System.Array.LastIndexOf(metadataName, '.', dot - 1);
+            if (dot < 0) return null;
+            metadataName[dot] = '+';
+        }
     }
 
     private static bool IsAsyncBehavior(INamedTypeSymbol symbol)

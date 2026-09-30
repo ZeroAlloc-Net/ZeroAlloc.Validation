@@ -15,8 +15,8 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
     <!-- Builds containers over in-memory compilations in ComposedValidatorRegistrationTests, #246. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
-    <PackageReference Include="ZeroAlloc.Pipeline" Version="1.2.2" GeneratePathProperty="true" />
-    <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="0.1.1" GeneratePathProperty="true" />
+    <PackageReference Include="ZeroAlloc.Pipeline" Version="1.3.0" GeneratePathProperty="true" />
+    <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="1.3.0" GeneratePathProperty="true" />
   </ItemGroup>
 
   <ItemGroup>
