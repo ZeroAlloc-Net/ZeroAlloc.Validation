@@ -110,9 +110,9 @@ internal static class RuleEmitter
         bool validatorStop = GetBoolNamedArg(validateAttr, "StopOnFirstFailure");
 
         if (hasNested)
-            EmitNestedPath(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, customMethods, modelParamName, validatorStop, totalDirectRules, ctx, calls, fields);
+            EmitNestedPath(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, customMethods, modelParamName, validatorStop, totalDirectRules, calls, fields);
         else
-            EmitFlatPath(sb, classSymbol, byProperty, totalDirectRules, modelParamName, validatorStop, ctx, calls, fields);
+            EmitFlatPath(sb, classSymbol, byProperty, totalDirectRules, modelParamName, validatorStop, calls, fields);
     }
 
     /// <summary>
@@ -123,9 +123,14 @@ internal static class RuleEmitter
     /// rule's <c>T</c>, ZV0023 for an attribute the validator cannot reach. A numeric comparison
     /// rule on a type <c>Convert.ToDouble</c> cannot convert is left out and reported as ZV0033. A
     /// <c>ValidationAttribute</c> subclass that is neither a built-in nor a custom rule is
-    /// reported as ZV0020. Diagnostics are reported only when <paramref name="ctx"/> is set, which
-    /// only the sync visit does, and a usage declared on a <c>[Validate]</c> base type only by
-    /// that type's validator, so each usage reports once.
+    /// reported as ZV0020. The rules that stay are checked for what their emitted code gets
+    /// wrong: ZV0016 for a built-in rule on a multi-property value object, ZV0022 for an unknown
+    /// placeholder in a custom rule's message. Both are decided before the rules' <c>When</c>,
+    /// <c>Unless</c> and <c>[Must]</c> methods are resolved on the model, so they depend on the
+    /// usage alone and a base type's validator decides them the same way. Diagnostics are
+    /// reported only when <paramref name="ctx"/> is set, which only the sync visit does, and a
+    /// usage declared on a <c>[Validate]</c> base type only by that type's validator, so each
+    /// usage reports once.
     /// </summary>
     private static List<(IPropertySymbol Property, List<AttributeData> Rules)> CollectPropertyRules(
         INamedTypeSymbol classSymbol,
@@ -144,7 +149,7 @@ internal static class RuleEmitter
                     ? ctx
                     : null;
 
-            var propRules = new List<AttributeData>();
+            var usableRules = new List<AttributeData>();
             foreach (var attr in prop.GetAttributes())
             {
                 if (!IsRuleAttribute(attr))
@@ -159,9 +164,16 @@ internal static class RuleEmitter
                 if (!CanCompareAsNumber(compilation, prop, attr, report))
                     continue;
 
-                if (CallsOnlyReachableMethods(compilation, classSymbol, prop, attr))
-                    propRules.Add(attr);
+                usableRules.Add(attr);
             }
+
+            if (report is not null)
+            {
+                ReportZV0016IfApplicable(report, prop, usableRules);
+                ReportZV0022IfApplicable(report, prop, usableRules);
+            }
+
+            var propRules = usableRules.FindAll(attr => CallsOnlyReachableMethods(compilation, classSymbol, prop, attr));
             if (propRules.Count > 0)
                 byProperty.Add((prop, propRules));
         }
@@ -180,7 +192,6 @@ internal static class RuleEmitter
         string modelParamName,
         bool validatorStop,
         int totalDirectRules,
-        DiagnosticSink? ctx,
         CallLineWriter calls,
         GeneratedFields? fields = null)
     {
@@ -189,13 +200,13 @@ internal static class RuleEmitter
 
         if (!validatorStop)
         {
-            EmitPropertyRulesWithAdd(sb, byProperty, classSymbol, modelParamName, ctx, calls, fields);
+            EmitPropertyRulesWithAdd(sb, byProperty, classSymbol, modelParamName, calls, fields);
             EmitNestedValidators(sb, nestedProperties, validatorFields, modelParamName);
             EmitCollectionValidators(sb, collectionProperties, validatorFields, modelParamName);
         }
         else
         {
-            EmitNestedPathStop(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, modelParamName, ctx, calls, fields);
+            EmitNestedPathStop(sb, classSymbol, compilation, byProperty, nestedProperties, collectionProperties, validatorFields, modelParamName, calls, fields);
         }
 
         // [CustomValidation] methods always run last.
@@ -352,7 +363,6 @@ internal static class RuleEmitter
         List<(IPropertySymbol Property, INamedTypeSymbol ElementType)> collectionProperties,
         Dictionary<IPropertySymbol, string> validatorFields,
         string modelParamName,
-        DiagnosticSink? ctx,
         CallLineWriter calls,
         GeneratedFields? fields = null)
     {
@@ -375,7 +385,7 @@ internal static class RuleEmitter
             sb.AppendLine($"        int _b{groupIdx} = _buf.Count;");
 
             if (directProp is not null && directRules is not null)
-                EmitPropertyRulesForProp(sb, directProp, directRules, classSymbol, modelParamName, ctx, calls, fields);
+                EmitPropertyRulesForProp(sb, directProp, directRules, classSymbol, modelParamName, calls, fields);
 
             if (nestedProp is not null)
                 EmitNestedValidatorForProp(sb, nestedProp, ValidatorField(validatorFields, nestedProp), modelParamName);
@@ -440,14 +450,13 @@ internal static class RuleEmitter
         List<(IPropertySymbol Property, List<AttributeData> Rules)> byProperty,
         INamedTypeSymbol? classSymbol,
         string modelParamName,
-        DiagnosticSink? ctx,
         CallLineWriter calls,
         GeneratedFields? fields = null)
     {
         for (int pi = 0; pi < byProperty.Count; pi++)
         {
             var (prop, rules) = byProperty[pi];
-            EmitPropertyRulesForProp(sb, prop, rules, classSymbol, modelParamName, ctx, calls, fields);
+            EmitPropertyRulesForProp(sb, prop, rules, classSymbol, modelParamName, calls, fields);
         }
     }
 
@@ -457,7 +466,6 @@ internal static class RuleEmitter
         List<AttributeData> rules,
         INamedTypeSymbol? classSymbol,
         string modelParamName,
-        DiagnosticSink? ctx,
         CallLineWriter calls,
         GeneratedFields? fields = null)
     {
@@ -467,8 +475,6 @@ internal static class RuleEmitter
         var rawPropAccess = GeneratedCalls.RawPropertyAccess(modelParamName, prop);
         var stopMode = HasStopOnFirstFailure(prop, classSymbol);
         var obsoleteError = ObsoleteErrors.IsObsoleteError(prop);
-
-        ReportZV0016IfApplicable(ctx, prop, rules);
 
         // A rule on an [Obsolete(error: true)] property is never emitted at all — not even as
         // "if (false)", which the compiler would flag as CS0162 unreachable code in the
@@ -484,7 +490,7 @@ internal static class RuleEmitter
             var fqn = attr.AttributeClass!.ToDisplayString();
             var prefix = (stopMode && emitted > 0) ? "        else if" : "        if";
             var ruleMessage = FindCustomRuleMessage(attr);
-            var message = ResolveRuleMessage(attr, fqn, displayName, prop, ruleMessage, ctx);
+            var message = ResolveRuleMessage(attr, fqn, displayName, ruleMessage);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
             var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, ruleIndex: i, fields: fields);
             var propertyValueExpr = message.HasPropertyValue ? BuildPropertyValueExpr(prop, modelParamName) : null;
@@ -666,7 +672,6 @@ internal static class RuleEmitter
         int totalDirectRules,
         string modelParamName,
         bool validatorStop,
-        DiagnosticSink? ctx,
         CallLineWriter calls,
         GeneratedFields? fields = null)
     {
@@ -695,7 +700,7 @@ internal static class RuleEmitter
             if (validatorStop && !direct[pi])
                 sb.AppendLine($"        int _b{pi} = _buf.Count;");
 
-            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, ctx, calls, fields, direct[pi], classSymbol);
+            EmitFlatPathPropertyRules(sb, byProperty[pi].Property, byProperty[pi].Rules, totalDirectRules, modelParamName, calls, fields, direct[pi], classSymbol);
 
             if (validatorStop && !direct[pi])
                 EmitFlatPathStopOnFirstFailureReturn(sb, pi);
@@ -727,7 +732,6 @@ internal static class RuleEmitter
         List<AttributeData> rules,
         int totalDirectRules,
         string modelParamName,
-        DiagnosticSink? ctx,
         CallLineWriter calls,
         GeneratedFields? fields = null,
         bool directReturn = false,
@@ -739,8 +743,6 @@ internal static class RuleEmitter
         var rawPropAccess = GeneratedCalls.RawPropertyAccess(modelParamName, prop);
         var stopMode = HasStopOnFirstFailure(prop, classSymbol);
         var obsoleteError = ObsoleteErrors.IsObsoleteError(prop);
-
-        ReportZV0016IfApplicable(ctx, prop, rules);
 
         // See EmitPropertyRulesForProp: a rule on an [Obsolete(error: true)] property is left
         // out entirely, never emitted as "if (false)", and emitted tracks the "else if" chain
@@ -754,7 +756,7 @@ internal static class RuleEmitter
             var fqn = attr.AttributeClass!.ToDisplayString();
             var prefix = (stopMode && emitted > 0) ? "        else if" : "        if";
             var ruleMessage = FindCustomRuleMessage(attr);
-            var message = ResolveRuleMessage(attr, fqn, displayName, prop, ruleMessage, ctx);
+            var message = ResolveRuleMessage(attr, fqn, displayName, ruleMessage);
             var propTypeFullName = GetNullableUnwrappedFullTypeName(prop);
             var condition = BuildCondition(fqn, attr, propAccess, propTypeFullName, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, ruleIndex: i, fields: fields);
             var propertyValueExpr = message.HasPropertyValue ? BuildPropertyValueExpr(prop, modelParamName) : null;
@@ -793,29 +795,50 @@ internal static class RuleEmitter
     /// The compile-time message for one rule usage. Built-in rules keep their existing handling.
     /// A custom rule takes the usage's <c>Message</c>, then its nearest <c>[RuleMessage]</c>, then
     /// the <c>[Must]</c> fallback, with named placeholders bound to the arguments written on the
-    /// usage. Each unknown placeholder is reported as ZV0022 when <paramref name="ctx"/> is set;
-    /// only the sync visit passes it, so each usage reports once. <paramref name="ruleMessage"/>
-    /// is the usage's <see cref="FindCustomRuleMessage"/>, resolved once by the caller.
+    /// usage. An unknown placeholder is emitted literally; <see cref="ReportZV0022IfApplicable"/>
+    /// reports it. <paramref name="ruleMessage"/> is the usage's
+    /// <see cref="FindCustomRuleMessage"/>, resolved once by the caller.
     /// </summary>
     private static MessageTemplate ResolveRuleMessage(
         AttributeData attr,
         string fqn,
         string displayName,
-        IPropertySymbol prop,
-        (string Message, string? ErrorCode)? ruleMessage,
-        DiagnosticSink? ctx)
+        (string Message, string? ErrorCode)? ruleMessage)
     {
         if (!CustomRules.IsCustomRule(attr))
             return ResolveMessage(attr, fqn, displayName)
                 ?? MessageTemplate.Literal(GetDefaultMessage(fqn, attr, displayName));
 
-        var template = GetMessage(attr)
+        return CustomRules.ResolveMessage(CustomRuleTemplate(attr, ruleMessage), attr, displayName, out _);
+    }
+
+    /// <summary>
+    /// A custom rule usage's message template: its own <c>Message</c>, then
+    /// <paramref name="ruleMessage"/>, its nearest <c>[RuleMessage]</c>, then the <c>[Must]</c>
+    /// fallback.
+    /// </summary>
+    private static string CustomRuleTemplate(AttributeData attr, (string Message, string? ErrorCode)? ruleMessage) =>
+        GetMessage(attr)
             ?? ruleMessage?.Message
             ?? InvalidFallbackMessage;
-        var resolved = CustomRules.ResolveMessage(template, attr, displayName, out var unknown);
 
-        if (ctx is not null)
+    /// <summary>
+    /// Fires ZV0022 for each placeholder in a custom rule's message that matches no argument
+    /// written on the usage and so is emitted literally. Which placeholders are unknown depends on
+    /// the usage alone; <c>{PropertyName}</c> always resolves, whatever the display name. A
+    /// property marked <c>[Obsolete(error: true)]</c> gets no rule emitted at all, ZV0032, so its
+    /// messages are not checked.
+    /// </summary>
+    private static void ReportZV0022IfApplicable(DiagnosticSink ctx, IPropertySymbol prop, List<AttributeData> rules)
+    {
+        if (ObsoleteErrors.IsObsoleteError(prop)) return;
+
+        for (int i = 0; i < rules.Count; i++)
         {
+            var attr = rules[i];
+            if (!CustomRules.IsCustomRule(attr)) continue;
+
+            CustomRules.ResolveMessage(CustomRuleTemplate(attr, FindCustomRuleMessage(attr)), attr, prop.Name, out var unknown);
             foreach (var name in unknown)
             {
                 ctx.Report(
@@ -824,8 +847,6 @@ internal static class RuleEmitter
                     name, attr.AttributeClass!.Name, prop.Name);
             }
         }
-
-        return resolved;
     }
 
     /// <summary>
@@ -2175,9 +2196,8 @@ internal static class RuleEmitter
     /// handled by <see cref="BuildPropertyAccess"/>; primitives/class types are
     /// emitted as-is.
     /// </summary>
-    private static void ReportZV0016IfApplicable(DiagnosticSink? ctx, IPropertySymbol prop, List<AttributeData> rules)
+    private static void ReportZV0016IfApplicable(DiagnosticSink ctx, IPropertySymbol prop, List<AttributeData> rules)
     {
-        if (ctx is null) return;
         // Only a rule that consumes the unwrapped operand (a built-in like NotNull, GreaterThan,
         // ...) needs auto-unwrap to work. [Must] and custom ValidationAttribute<T> rules both
         // receive the raw wrapper via rawForPredicate in BuildCondition and never benefit from
