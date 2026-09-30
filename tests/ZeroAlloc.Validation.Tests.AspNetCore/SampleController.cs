@@ -24,6 +24,9 @@ public class SampleController : ControllerBase
     [HttpPost("composed")]
     public IActionResult PostComposed([FromBody] Shipment model) => Ok(new { model.Parcel.Weight });
 
+    [HttpPost("signup")]
+    public IActionResult PostSignup([FromBody] Signup model) => Ok(new { model.UserName });
+
     [HttpPost("unknown")]
     public IActionResult PostUnknown([FromBody] string raw) => Ok(raw);
 }

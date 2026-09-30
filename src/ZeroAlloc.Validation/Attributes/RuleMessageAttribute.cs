@@ -2,7 +2,7 @@ namespace ZeroAlloc.Validation;
 
 /// <summary>
 /// Declares the default failure message, and optionally the error code, for a custom rule
-/// attribute deriving from <see cref="ValidationAttribute{T}"/>. A <c>Message</c> or
+/// attribute deriving from <see cref="ValidationAttribute{T}"/> or <see cref="AsyncValidationAttribute{T}"/>. A <c>Message</c> or
 /// <c>ErrorCode</c> set on the usage wins, including an explicit <c>ErrorCode = null</c>.
 /// <c>{PropertyName}</c>, and <c>{name}</c> for any constructor parameter or named property
 /// written on the usage, are resolved at compile time. <c>{PropertyValue}</c> is formatted at

@@ -79,9 +79,12 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         sb.AppendLine();
         sb.AppendLine("    public async global::System.Threading.Tasks.Task OnActionExecutionAsync(global::Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context, global::Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)");
         sb.AppendLine("    {");
+        // The request's own token, so an aborted request stops the validation's asynchronous
+        // rules, and the asynchronous pipeline behaviors, instead of letting them run on.
+        sb.AppendLine("        var ct = context.HttpContext.RequestAborted;");
         sb.AppendLine("        foreach (var arg in context.ActionArguments.Values)");
         sb.AppendLine("        {");
-        sb.AppendLine("            var result = await DispatchAsync(arg);");
+        sb.AppendLine("            var result = await DispatchAsync(arg, ct);");
         sb.AppendLine("            if (result is null || result.Value.IsValid) continue;");
         sb.AppendLine();
         sb.AppendLine("            var pd = new global::Microsoft.AspNetCore.Mvc.ValidationProblemDetails();");
@@ -101,7 +104,7 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
 
     private static void AppendDispatchSwitch(StringBuilder sb, EquatableArray<ValidatedModelInfo> models)
     {
-        sb.AppendLine("    private async global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult?> DispatchAsync(object? arg)");
+        sb.AppendLine("    private async global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult?> DispatchAsync(object? arg, global::System.Threading.CancellationToken ct)");
         sb.AppendLine("    {");
         sb.AppendLine("        switch (arg)");
         sb.AppendLine("        {");
@@ -111,7 +114,7 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
             var fullName = model.FullyQualifiedName;
             var varName = char.ToLowerInvariant(model.Name[0]).ToString() + model.Name.Substring(1) + "_arg";
             sb.AppendLine($"            case {fullName} {varName}:");
-            sb.AppendLine($"                return await _services.GetRequiredService<global::ZeroAlloc.Validation.ValidatorFor<{fullName}>>().ValidateAsync({varName});");
+            sb.AppendLine($"                return await _services.GetRequiredService<global::ZeroAlloc.Validation.ValidatorFor<{fullName}>>().ValidateAsync({varName}, ct);");
         }
 
         sb.AppendLine("            default: return null;");

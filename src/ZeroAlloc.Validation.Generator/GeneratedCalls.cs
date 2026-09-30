@@ -99,6 +99,21 @@ internal static class GeneratedCalls
     public static string RuleCall(string field, string argument) => $"{field}.IsValid({argument})";
 
     /// <summary>
+    /// The cancellation token parameter of the generated validator's asynchronous body, which it
+    /// passes to every asynchronous rule and nested validator.
+    /// </summary>
+    public const string CancellationToken = "ct";
+
+    /// <summary>An asynchronous custom rule's call, on the static field holding the rule instance.</summary>
+    public static string AsyncRuleCall(string field, string argument) => $"{field}.IsValidAsync({argument}, {CancellationToken})";
+
+    /// <summary>
+    /// <paramref name="call"/>, a call returning a <c>ValueTask</c>, awaited without capturing the
+    /// synchronization context, as library code awaits.
+    /// </summary>
+    public static string Await(string call) => $"await {call}.ConfigureAwait(false)";
+
+    /// <summary>
     /// Whether <paramref name="name"/> can follow <c>instance.</c> in generated code at all, once
     /// <see cref="Identifier"/> has escaped it. Any other text would not parse there, so it is
     /// reported without being compiled.

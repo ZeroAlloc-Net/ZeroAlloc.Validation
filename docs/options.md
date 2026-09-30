@@ -89,6 +89,11 @@ public sealed class ZeroAllocOptionsValidator<T> : IValidateOptions<T> where T :
 
 No reflection — the compile-time `ValidatorFor<T>` does all the work.
 
+`IValidateOptions<T>` is synchronous, so the adapter calls `Validate`. A model with an
+asynchronous rule, [`AsyncValidationAttribute<T>`](custom-validation.md#asynchronous-rules--asyncvalidationattributet),
+cannot be validated that way: its `Validate` throws rather than skip the rule, and calling
+`ValidateWithZeroAlloc()` for it fails the build with [ZV0034](diagnostics.md#zv0034).
+
 ## ValidateOnStart
 
 Combine with `.ValidateOnStart()` to fail fast at application startup if configuration is invalid:

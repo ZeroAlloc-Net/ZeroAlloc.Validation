@@ -1,1 +1,13 @@
 #nullable enable
+abstract ZeroAlloc.Validation.AsyncValidationAttribute<T>.IsValidAsync(T value, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<bool>
+ZeroAlloc.Validation.AsyncValidationAttribute<T>
+ZeroAlloc.Validation.AsyncValidationAttribute<T>.AsyncValidationAttribute() -> void
+ZeroAlloc.Validation.Internal.AsyncFailureBuffer
+ZeroAlloc.Validation.Internal.AsyncFailureBuffer.Add(in ZeroAlloc.Validation.ValidationFailure f) -> void
+ZeroAlloc.Validation.Internal.AsyncFailureBuffer.AddNested(ZeroAlloc.Validation.ValidationResult result, string! propertyName) -> void
+ZeroAlloc.Validation.Internal.AsyncFailureBuffer.AddNested(ZeroAlloc.Validation.ValidationResult result, string! propertyName, int index) -> void
+ZeroAlloc.Validation.Internal.AsyncFailureBuffer.AddRange(System.ReadOnlySpan<ZeroAlloc.Validation.ValidationFailure> failures) -> void
+ZeroAlloc.Validation.Internal.AsyncFailureBuffer.AsyncFailureBuffer() -> void
+ZeroAlloc.Validation.Internal.AsyncFailureBuffer.AsyncFailureBuffer(int initialCapacity) -> void
+ZeroAlloc.Validation.Internal.AsyncFailureBuffer.Count.get -> int
+ZeroAlloc.Validation.Internal.AsyncFailureBuffer.ToResult() -> ZeroAlloc.Validation.ValidationResult

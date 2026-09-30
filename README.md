@@ -82,7 +82,8 @@ See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/mai
 - Per-rule severity (`Error`, `Warning`, `Info`)
 - Conditional rules (`When` / `Unless` / `[SkipWhen]`)
 - Short-circuit with `[StopOnFirstFailure]`
-- Custom rules via `[Must]` predicates or `[CustomValidation]` methods
+- Custom rules via reusable `ValidationAttribute<T>` attributes, `[Must]` predicates or `[CustomValidation]` methods
+- Asynchronous rules via `AsyncValidationAttribute<T>`, awaited by the generated `ValidateAsync`
 - Testing helpers via `ZeroAlloc.Validation.Testing`
 
 ## Documentation

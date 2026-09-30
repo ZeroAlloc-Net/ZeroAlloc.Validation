@@ -162,14 +162,14 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
     private static readonly DiagnosticDescriptor ZV0026 = new DiagnosticDescriptor(
         id: "ZV0026",
         title: "[RuleMessage] on a class that is not a custom rule",
-        messageFormat: "'{0}' has [RuleMessage] but does not derive from ValidationAttribute<T>, so the message is never used",
+        messageFormat: "'{0}' has [RuleMessage] but does not derive from ValidationAttribute<T> or AsyncValidationAttribute<T>, so the message is never used",
         category: "ZeroAlloc.Validation",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description:
             "[RuleMessage] supplies the default message of a custom rule, an attribute deriving from "
-            + "ValidationAttribute<T>. On any other class nothing reads it. Derive the class from "
-            + "ValidationAttribute<T>, or remove the attribute.");
+            + "ValidationAttribute<T> or AsyncValidationAttribute<T>. On any other class nothing reads "
+            + "it. Derive the class from one of them, or remove the attribute.");
 
     private static readonly DiagnosticDescriptor ZV0028 = new DiagnosticDescriptor(
         id: "ZV0028",
@@ -290,6 +290,7 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
 
         RegisterValidators(context, accessibility);
         RegisterMisplacedRuleMessage(context);
+        SyncOnlyOptionsValidation.Register(context);
     }
 
     private static void RegisterValidators(
@@ -563,8 +564,16 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // run guarantees each field appears exactly once at class scope
         // (no CS0102 duplicate-member errors when both paths reference the same prop).
         var fields = new GeneratedFields();
-        EmitValidateMethod(sb, classSymbol, compilation, modelName, syncBehaviors, fields);
-        EmitValidateAsyncOverride(sb, classSymbol, compilation, modelName, asyncBehaviors, fields);
+        if (RuleEmitter.RequiresAsync(classSymbol, compilation))
+        {
+            EmitThrowingValidateMethod(sb, classSymbol, modelName);
+            EmitAsyncValidation(sb, classSymbol, compilation, modelName, asyncBehaviors, fields, readsInstanceState: nestedFields.Count > 0);
+        }
+        else
+        {
+            EmitValidateMethod(sb, classSymbol, compilation, modelName, syncBehaviors, fields);
+            EmitValidateAsyncOverride(sb, classSymbol, compilation, modelName, asyncBehaviors, fields);
+        }
 
         fields.AppendDeclarations(sb);
 
@@ -607,6 +616,74 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             var chain = global::ZeroAlloc.Pipeline.Generators.PipelineEmitter.EmitChain(syncBehaviors, syncShape);
             sb.AppendLine($"        return {chain};");
         }
+        sb.AppendLine("    }");
+    }
+
+    /// <summary>
+    /// The synchronous <c>Validate</c> of a model that must validate asynchronously, as
+    /// <see cref="RuleEmitter.RequiresAsync"/> decides. It cannot run the asynchronous rules, and
+    /// skipping them would report a model valid that is not, so it always throws, whatever the
+    /// model's values, instead of throwing only when an asynchronous rule would have run. Its
+    /// synchronous pipeline behaviors would only wrap the throw, so none are applied.
+    /// </summary>
+    private static void EmitThrowingValidateMethod(System.Text.StringBuilder sb, INamedTypeSymbol classSymbol, string modelName)
+    {
+        var message = $"'{classSymbol.ToDisplayString()}' has asynchronous validation rules, which Validate cannot run; call ValidateAsync instead.";
+        sb.AppendLine("    /// <inheritdoc/>");
+        sb.AppendLine("    /// <exception cref=\"global::System.NotSupportedException\">Always: the model has asynchronous validation rules; call <c>ValidateAsync</c> instead.</exception>");
+        sb.AppendLine($"    public override global::ZeroAlloc.Validation.ValidationResult Validate({modelName} instance)");
+        sb.AppendLine($"        => throw new global::System.NotSupportedException(\"{RuleEmitter.EscapeString(message)}\");");
+    }
+
+    /// <summary>
+    /// The asynchronous validation of a model that must validate asynchronously: a private
+    /// <c>async</c> method holding the body, which awaits each asynchronous rule and nested
+    /// validator in declaration order, and the <c>ValidateAsync</c> override calling it, through
+    /// the model's asynchronous pipeline behaviors when it has any. The behaviors' chain calls the
+    /// body from <c>static</c> lambdas, so the body is a static method unless it reads the nested
+    /// validators, <paramref name="readsInstanceState"/>, which the synchronous body inlined into
+    /// such a chain cannot do either, issue #294.
+    /// </summary>
+    private static void EmitAsyncValidation(
+        System.Text.StringBuilder sb,
+        INamedTypeSymbol classSymbol,
+        Compilation compilation,
+        string modelName,
+        List<global::ZeroAlloc.Pipeline.Generators.PipelineBehaviorInfo> asyncBehaviors,
+        GeneratedFields fields,
+        bool readsInstanceState)
+    {
+        const string core = "__ValidateAsyncCore";
+        const string ct = GeneratedCalls.CancellationToken;
+
+        string call;
+        if (asyncBehaviors.Count == 0)
+        {
+            call = $"{core}(instance, {ct})";
+        }
+        else
+        {
+            var asyncShape = new global::ZeroAlloc.Pipeline.Generators.PipelineShape
+            {
+                TypeArguments           = new[] { classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) },
+                OuterParameterNames     = new[] { "instance", ct },
+                LambdaParameterPrefixes = new[] { "r", "c" },
+                InnermostBodyFactory    = depth => depth == 0
+                    ? $"{{\n            return {core}(instance, {ct});\n        }}"
+                    : $"{{\n            return {core}(r{depth}, c{depth});\n        }}",
+            };
+            call = global::ZeroAlloc.Pipeline.Generators.PipelineEmitter.EmitChain(asyncBehaviors, asyncShape);
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("    /// <inheritdoc/>");
+        sb.AppendLine($"    public override {RuleEmitter.AsyncResultType} ValidateAsync({modelName} instance, global::System.Threading.CancellationToken {ct} = default)");
+        sb.AppendLine($"        => {call};");
+        sb.AppendLine();
+        var modifiers = readsInstanceState ? "private async" : "private static async";
+        sb.AppendLine($"    {modifiers} {RuleEmitter.AsyncResultType} {core}({modelName} instance, global::System.Threading.CancellationToken {ct})");
+        sb.AppendLine("    {");
+        RuleEmitter.EmitValidateBody(sb, classSymbol, compilation, "instance", fields);
         sb.AppendLine("    }");
     }
 
