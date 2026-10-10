@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.1.0...v2.2.0) (2026-10-10)
+
+
+### Features
+
+* mark the Validation packages as AOT-compatible ([#313](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/313)) ([79e4e65](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/79e4e65203e21c39341651808b0ac828e12fbc53))
+
 ## [2.1.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.0.3...v2.1.0) (2026-09-30)
 
 
