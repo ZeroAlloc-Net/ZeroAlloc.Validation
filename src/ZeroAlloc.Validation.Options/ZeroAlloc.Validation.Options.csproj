@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <PackageId>ZeroAlloc.Validation.Options</PackageId>
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>Source-generated options validation for ZeroAlloc.Validation. Plugs compile-time validators into Microsoft.Extensions.Options with zero reflection.</Description>
   </PropertyGroup>
 

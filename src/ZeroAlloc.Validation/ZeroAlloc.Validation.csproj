@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <PackageId>ZeroAlloc.Validation</PackageId>
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>A zero-allocation validation library for .NET. Roslyn source generator wires all rule evaluation at compile time — no reflection, no boxing, no runtime overhead.</Description>
   </PropertyGroup>
 
