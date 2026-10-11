@@ -84,3 +84,11 @@ ZV0035  | ZeroAlloc.Validation | Warning  | [PipelineBehavior] type that does no
 ZV0036  | ZeroAlloc.Validation | Error    | Built-in rule on a value whose type is a type parameter
 ZV0037  | ZeroAlloc.Validation | Error    | Nested model that nests its model inside itself without end
 ZV0038  | ZeroAlloc.Validation | Warning  | Pipeline behavior applied to a closed form of a generic model
+
+## Release 2.3.0
+
+### New Rules
+
+Rule ID | Category             | Severity | Notes
+--------|----------------------|----------|--------------------------------------------------------------------------------
+ZV0039  | ZeroAlloc.Validation | Error    | [IsInEnum] on a value that is not an enum
