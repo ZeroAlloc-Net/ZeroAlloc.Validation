@@ -204,7 +204,7 @@ internal static class RuleEmitter
     /// <summary>
     /// Reports what is wrong with the rules on <paramref name="prop"/>, for the pipeline step of
     /// the type that declares it. A rule <see cref="UsableRules"/> leaves out is reported as ZV0020,
-    /// ZV0021, ZV0023 or ZV0033. The rules that stay are checked for what their emitted code gets
+    /// ZV0021, ZV0023, ZV0033, ZV0036 or ZV0039. The rules that stay are checked for what their emitted code gets
     /// wrong: ZV0016 for a built-in rule on a multi-property value object, ZV0022 for an unknown
     /// placeholder in a custom rule's message. Each depends on the usage alone, not on the model
     /// or on whether the rule's <c>When</c>, <c>Unless</c> and <c>[Must]</c> methods can be called
@@ -222,8 +222,8 @@ internal static class RuleEmitter
     /// is left out for a property type with no implicit conversion to the rule's <c>T</c>, ZV0021,
     /// or an attribute the validator cannot reach, ZV0023. A numeric comparison rule on a type
     /// <c>Convert.ToDouble</c> cannot convert is left out, ZV0033, and so is a built-in rule that
-    /// has no form for a value whose type is a type parameter, ZV0036. A
-    /// <c>ValidationAttribute</c> subclass that is neither a built-in nor a custom rule is not a
+    /// has no form for a value whose type is a type parameter, ZV0036, and <c>[IsInEnum]</c> on a
+    /// value that is not an enum, ZV0039. A <c>ValidationAttribute</c> subclass that is neither a built-in nor a custom rule is not a
     /// rule, ZV0020. Each is reported only when <paramref name="ctx"/> is set.
     /// </summary>
     private static List<AttributeData> UsableRules(Compilation compilation, IPropertySymbol prop, DiagnosticSink? ctx)
@@ -244,6 +244,9 @@ internal static class RuleEmitter
                 continue;
 
             if (!HasTypeParameterForm(prop, attr, ctx))
+                continue;
+
+            if (!ChecksAnEnum(prop, attr, ctx))
                 continue;
 
             usableRules.Add(attr);
@@ -1718,7 +1721,7 @@ internal static class RuleEmitter
         var isNullable = valueType?.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T;
 
         // An enum, and a type parameter constrained to struct, Enum, which HasTypeParameterForm
-        // requires, are checked with the generic overload. It is compiled per enum without boxing,
+        // requires, are the only operands ChecksAnEnum lets through. They are checked with the generic overload. It is compiled per enum without boxing,
         // where Enum.IsDefined(Type, object) boxed the value on every call, issues #238 and #316.
         // Enum.IsDefined<TEnum> exists from .NET 5, below every framework the library targets.
         if (enumType is ITypeParameterSymbol or { TypeKind: TypeKind.Enum })
@@ -1729,10 +1732,10 @@ internal static class RuleEmitter
                 : $"!{isDefined}({access})";
         }
 
-        var typeOf = $"typeof({enumType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})";
-        return isNullable
-            ? $"{access}.HasValue && !global::System.Enum.IsDefined({typeOf}, {access}.Value)"
-            : $"!global::System.Enum.IsDefined({typeOf}, {access})";
+        // Any other type is left out by ChecksAnEnum and reported as ZV0039: Enum.IsDefined threw
+        // ArgumentException for it on every call, #318.
+        throw new InvalidOperationException(
+            $"[IsInEnum] reached the emitter for '{valueType?.ToDisplayString()}', which is not an enum.");
     }
 
     /// <summary>
@@ -2270,6 +2273,40 @@ internal static class RuleEmitter
         if (supported) return true;
 
         ctx?.Report(ZV0036, AttributeLocation(attr, prop), attr.AttributeClass!.Name, prop.Name, parameter.ToDisplayString());
+        return false;
+    }
+
+    private static readonly DiagnosticDescriptor ZV0039 = new DiagnosticDescriptor(
+        id: "ZV0039",
+        title: "[IsInEnum] on a value that is not an enum",
+        messageFormat: "'{0}' checks that '{1}' is a defined enum member, but its type '{2}' is not an enum; declare the property as an enum or a nullable enum, or use [Must] or a custom ValidationAttribute<T>",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description:
+            "IsInEnum checks the value with Enum.IsDefined, which takes an enum. On any other type, "
+            + "such as int, string, System.Enum itself or a collection of enums, it throws "
+            + "ArgumentException on every call, so the model could never be validated. The value "
+            + "checked is the one the rule reads, after Nullable<T> and single-property value-object "
+            + "unwrapping. The rule is left out of the generated validator. A value whose type is a "
+            + "type parameter is checked by ZV0036 instead.");
+
+    /// <summary>
+    /// Whether a rule that is not <c>[IsInEnum]</c>, or <c>[IsInEnum]</c> on an enum, can be
+    /// emitted. The operand is the value the rule reads, after <c>Nullable&lt;T&gt;</c> and
+    /// single-property value-object unwrapping. On any other type <c>Enum.IsDefined</c> compiled and
+    /// then threw ArgumentException on every call, #318, so the rule is left out and, when
+    /// <paramref name="ctx"/> is set, reported as ZV0039 at the attribute. A type parameter is
+    /// <see cref="HasTypeParameterForm"/>'s to judge: it reached here only with <c>struct, Enum</c>.
+    /// </summary>
+    private static bool ChecksAnEnum(IPropertySymbol prop, AttributeData attr, DiagnosticSink? ctx)
+    {
+        if (!string.Equals(attr.AttributeClass?.ToDisplayString(), IsInEnumFqn, StringComparison.Ordinal)) return true;
+
+        var valueType = ValueTypeOf(prop.Type) ?? prop.Type;
+        if (Operand(valueType) is ITypeParameterSymbol or { TypeKind: TypeKind.Enum }) return true;
+
+        ctx?.Report(ZV0039, AttributeLocation(attr, prop), attr.AttributeClass!.Name, prop.Name, valueType.ToDisplayString());
         return false;
     }
 
