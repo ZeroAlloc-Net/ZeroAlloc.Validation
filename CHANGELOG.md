@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.2.0...v2.2.1) (2026-10-11)
+
+
+### Performance Improvements
+
+* stop [PrecisionScale], [IsInEnum] and the MVC filter allocating per call ([#317](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/317)) ([e0259dd](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/e0259dd62141d061f65aa06850ba253cfd5f7a55)), closes [#316](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/316)
+
 ## [2.2.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.1.0...v2.2.0) (2026-10-10)
 
 
