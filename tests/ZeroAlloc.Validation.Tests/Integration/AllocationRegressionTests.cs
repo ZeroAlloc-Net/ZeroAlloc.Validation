@@ -101,6 +101,45 @@ public class AllocationRegressionTests
     }
 
     [Fact]
+    public void ConcreteEnum_ValidPath_AllocatesNothing()
+    {
+        // Issue #316: a concrete enum is checked with Enum.IsDefined<TEnum>, not the boxing
+        // Enum.IsDefined(Type, object) overload, on the plain and the nullable property alike.
+        var validator = new AllocEnumModelValidator();
+        var model = new AllocEnumModel { Light = TrafficLight.Green, Optional = TrafficLight.Red };
+
+        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+    }
+
+    [Fact]
+    public void ConcreteEnum_SingleFailure_AllocatesResultArrayOnly()
+    {
+        var validator = new AllocEnumModelValidator();
+        var model = new AllocEnumModel { Light = (TrafficLight)42, Optional = null };
+
+        Assert.InRange(Measure(() => validator.Validate(model).IsValid), 1, OneFailureCeiling);
+    }
+
+    [Fact]
+    public void PrecisionScale_ValidPath_AllocatesNothing()
+    {
+        // Issue #316: the scale is read without the int[4] that decimal.GetBits returns.
+        var validator = new AllocPrecisionScaleModelValidator();
+        var model = new AllocPrecisionScaleModel { Amount = 1234.56m, Optional = 0.5m };
+
+        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+    }
+
+    [Fact]
+    public void PrecisionScale_SingleFailure_AllocatesResultArrayOnly()
+    {
+        var validator = new AllocPrecisionScaleModelValidator();
+        var model = new AllocPrecisionScaleModel { Amount = 1.234m, Optional = null };
+
+        Assert.InRange(Measure(() => validator.Validate(model).IsValid), 1, OneFailureCeiling);
+    }
+
+    [Fact]
     public void NestedModel_ValidPath_AllocatesNothing()
     {
         var validator = new AllocParentModelValidator(new AllocChildModelValidator());
