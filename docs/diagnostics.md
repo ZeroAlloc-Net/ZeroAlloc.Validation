@@ -40,6 +40,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0036](#zv0036) | Error | Built-in rule on a value whose type is a type parameter |
 | [ZV0037](#zv0037) | Error | Nested model that nests its model inside itself without end |
 | [ZV0038](#zv0038) | Warning | Pipeline behavior applied to a closed form of a generic model |
+| [ZV0039](#zv0039) | Error | [IsInEnum] on a value that is not an enum |
 
 A rule or attribute declared on a base type is checked by every `[Validate]` model that inherits it, and a diagnostic about the usage is reported once, however many models derive from the base type, and whether or not it is `[Validate]` itself. A `[Validate(IncludeBaseProperties = false)]` model does not see the types above it, so it does not report their usages; a model deriving from it that includes base properties does. A generic base type is checked for each type argument the models use, and a diagnostic that is the same for each is reported once.
 
@@ -1094,6 +1095,47 @@ public sealed class AuditPages : IPipelineBehavior { ... }
 ```
 
 A model declared inside a generic type is named the same way: `typeof(Outer<>.Inner<>)` or `typeof(Outer<>.Plain)`.
+
+---
+
+## ZV0039
+
+**Severity:** Error
+
+**Title:** [IsInEnum] on a value that is not an enum
+
+**When fired:** `[IsInEnum]` checks the value with `Enum.IsDefined`, which takes an enum. On any other type, such as `int`, `string`, `object`, `System.Enum` itself, your own struct, or a collection of enums such as `List<Color>` or `Color[]`, `Enum.IsDefined` throws `ArgumentException: Type provided must be an Enum` on every call, so the model could never be validated. Such a rule used to compile and then throw. It is now reported at the attribute and left out of the generated validator:
+
+```csharp
+[Validate]
+public class Order
+{
+    [IsInEnum]                       // ZV0039 — int is not an enum
+    public int Status { get; set; }
+
+    [IsInEnum]                       // fine — an enum, or a nullable enum
+    public OrderStatus? Priority { get; set; }
+}
+```
+
+> '{Attr}' checks that '{Prop}' is a defined enum member, but its type '{Type}' is not an enum; declare the property as an enum or a nullable enum, or use [Must] or a custom ValidationAttribute\<T\>
+
+The value checked is the one the rule reads, after `Nullable<T>` and single-property value-object unwrapping: `[IsInEnum]` on a value object that wraps an enum is fine, and one that wraps an `int` is reported. A record's positional property is checked the same way, `public record Order([property: IsInEnum] int Status)`. The rule does not apply to the elements of a collection; a collection property is reported like any other type that is not an enum.
+
+A value whose type is a type parameter of a [generic model](getting-started.md#generic-models) is not reported here. It is fine when the type parameter is constrained to `struct, Enum`, and is otherwise reported as [ZV0036](#zv0036), including for `where T : Enum` alone, which a closing over `System.Enum` itself would satisfy.
+
+**Fix:** Declare the property as the enum it holds. To check that an `int` or a `string` names a member of an enum, use `[IsEnumName(typeof(OrderStatus))]` for a string, or a `[Must]` predicate:
+
+```csharp
+[Validate]
+public class Order
+{
+    [Must(nameof(IsKnownStatus))]
+    public int Status { get; set; }
+
+    public bool IsKnownStatus(int status) => Enum.IsDefined((OrderStatus)status);
+}
+```
 
 ---
 

@@ -129,7 +129,7 @@ public class Order
 | Attribute | Description | Default error message |
 |---|---|---|
 | `[IsEnumName(typeof(TEnum))]` | String property — value must be a defined name in the specified enum type. A null string passes; add `[NotNull]` to reject it | `PropertyName is not a valid enum name.` |
-| `[IsInEnum]` | Enum-typed property — value must be a defined member of its own enum type. On a nullable enum, null passes; add `[NotNull]` to reject it | `PropertyName is not a valid value.` |
+| `[IsInEnum]` | Enum-typed property — value must be a defined member of its own enum type. On a nullable enum, null passes; add `[NotNull]` to reject it. On a type that is not an enum it is a build error, [ZV0039](diagnostics.md#zv0039) | `PropertyName is not a valid value.` |
 
 ```csharp
 [Validate]
