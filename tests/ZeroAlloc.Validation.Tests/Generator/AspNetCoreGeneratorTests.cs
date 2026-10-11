@@ -83,6 +83,25 @@ public class AspNetCoreGeneratorTests
         Assert.Contains("ValidateAsync", generated, System.StringComparison.Ordinal);
     }
 
+    // Issue #316: enumerating ActionArguments through IDictionary boxed an enumerator per request.
+    [Fact]
+    public void GeneratedFilter_EnumeratesTheArgumentDictionaryWithoutBoxing()
+    {
+        var source = """
+            using ZeroAlloc.Validation;
+            namespace TestModels;
+            [Validate]
+            public class CreateOrderRequest { [NotEmpty] public string Reference { get; set; } = ""; }
+            """;
+
+        var generated = RunAspNetGeneratorGetSource(source, "ZeroAllocValidationActionFilter.g.cs");
+        Assert.Contains(
+            "if (context.ActionArguments is global::System.Collections.Generic.Dictionary<string, object?> arguments)",
+            generated,
+            System.StringComparison.Ordinal);
+        Assert.DoesNotContain("ActionArguments.Values", generated, System.StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Generator_EmitsValidatorFor_InExtensionMethod()
     {

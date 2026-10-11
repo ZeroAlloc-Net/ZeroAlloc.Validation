@@ -1717,11 +1717,13 @@ internal static class RuleEmitter
         var enumType = Operand(valueType);
         var isNullable = valueType?.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T;
 
-        // A type parameter constrained to struct, Enum, which HasTypeParameterForm requires, is
-        // checked with the generic overload, compiled per closing without boxing, issue #238.
-        if (enumType is ITypeParameterSymbol parameter)
+        // An enum, and a type parameter constrained to struct, Enum, which HasTypeParameterForm
+        // requires, are checked with the generic overload. It is compiled per enum without boxing,
+        // where Enum.IsDefined(Type, object) boxed the value on every call, issues #238 and #316.
+        // Enum.IsDefined<TEnum> exists from .NET 5, below every framework the library targets.
+        if (enumType is ITypeParameterSymbol or { TypeKind: TypeKind.Enum })
         {
-            var isDefined = $"global::System.Enum.IsDefined<{parameter.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>";
+            var isDefined = $"global::System.Enum.IsDefined<{enumType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}>";
             return isNullable
                 ? $"{access}.HasValue && !{isDefined}({access}.Value)"
                 : $"!{isDefined}({access})";

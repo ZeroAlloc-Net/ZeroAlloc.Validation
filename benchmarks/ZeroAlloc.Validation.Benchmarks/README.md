@@ -1,6 +1,6 @@
 # ZeroAlloc.Validation Benchmarks
 
-Compares **ZeroAlloc.Validation** against **FluentValidation 11** across three model shapes and both the valid and invalid execution paths.
+Compares **ZeroAlloc.Validation** against **FluentValidation 11** across three model shapes, the precision and enum rules, and both the valid and invalid execution paths.
 
 ## Environment
 
@@ -117,6 +117,31 @@ _(3 items in both the valid and invalid fixture)_
 
 **Valid path:** ZeroAlloc is **~143× faster** and allocates **0 bytes** (vs 3,456 B).
 **Invalid path:** ZeroAlloc is **~33× faster** and allocates **~14× less** (856 B vs 11,568 B).
+
+---
+
+## Benchmark 4 — Precision and enum rules
+
+`[PrecisionScale]` on a decimal and `[IsInEnum]` on a concrete enum, both of which allocated on the
+valid path before issue #316.
+
+```csharp
+[Validate]
+public class BenchPayment
+{
+    [PrecisionScale(9, 2)] public decimal            Amount { get; set; }
+    [IsInEnum]             public BenchPaymentStatus Status { get; set; }
+}
+```
+
+Measured with BenchmarkDotNet v0.15.8 on .NET 10.0.12, i9-12900HK.
+
+| Method     | Mean        | Allocated |
+|----------- |------------:|----------:|
+| ZA_Valid   |    40.37 ns |         - |
+| ZA_Invalid |    54.42 ns |      88 B |
+| FV_Valid   | 2,722.12 ns |     816 B |
+| FV_Invalid | 9,058.84 ns |    6825 B |
 
 ---
 

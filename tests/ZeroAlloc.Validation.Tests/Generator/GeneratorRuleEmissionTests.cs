@@ -475,19 +475,23 @@ public class GeneratorRuleEmissionTests
         Assert.Contains(".Length > 50", generated, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Generator_EmitsIsInEnum_Check()
+    // Issue #316: a concrete enum uses the generic overload, which does not box the value the way
+    // Enum.IsDefined(Type, object) did on every call.
+    [Theory]
+    [InlineData("Color", "!global::System.Enum.IsDefined<global::TestModels.Color>(instance.Hue)")]
+    [InlineData("Color?", "instance.Hue.HasValue && !global::System.Enum.IsDefined<global::TestModels.Color>(instance.Hue.Value)")]
+    public void Generator_EmitsIsInEnum_Check(string type, string condition)
     {
-        var source = """
+        var source = $$"""
             using ZeroAlloc.Validation;
             namespace TestModels;
             public enum Color { Red, Green, Blue }
             [Validate]
-            public class Foo { [IsInEnum] public Color Hue { get; set; } }
+            public class Foo { [IsInEnum] public {{type}} Hue { get; set; } }
             """;
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("IsDefined", generated, StringComparison.Ordinal);
-        Assert.Contains("Color", generated, StringComparison.Ordinal);
+        Assert.Contains(condition, generated, StringComparison.Ordinal);
+        Assert.DoesNotContain("typeof(", generated, StringComparison.Ordinal);
     }
 
     [Fact]

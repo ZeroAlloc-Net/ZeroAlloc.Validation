@@ -192,22 +192,41 @@ public sealed class AspNetCoreFilterEmitter : IIncrementalGenerator
         // The request's own token, so an aborted request stops the validation's asynchronous
         // rules, and the asynchronous pipeline behaviors, instead of letting them run on.
         sb.AppendLine("        var ct = context.HttpContext.RequestAborted;");
-        sb.AppendLine("        foreach (var arg in context.ActionArguments.Values)");
+        // MVC hands over its arguments as a Dictionary behind IDictionary. Enumerating the
+        // interface boxed an enumerator on every request, issue #316, so the concrete type is
+        // enumerated with its struct enumerator, and any other implementation through the interface.
+        sb.AppendLine("        if (context.ActionArguments is global::System.Collections.Generic.Dictionary<string, object?> arguments)");
         sb.AppendLine("        {");
-        sb.AppendLine("            var result = await DispatchAsync(arg, ct);");
-        sb.AppendLine("            if (result is null || result.Value.IsValid) continue;");
-        sb.AppendLine();
-        sb.AppendLine("            var pd = new global::Microsoft.AspNetCore.Mvc.ValidationProblemDetails();");
-        sb.AppendLine("            foreach (ref readonly var f in result.Value.Failures)");
-        sb.AppendLine("            {");
-        sb.AppendLine("                if (!pd.Errors.ContainsKey(f.PropertyName))");
-        sb.AppendLine("                    pd.Errors[f.PropertyName] = global::System.Array.Empty<string>();");
-        sb.AppendLine("                pd.Errors[f.PropertyName] = [.. pd.Errors[f.PropertyName], f.ErrorMessage];");
-        sb.AppendLine("            }");
-        sb.AppendLine("            context.Result = new global::Microsoft.AspNetCore.Mvc.UnprocessableEntityObjectResult(pd);");
-        sb.AppendLine("            return;");
+        sb.AppendLine("            foreach (var argument in arguments)");
+        sb.AppendLine("                if (await RejectsAsync(context, argument.Value, ct)) return;");
+        sb.AppendLine("        }");
+        sb.AppendLine("        else");
+        sb.AppendLine("        {");
+        sb.AppendLine("            foreach (var argument in context.ActionArguments)");
+        sb.AppendLine("                if (await RejectsAsync(context, argument.Value, ct)) return;");
         sb.AppendLine("        }");
         sb.AppendLine("        await next();");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+        AppendRejectsAsync(sb);
+    }
+
+    private static void AppendRejectsAsync(StringBuilder sb)
+    {
+        sb.AppendLine("    private async global::System.Threading.Tasks.ValueTask<bool> RejectsAsync(global::Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context, object? arg, global::System.Threading.CancellationToken ct)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        var result = await DispatchAsync(arg, ct);");
+        sb.AppendLine("        if (result is null || result.Value.IsValid) return false;");
+        sb.AppendLine();
+        sb.AppendLine("        var pd = new global::Microsoft.AspNetCore.Mvc.ValidationProblemDetails();");
+        sb.AppendLine("        foreach (ref readonly var f in result.Value.Failures)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            if (!pd.Errors.ContainsKey(f.PropertyName))");
+        sb.AppendLine("                pd.Errors[f.PropertyName] = global::System.Array.Empty<string>();");
+        sb.AppendLine("            pd.Errors[f.PropertyName] = [.. pd.Errors[f.PropertyName], f.ErrorMessage];");
+        sb.AppendLine("        }");
+        sb.AppendLine("        context.Result = new global::Microsoft.AspNetCore.Mvc.UnprocessableEntityObjectResult(pd);");
+        sb.AppendLine("        return true;");
         sb.AppendLine("    }");
         sb.AppendLine();
     }
