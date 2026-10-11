@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.2.1...v2.3.0) (2026-10-11)
+
+
+### Features
+
+* report [IsInEnum] on a value that is not an enum as ZV0039 ([#320](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/320)) ([0189c0b](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/0189c0ba84e21a45cf39c55f249da4be312e3f47)), closes [#318](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/318)
+
 ## [2.2.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.2.0...v2.2.1) (2026-10-11)
 
 
