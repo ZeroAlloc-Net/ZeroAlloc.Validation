@@ -206,22 +206,20 @@ public class GuardedConditionEmissionTests
     /// <summary>The one line in <paramref name="generated"/> that opens the rule on <c>Foo.Amount</c>, trimmed.</summary>
     private static string FindRuleLine(string generated, string path)
     {
-        // Not Assert.Single, which HLQ005 flags by name, a false positive, #212.
         var lines = generated.Split('\n').Select(l => l.Trim()).ToArray();
-        var at = Enumerable.Range(0, lines.Length)
-            .Where(i => lines[i].StartsWith("if (", StringComparison.Ordinal)
-                        && lines[i].Contains("instance.Amount", StringComparison.Ordinal))
-            .ToArray();
-        Assert.True(at.Length == 1, $"Expected one rule line, got {at.Length}.");
+        var at = Assert.Single(
+            Enumerable.Range(0, lines.Length),
+            i => lines[i].StartsWith("if (", StringComparison.Ordinal)
+                 && lines[i].Contains("instance.Amount", StringComparison.Ordinal));
 
         // The flat path, taken without a nested property, braces the rule's body; the buffered
         // path adds the failure straight to its buffer.
-        var body = lines[at[0] + 1];
+        var body = lines[at + 1];
         if (string.Equals(path, "Buffered", StringComparison.Ordinal))
             Assert.StartsWith("_buf.Add(", body, StringComparison.Ordinal);
         else
             Assert.Equal("{", body);
 
-        return lines[at[0]];
+        return lines[at];
     }
 }
