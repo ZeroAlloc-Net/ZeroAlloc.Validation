@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.3.0...v2.3.1) (2026-10-12)
+
+
+### Code Refactoring
+
+* remove NetFabric.Hyperlinq.Analyzer ([#324](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/324)) ([a5935eb](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/a5935eb68c1fba7f68ec8d1893274b0f9a3b9cd4))
+
 ## [2.3.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.2.1...v2.3.0) (2026-10-11)
 
 
