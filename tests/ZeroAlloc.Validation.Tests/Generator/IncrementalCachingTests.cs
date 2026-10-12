@@ -485,7 +485,7 @@ public class IncrementalCachingTests
 
     private static Compilation Edit(Compilation compilation, string path, string newSource)
     {
-        var old = Only(compilation.SyntaxTrees, t => string.Equals(t.FilePath, path, StringComparison.Ordinal));
+        var old = Assert.Single(compilation.SyntaxTrees, t => string.Equals(t.FilePath, path, StringComparison.Ordinal));
         return compilation.ReplaceSyntaxTree(old, Parse(newSource, path));
     }
 
@@ -522,7 +522,7 @@ public class IncrementalCachingTests
         result.Diagnostics.Count(d => string.Equals(d.Id, id, StringComparison.Ordinal));
 
     private static IncrementalStepRunReason DeclaringTypeStepReason(GeneratorRunResult result, string key) =>
-        Only(
+        Assert.Single(
             result.TrackedSteps[ValidatorGenerator.DeclaringTypeTrackingName].SelectMany(s => s.Outputs),
             o => string.Equals(((DeclaringTypeDiagnostics)o.Value).Key, key, StringComparison.Ordinal))
             .Reason;
@@ -530,16 +530,16 @@ public class IncrementalCachingTests
     // The source-output step that reports the diagnostics of the declaring type key names.
     private static IncrementalStepRunReason DeclaringTypeOutputStepReason(GeneratorRunResult result, string key)
     {
-        var step = Only(
+        var step = Assert.Single(
             result.TrackedOutputSteps.SelectMany(kv => kv.Value),
             s => s.Inputs.Any(i =>
                 i.Source.Outputs[i.OutputIndex].Value is DeclaringTypeDiagnostics d
                 && string.Equals(d.Key, key, StringComparison.Ordinal)));
-        return Only(step.Outputs, _ => true).Reason;
+        return Assert.Single(step.Outputs).Reason;
     }
 
     private static IncrementalStepRunReason ValidatorStepReason(GeneratorRunResult result, string hintName) =>
-        Only(
+        Assert.Single(
             result.TrackedSteps[ValidatorGenerator.ValidatorTrackingName].SelectMany(s => s.Outputs),
             o => string.Equals(((ValidatorGenerator.GeneratedValidator)o.Value).HintName, hintName, StringComparison.Ordinal))
             .Reason;
@@ -548,24 +548,12 @@ public class IncrementalCachingTests
     // validator's generation step.
     private static IncrementalStepRunReason OutputStepReason(GeneratorRunResult result, string hintName)
     {
-        var step = Only(
+        var step = Assert.Single(
             result.TrackedOutputSteps.SelectMany(kv => kv.Value),
             s => s.Inputs.Any(i =>
                 i.Source.Outputs[i.OutputIndex].Value is ValidatorGenerator.GeneratedValidator v
                 && string.Equals(v.HintName, hintName, StringComparison.Ordinal)));
-        return Only(step.Outputs, _ => true).Reason;
-    }
-
-    /// <summary>The one item matching <paramref name="predicate"/>, asserting there is exactly one.</summary>
-    /// <remarks>
-    /// Not <c>Assert.Single</c>: HLQ005 flags it by name, a false positive, #212. The same
-    /// <c>Assert.True</c> over the count as FailFastDirectReturnTests.SingleFailure.
-    /// </remarks>
-    private static T Only<T>(IEnumerable<T> items, Func<T, bool> predicate)
-    {
-        var matches = items.Where(predicate).ToArray();
-        Assert.True(matches.Length == 1, $"Expected exactly one match, got {matches.Length}.");
-        return matches[0];
+        return Assert.Single(step.Outputs).Reason;
     }
 
     private static void AssertAllSuppressed(GeneratorDriverRunResult result)

@@ -686,8 +686,7 @@ internal static class RuleEmitter
             case CollectionIteration.ListSpan:
                 // A span over the backing array: no enumerator, and no interface dispatch per item.
                 // Span<T>.Enumerator.Current returns by ref, so the loop variable is bound `ref
-                // readonly` — HLQ004 (NetFabric.Hyperlinq.Analyzer) requires this to avoid a copy
-                // of each item on every iteration.
+                // readonly`, which avoids copying each item on every iteration when T is a struct.
                 sb.AppendLine($"            int {varName}Idx = 0;");
                 sb.AppendLine($"            foreach (ref readonly var {varName}Item in global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan({varName}Src))");
                 sb.AppendLine("            {");
