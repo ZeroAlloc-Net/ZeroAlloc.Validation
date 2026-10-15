@@ -31,7 +31,8 @@ These costs are unavoidable in FluentValidation's architecture because it has no
 ## Benchmark environment
 
 Measured 2026-10-15 against **FluentValidation 12.1.1**, the version the benchmark project
-references, with BenchmarkDotNet's in-process toolchain (`--inProcess`):
+references, with BenchmarkDotNet's in-process toolchain (`--inProcess`), on a KVM virtual machine
+on a shared host:
 
 ```
 BenchmarkDotNet v0.15.8, Linux Debian GNU/Linux 13 (trixie)
@@ -40,23 +41,23 @@ Intel Core Ultra 7 255H 3.69GHz, 1 CPU, 12 logical and 12 physical cores
   [Host]     : .NET 10.0.13 (10.0.13, 10.0.1326.50504), X64 RyuJIT x86-64-v3
 ```
 
-> **Timings are indicative** — measured on a developer laptop (Core Ultra 7 255H, hybrid P/E cores)
-> under background load; allocations are exact, ratios are same-run. ZeroAlloc.Validation and
-> FluentValidation were measured side by side in one BenchmarkDotNet run per model, so compare
-> the ratios rather than absolute nanoseconds. An out-of-process job in the same run measured the
-> ZeroAlloc invalid paths 1.6 to 2.4 times faster than the in-process figures below; see the
-> [benchmark README](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/benchmarks/ZeroAlloc.Validation.Benchmarks/README.md#environment).
+> Allocations are exact. Speed is shown as same-run ratios, because the benchmark host is a shared VM; absolute timings are not published.
+
+Each table comes from one BenchmarkDotNet run in which ZeroAlloc.Validation and FluentValidation
+were measured side by side. `Ratio` is each row's mean time relative to `FV_Valid` in that run, and
+the speedups are FluentValidation's mean divided by ZeroAlloc's from the same run. The run used
+the in-process toolchain, one launch per benchmark, without CPU pinning.
 
 ## Benchmark results — Flat model
 
 Three directly validated properties: `[NotEmpty][MaxLength(50)]`, `[GreaterThan(0)]`, `[NotEmpty][EmailAddress]`.
 
-| Method     | Mean         | Error      | StdDev     | Ratio | Allocated | Alloc Ratio |
-|------------|-------------:|-----------:|-----------:|------:|----------:|------------:|
-| ZA_Valid   |     4.198 ns |  0.0232 ns |  0.0206 ns |  0.04 |         - |        0.00 |
-| ZA_Invalid |    45.212 ns |  0.4384 ns |  0.4101 ns |  0.39 |     120 B |        0.17 |
-| FV_Valid   |   116.833 ns |  1.4367 ns |  1.1997 ns |  1.00 |     696 B |        1.00 |
-| FV_Invalid | 1,232.737 ns | 14.6328 ns | 13.6875 ns | 10.55 |    5216 B |        7.49 |
+| Method     | Ratio | Allocated | Alloc Ratio |
+|----------- |------:|----------:|------------:|
+| ZA_Valid   |  0.04 |         - |        0.00 |
+| ZA_Invalid |  0.39 |     120 B |        0.17 |
+| FV_Valid   |  1.00 |     696 B |        1.00 |
+| FV_Invalid | 10.55 |    5216 B |        7.49 |
 
 **Valid path:** ZeroAlloc is **27.8x faster** and allocates **0 bytes** (vs 696 B).
 **Invalid path:** ZeroAlloc is **27.3x faster** and allocates **43.5x less** (120 B vs 5,216 B).
@@ -65,12 +66,12 @@ Three directly validated properties: `[NotEmpty][MaxLength(50)]`, `[GreaterThan(
 
 One scalar property plus a required nested object (3 child properties).
 
-| Method     | Mean         | Error      | StdDev      | Ratio | Allocated | Alloc Ratio |
-|------------|-------------:|-----------:|------------:|------:|----------:|------------:|
-| ZA_Valid   |     2.704 ns |  0.0659 ns |   0.0584 ns | 0.008 |         - |        0.00 |
-| ZA_Invalid |   145.443 ns |  2.5690 ns |   6.6771 ns | 0.411 |     488 B |        0.33 |
-| FV_Valid   |   360.254 ns | 17.6492 ns |  52.0392 ns | 1.019 |    1488 B |        1.00 |
-| FV_Invalid | 1,848.720 ns | 71.4433 ns | 202.6729 ns | 5.229 |    6032 B |        4.05 |
+| Method     | Ratio | Allocated | Alloc Ratio |
+|----------- |------:|----------:|------------:|
+| ZA_Valid   | 0.008 |         - |        0.00 |
+| ZA_Invalid | 0.411 |     488 B |        0.33 |
+| FV_Valid   | 1.019 |    1488 B |        1.00 |
+| FV_Invalid | 5.229 |    6032 B |        4.05 |
 
 **Valid path:** ZeroAlloc is **133.2x faster** and allocates **0 bytes** (vs 1,488 B).
 **Invalid path:** ZeroAlloc is **12.7x faster** and allocates **12.4x less** (488 B vs 6,032 B).
@@ -79,12 +80,12 @@ One scalar property plus a required nested object (3 child properties).
 
 A cart with a string ID and a list of three line items.
 
-| Method     | Mean         | Error      | StdDev     | Ratio | Allocated | Alloc Ratio |
-|------------|-------------:|-----------:|-----------:|------:|----------:|------------:|
-| ZA_Valid   |     7.896 ns |  0.0493 ns |  0.0462 ns |  0.01 |         - |        0.00 |
-| ZA_Invalid |   195.089 ns |  2.0402 ns |  1.9084 ns |  0.27 |     592 B |        0.17 |
-| FV_Valid   |   723.962 ns | 13.8166 ns | 10.7871 ns |  1.00 |    3528 B |        1.00 |
-| FV_Invalid | 2,735.001 ns | 14.6138 ns | 12.9548 ns |  3.78 |   11264 B |        3.19 |
+| Method     | Ratio | Allocated | Alloc Ratio |
+|----------- |------:|----------:|------------:|
+| ZA_Valid   |  0.01 |         - |        0.00 |
+| ZA_Invalid |  0.27 |     592 B |        0.17 |
+| FV_Valid   |  1.00 |    3528 B |        1.00 |
+| FV_Invalid |  3.78 |   11264 B |        3.19 |
 
 **Valid path:** ZeroAlloc is **91.7x faster** and allocates **0 bytes** (vs 3,528 B).
 **Invalid path:** ZeroAlloc is **14.0x faster** and allocates **19.0x less** (592 B vs 11,264 B).
@@ -93,12 +94,12 @@ A cart with a string ID and a list of three line items.
 
 `[PrecisionScale(9, 2)]` on a decimal and `[IsInEnum]` on a concrete enum.
 
-| Method     | Mean        | Error     | StdDev     | Ratio | Allocated | Alloc Ratio |
-|------------|------------:|----------:|-----------:|------:|----------:|------------:|
-| ZA_Valid   |    13.31 ns |  0.125 ns |   0.117 ns |  0.02 |         - |        0.00 |
-| ZA_Invalid |    31.90 ns |  0.288 ns |   0.255 ns |  0.05 |      88 B |        0.11 |
-| FV_Valid   |   625.32 ns | 14.737 ns |  41.565 ns |  1.00 |     816 B |        1.00 |
-| FV_Invalid | 2,005.95 ns | 53.111 ns | 153.239 ns |  3.22 |    6593 B |        8.08 |
+| Method     | Ratio | Allocated | Alloc Ratio |
+|----------- |------:|----------:|------------:|
+| ZA_Valid   |  0.02 |         - |        0.00 |
+| ZA_Invalid |  0.05 |      88 B |        0.11 |
+| FV_Valid   |  1.00 |     816 B |        1.00 |
+| FV_Invalid |  3.22 |    6593 B |        8.08 |
 
 **Valid path:** ZeroAlloc is **47.0x faster** and allocates **0 bytes** (vs 816 B).
 **Invalid path:** ZeroAlloc is **62.9x faster** and allocates **74.9x less** (88 B vs 6,593 B).
@@ -106,14 +107,14 @@ A cart with a string ID and a list of three line items.
 ## Summary
 
 <!-- BENCH:START -->
-_Last refreshed: 2026-10-15, against FluentValidation 12.1.1. Timings are indicative — measured on a developer laptop (Core Ultra 7 255H, hybrid P/E cores) under background load; allocations are exact, ratios are same-run._
+_Last refreshed: 2026-10-15, against FluentValidation 12.1.1. Allocations are exact. Speed is shown as same-run ratios, because the benchmark host is a shared VM; absolute timings are not published. Speedups are FluentValidation's mean divided by ZeroAlloc's, from the same BenchmarkDotNet run._
 
-| Scenario | Speedup (valid) | Speedup (invalid) | ZA alloc (valid) | FV alloc (valid) | ZA alloc (invalid) | FV alloc (invalid) | ZA valid | FluentValidation 12 valid |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Flat | **27.8×** | 27.3× | **0 B** | 696 B | 120 B | 5,216 B | 4.198 ns | 116.833 ns |
-| Nested | **133.2×** | 12.7× | **0 B** | 1,488 B | 488 B | 6,032 B | 2.704 ns | 360.254 ns |
-| Collection (3 items) | **91.7×** | 14.0× | **0 B** | 3,528 B | 592 B | 11,264 B | 7.896 ns | 723.962 ns |
-| Precision and enum | **47.0×** | 62.9× | **0 B** | 816 B | 88 B | 6,593 B | 13.31 ns | 625.32 ns |
+| Scenario | Speedup (valid) | Speedup (invalid) | ZA alloc (valid) | FV alloc (valid) | ZA alloc (invalid) | FV alloc (invalid) |
+|---|---:|---:|---:|---:|---:|---:|
+| Flat | **27.8×** | 27.3× | **0 B** | 696 B | 120 B | 5,216 B |
+| Nested | **133.2×** | 12.7× | **0 B** | 1,488 B | 488 B | 6,032 B |
+| Collection (3 items) | **91.7×** | 14.0× | **0 B** | 3,528 B | 592 B | 11,264 B |
+| Precision and enum | **47.0×** | 62.9× | **0 B** | 816 B | 88 B | 6,593 B |
 
 ZeroAlloc.Validation is **27.8–133.2× faster** than FluentValidation 12 on the valid path with **zero heap allocation**. On the invalid path it is 12.7–62.9× faster and allocates 12.4–74.9× less. FluentValidation allocates on every call, valid or not, for its per-call `List<ValidationFailure>` and validation context.
 <!-- BENCH:END -->
