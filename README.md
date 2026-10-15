@@ -51,13 +51,13 @@ if (!result.IsValid)
 
 ## Performance
 
-| Scenario         | ZeroAlloc.Validation | FluentValidation 11 | Speedup | Allocation (valid) |
-|------------------|---------------------:|-----------------:|:-------:|:------------------:|
-| Flat model       |              6.7 ns  |         327 ns   |  ~49×   |        0 B         |
-| Nested model     |             10.1 ns  |         619 ns   |  ~61×   |        0 B         |
-| Collection (3×)  |             14.3 ns  |        2,043 ns  | ~143×   |        0 B         |
+| Scenario         | Speedup vs FluentValidation 12 | ZeroAlloc.Validation | FluentValidation 12 | Allocation (valid) |
+|------------------|:------------------------------:|---------------------:|--------------------:|:------------------:|
+| Flat model       |  27.8×  | 4.198 ns |  116.833 ns | 0 B vs 696 B   |
+| Nested model     | 133.2×  | 2.704 ns |  360.254 ns | 0 B vs 1,488 B |
+| Collection (3×)  |  91.7×  | 7.896 ns |  723.962 ns | 0 B vs 3,528 B |
 
-Historical numbers, measured against FluentValidation 11; a re-run against FluentValidation 12 is tracked in [#330](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/330). See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/performance.md) for full benchmark results.
+Valid path, FluentValidation 12.1.1, measured 2026-10-15. Timings are indicative — measured on a developer laptop (Core Ultra 7 255H, hybrid P/E cores) under background load; allocations are exact, ratios are same-run. See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/performance.md) for the invalid path and the full benchmark results.
 
 ## Packages
 
