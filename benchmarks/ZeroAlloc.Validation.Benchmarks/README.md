@@ -4,16 +4,26 @@ Compares **ZeroAlloc.Validation** against **FluentValidation** across three mode
 
 ## Environment
 
-> **Historical numbers.** These results were measured against FluentValidation 11 with
-> BenchmarkDotNet v0.14.0. The benchmark project now references FluentValidation 12, and a fresh run
-> is tracked in [#330](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/330).
+Measured 2026-10-15 against **FluentValidation 12.1.1**, the version the benchmark project
+references, with BenchmarkDotNet's in-process toolchain (`--inProcess`):
 
 ```
-BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.8037)
-.NET SDK 10.0.104
-  [Host]     : .NET 10.0.4 (10.0.426.12010), X64 RyuJIT AVX2
-  DefaultJob : .NET 10.0.4 (10.0.426.12010), X64 RyuJIT AVX2
+BenchmarkDotNet v0.15.8, Linux Debian GNU/Linux 13 (trixie)
+Intel Core Ultra 7 255H 3.69GHz, 1 CPU, 12 logical and 12 physical cores
+.NET SDK 10.0.402
+  [Host]     : .NET 10.0.13 (10.0.13, 10.0.1326.50504), X64 RyuJIT x86-64-v3
 ```
+
+> **Timings are indicative** — measured on a developer laptop (Core Ultra 7 255H, hybrid P/E cores)
+> under background load; allocations are exact, ratios are same-run. Each table comes from one
+> BenchmarkDotNet run in which the ZeroAlloc.Validation and FluentValidation rows were measured
+> side by side, so compare ratios rather than absolute nanoseconds.
+
+The classes also carry `[SimpleJob]`, so the same command measures an out-of-process job as well.
+The tables below show the in-process job. Allocations were identical in both jobs. The
+out-of-process job measured the ZeroAlloc invalid paths 1.6 to 2.4 times faster, for example
+18.975 ns against 45.212 ns for the flat model. Most other rows agreed within 10%; the widest gap
+was the nested FV_Valid row, 285.874 ns out of process against 360.254 ns in process.
 
 ## Running the benchmarks
 
@@ -21,7 +31,7 @@ BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.8037)
 # From repo root
 dotnet build benchmarks/ZeroAlloc.Validation.Benchmarks -c Release --no-incremental
 cd benchmarks/ZeroAlloc.Validation.Benchmarks
-dotnet run -c Release -- --filter '*' --job Default
+dotnet run -c Release -- --filter '*' --job Default --inProcess
 ```
 
 > `--no-incremental` is required because the source generator's output assembly is excluded from
@@ -45,15 +55,15 @@ public class BenchOrder
 }
 ```
 
-| Method     | Mean         | Error      | StdDev      | Ratio | Allocated | Alloc Ratio |
-|----------- |-------------:|-----------:|------------:|------:|----------:|------------:|
-| ZA_Valid   |     6.713 ns |  0.4350 ns |    1.255 ns |  0.02 |         - |        0.00 |
-| ZA_Invalid |    44.012 ns |  2.7703 ns |    7.859 ns |  0.14 |     304 B |        0.46 |
-| FV_Valid   |   327.269 ns | 10.4974 ns |   29.436 ns |  1.00 |     664 B |        1.00 |
-| FV_Invalid | 2,462.893 ns | 75.0023 ns |  210.315 ns |  7.58 |    5408 B |        8.14 |
+| Method     | Mean         | Error      | StdDev     | Ratio | Allocated | Alloc Ratio |
+|----------- |-------------:|-----------:|-----------:|------:|----------:|------------:|
+| ZA_Valid   |     4.198 ns |  0.0232 ns |  0.0206 ns |  0.04 |         - |        0.00 |
+| ZA_Invalid |    45.212 ns |  0.4384 ns |  0.4101 ns |  0.39 |     120 B |        0.17 |
+| FV_Valid   |   116.833 ns |  1.4367 ns |  1.1997 ns |  1.00 |     696 B |        1.00 |
+| FV_Invalid | 1,232.737 ns | 14.6328 ns | 13.6875 ns | 10.55 |    5216 B |        7.49 |
 
-**Valid path:** ZeroAlloc is **~49× faster** and allocates **0 bytes** (vs 664 B).
-**Invalid path:** ZeroAlloc is **~56× faster** and allocates **~18× less** (304 B vs 5,408 B).
+**Valid path:** ZeroAlloc is **27.8× faster** and allocates **0 bytes** (vs 696 B).
+**Invalid path:** ZeroAlloc is **27.3× faster** and allocates **43.5× less** (120 B vs 5,216 B).
 
 ---
 
@@ -78,15 +88,19 @@ public class BenchAddress
 }
 ```
 
-| Method     | Mean        | Error     | StdDev     | Ratio | Allocated | Alloc Ratio |
-|----------- |------------:|----------:|-----------:|------:|----------:|------------:|
-| ZA_Valid   |    10.09 ns |  0.890 ns |   2.526 ns |  0.02 |         - |        0.00 |
-| ZA_Invalid |    96.56 ns |  2.411 ns |   6.841 ns |  0.16 |     608 B |        0.41 |
-| FV_Valid   |   619.14 ns | 12.334 ns |  32.707 ns |  1.00 |    1488 B |        1.00 |
-| FV_Invalid | 2,974.10 ns | 99.618 ns | 280.974 ns |  4.82 |    6328 B |        4.25 |
+| Method     | Mean         | Error      | StdDev      | Ratio | Allocated | Alloc Ratio |
+|----------- |-------------:|-----------:|------------:|------:|----------:|------------:|
+| ZA_Valid   |     2.704 ns |  0.0659 ns |   0.0584 ns | 0.008 |         - |        0.00 |
+| ZA_Invalid |   145.443 ns |  2.5690 ns |   6.6771 ns | 0.411 |     488 B |        0.33 |
+| FV_Valid   |   360.254 ns | 17.6492 ns |  52.0392 ns | 1.019 |    1488 B |        1.00 |
+| FV_Invalid | 1,848.720 ns | 71.4433 ns | 202.6729 ns | 5.229 |    6032 B |        4.05 |
 
-**Valid path:** ZeroAlloc is **~61× faster** and allocates **0 bytes** (vs 1,488 B).
-**Invalid path:** ZeroAlloc is **~31× faster** and allocates **~10× less** (608 B vs 6,328 B).
+**Valid path:** ZeroAlloc is **133.2× faster** and allocates **0 bytes** (vs 1,488 B).
+**Invalid path:** ZeroAlloc is **12.7× faster** and allocates **12.4× less** (488 B vs 6,032 B).
+
+This class was run twice: in the first run the ZA_Invalid row's Error was 6% of its Mean while
+another build loaded the machine. The table is the second run, where every row's Error is within
+5% of its Mean.
 
 ---
 
@@ -112,15 +126,15 @@ public class BenchLineItem
 
 _(3 items in both the valid and invalid fixture)_
 
-| Method     | Mean        | Error      | StdDev      | Ratio | Allocated | Alloc Ratio |
-|----------- |------------:|-----------:|------------:|------:|----------:|------------:|
-| ZA_Valid   |    14.30 ns |   0.377 ns |    1.050 ns | 0.007 |         - |        0.00 |
-| ZA_Invalid |   178.54 ns |   6.361 ns |   18.044 ns | 0.089 |     856 B |        0.25 |
-| FV_Valid   | 2,042.95 ns |  89.644 ns |  254.305 ns | 1.000 |    3456 B |        1.00 |
-| FV_Invalid | 5,957.29 ns | 249.827 ns |  704.642 ns | 2.958 |   11568 B |        3.35 |
+| Method     | Mean         | Error      | StdDev     | Ratio | Allocated | Alloc Ratio |
+|----------- |-------------:|-----------:|-----------:|------:|----------:|------------:|
+| ZA_Valid   |     7.896 ns |  0.0493 ns |  0.0462 ns |  0.01 |         - |        0.00 |
+| ZA_Invalid |   195.089 ns |  2.0402 ns |  1.9084 ns |  0.27 |     592 B |        0.17 |
+| FV_Valid   |   723.962 ns | 13.8166 ns | 10.7871 ns |  1.00 |    3528 B |        1.00 |
+| FV_Invalid | 2,735.001 ns | 14.6138 ns | 12.9548 ns |  3.78 |   11264 B |        3.19 |
 
-**Valid path:** ZeroAlloc is **~143× faster** and allocates **0 bytes** (vs 3,456 B).
-**Invalid path:** ZeroAlloc is **~33× faster** and allocates **~14× less** (856 B vs 11,568 B).
+**Valid path:** ZeroAlloc is **91.7× faster** and allocates **0 bytes** (vs 3,528 B).
+**Invalid path:** ZeroAlloc is **14.0× faster** and allocates **19.0× less** (592 B vs 11,264 B).
 
 ---
 
@@ -138,25 +152,28 @@ public class BenchPayment
 }
 ```
 
-Measured separately from Benchmarks 1-3, with BenchmarkDotNet v0.15.8 on .NET 10.0.12, i9-12900HK,
-against FluentValidation 12.
+| Method     | Mean        | Error     | StdDev     | Ratio | Allocated | Alloc Ratio |
+|----------- |------------:|----------:|-----------:|------:|----------:|------------:|
+| ZA_Valid   |    13.31 ns |  0.125 ns |   0.117 ns |  0.02 |         - |        0.00 |
+| ZA_Invalid |    31.90 ns |  0.288 ns |   0.255 ns |  0.05 |      88 B |        0.11 |
+| FV_Valid   |   625.32 ns | 14.737 ns |  41.565 ns |  1.00 |     816 B |        1.00 |
+| FV_Invalid | 2,005.95 ns | 53.111 ns | 153.239 ns |  3.22 |    6593 B |        8.08 |
 
-| Method     | Mean        | Allocated |
-|----------- |------------:|----------:|
-| ZA_Valid   |    40.37 ns |         - |
-| ZA_Invalid |    54.42 ns |      88 B |
-| FV_Valid   | 2,722.12 ns |     816 B |
-| FV_Invalid | 9,058.84 ns |    6825 B |
+**Valid path:** ZeroAlloc is **47.0× faster** and allocates **0 bytes** (vs 816 B).
+**Invalid path:** ZeroAlloc is **62.9× faster** and allocates **74.9× less** (88 B vs 6,593 B).
 
 ---
 
 ## Summary
 
-| Scenario  | ZA valid | FV valid | Speedup | ZA alloc (valid) | FV alloc (valid) |
-|-----------|:--------:|:--------:|:-------:|:----------------:|:----------------:|
-| Flat      |  6.7 ns  | 327 ns   |  ~49×   |       0 B        |      664 B       |
-| Nested    | 10.1 ns  | 619 ns   |  ~61×   |       0 B        |    1,488 B       |
-| Collection| 14.3 ns  | 2,043 ns |  ~143×  |       0 B        |    3,456 B       |
+Speedups are FluentValidation's mean divided by ZeroAlloc's, from the same run.
+
+| Scenario   | Speedup (valid) | Speedup (invalid) | ZA alloc (valid) | FV alloc (valid) | ZA alloc (invalid) | FV alloc (invalid) | ZA valid | FV valid |
+|------------|----------------:|------------------:|-----------------:|-----------------:|-------------------:|-------------------:|---------:|---------:|
+| Flat       |  27.8× | 27.3× | 0 B |   696 B | 120 B |  5,216 B | 4.198 ns | 116.833 ns |
+| Nested     | 133.2× | 12.7× | 0 B | 1,488 B | 488 B |  6,032 B | 2.704 ns | 360.254 ns |
+| Collection |  91.7× | 14.0× | 0 B | 3,528 B | 592 B | 11,264 B | 7.896 ns | 723.962 ns |
+| Precision and enum | 47.0× | 62.9× | 0 B | 816 B | 88 B | 6,593 B | 13.31 ns | 625.32 ns |
 
 The valid path is the hot path in most applications. ZeroAlloc.Validation allocates nothing on the
 valid path because the source generator emits a **lazy-allocation** pattern: the failure buffer is
@@ -166,3 +183,23 @@ only created on the first rule violation, and a valid result returns `Array.Empt
 On the invalid path ZeroAlloc.Validation still outperforms FluentValidation significantly both in
 speed and allocations, because it avoids reflection, expression trees, and the boxing/collection
 overhead that FluentValidation incurs when building its error list.
+
+### What the invalid path allocates
+
+A failing validation allocates its result array, one 32-byte `ValidationFailure` per failure plus a
+24-byte array header, and nothing else for a flat model. A nested or collection validator adds the
+child validator's own result array and one string per child failure for its dotted property path.
+The invalid-path figures above add up exactly:
+
+| Model | Failures | Allocated |
+|---|---|---:|
+| Flat | 3 | 120 B: one 3-failure result array |
+| Precision and enum | 2 | 88 B: one 2-failure result array |
+| Nested | 1 direct, 3 from `ShippingAddress` | 488 B: the child's 3-failure array, 120 B; the parent's 4-failure array, 152 B; the paths `ShippingAddress.Street`, `.City` and `.PostalCode`, 72, 64 and 80 B |
+| Collection | 1 direct, 4 from 3 items | 592 B: the items' arrays, 88, 56 and 56 B; the parent's 5-failure array, 184 B; the paths `Items[0].Sku`, `Items[0].Quantity`, `Items[1].Quantity` and `Items[2].Sku`, 48, 56, 56 and 48 B |
+
+The tables in [docs/performance.md](../../docs/performance.md#allocation-on-the-invalid-path) list
+56 to 120 B because they cover flat models with one to three failures. The 304, 608 and 856 B these
+benchmarks reported before were measured before the failure buffer moved to `ArrayPool`, when the
+staging buffer itself was allocated on every failing call.
+
