@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Xunit;
+using ZeroAlloc.TestHelpers;
 
 namespace ZeroAlloc.Validation.Tests.Integration;
 
@@ -11,8 +12,11 @@ namespace ZeroAlloc.Validation.Tests.Integration;
 /// plain <c>foreach</c> otherwise — so each declaration has to report the same failures, with the
 /// same indices, as every other.
 /// </summary>
+[Collection(AllocationCollection.Name)]
 public class CollectionIterationTests
 {
+    private const int Iterations = 10_000;
+
     private static AllocChildModel[] Items() =>
     [
         new() { Code = "ok" },
@@ -106,7 +110,7 @@ public class CollectionIterationTests
             Items = [new() { Code = "a" }, new() { Code = "b" }, new() { Code = "c" }],
         };
 
-        Assert.Equal(0, MeasureAllocation(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "InterfaceCollection_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -119,7 +123,7 @@ public class CollectionIterationTests
             Items = [new() { Code = "a" }, new() { Code = "b" }, new() { Code = "c" }],
         };
 
-        Assert.Equal(0, MeasureAllocation(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "ReadOnlyListCollection_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -132,24 +136,12 @@ public class CollectionIterationTests
             Items = [new() { Code = "a" }, new() { Code = "b" }, new() { Code = "c" }],
         };
 
-        Assert.Equal(0, MeasureAllocation(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "ListCollection_ValidPath_AllocatesNothing");
     }
 
     private static void AssertSingleIndexedFailure(ValidationResult result)
     {
         Assert.Collection(result.Failures.ToArray(),
             failure => Assert.Equal("Items[1].Code", failure.PropertyName));
-    }
-
-    private static long MeasureAllocation(Func<bool> action)
-    {
-        const int Warmup = 10_000;
-        const int Iterations = 10_000;
-
-        for (int i = 0; i < Warmup; i++) action();
-
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < Iterations; i++) action();
-        return (GC.GetAllocatedBytesForCurrentThread() - before) / Iterations;
     }
 }

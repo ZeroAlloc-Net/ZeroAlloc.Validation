@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
+using ZeroAlloc.TestHelpers;
 
 #pragma warning disable MA0004 // ConfigureAwait: suppressed because xUnit1030 prohibits ConfigureAwait in test methods
 
@@ -46,19 +47,11 @@ public class FilterAllocationTests
         }
 
         Assert.True(Run());
-        Assert.Equal(0, Measure(Run));
-    }
 
-    /// <summary>Bytes allocated per call, averaged over a warmed-up run.</summary>
-    private static long Measure(System.Func<bool> action)
-    {
-        const int Warmup = 10_000;
-        const int Iterations = 10_000;
-
-        for (int i = 0; i < Warmup; i++) action();
-
-        var before = System.GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < Iterations; i++) action();
-        return (System.GC.GetAllocatedBytesForCurrentThread() - before) / Iterations;
+        // Every measured call must complete synchronously and pass, or the count is not the filter's.
+        var allPassed = true;
+        AllocationGate.AssertBudget(
+            0, 10_000, () => allPassed &= Run(), "ZeroAllocValidationActionFilter.OnActionExecutionAsync, valid arguments");
+        Assert.True(allPassed);
     }
 }
