@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.3.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.3.1...v2.3.2) (2026-10-15)
+
+
+### Documentation
+
+* label the FluentValidation 11 benchmark numbers as historical ([#332](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/332)) ([d7bd79c](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/d7bd79c9dd43c8557142836bb8841794753cdcda))
+* publish benchmark speed as same-run ratios only ([#336](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/336)) ([387a68b](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/387a68bf4ee37b5f2e897249380cb9e51ffd8339))
+* re-run the benchmarks against fluentvalidation 12 ([#335](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/335)) ([eab0a6f](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/eab0a6f07d5e1caf3304a9f5e2ac93ff0cf0d6bf)), closes [#330](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/330)
+
+
+### Tests
+
+* move hand-rolled allocation measurements onto AllocationGate ([#334](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/334)) ([b70f0af](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/b70f0af2710a64e9e96dec7c40f65cee8cb17d98)), closes [#331](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/331)
+
 ## [2.3.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.3.0...v2.3.1) (2026-10-12)
 
 
