@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Xunit;
+using ZeroAlloc.TestHelpers;
 
 namespace ZeroAlloc.Validation.Tests.Integration;
 
@@ -10,8 +11,11 @@ namespace ZeroAlloc.Validation.Tests.Integration;
 /// can avoid allocating: an iterator allocates its state machine when it is called, before it has
 /// yielded anything, so a model that is valid still pays for it.
 /// </summary>
+[Collection(AllocationCollection.Name)]
 public class CustomValidationReturnTypeTests
 {
+    private const int Iterations = 10_000;
+
     [Fact]
     public void ArrayReturn_ReportsFailure()
     {
@@ -78,7 +82,7 @@ public class CustomValidationReturnTypeTests
         var validator = new CustomValidationArrayModelValidator();
         var model = new CustomValidationArrayModel { Reference = "ok", Budget = 5 };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "ArrayReturn_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -87,18 +91,6 @@ public class CustomValidationReturnTypeTests
         var validator = new CustomValidationSpanModelValidator();
         var model = new CustomValidationSpanModel { Reference = "ok", Budget = 5 };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
-    }
-
-    private static long Measure(Func<bool> action)
-    {
-        const int Warmup = 10_000;
-        const int Iterations = 10_000;
-
-        for (int i = 0; i < Warmup; i++) action();
-
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < Iterations; i++) action();
-        return (GC.GetAllocatedBytesForCurrentThread() - before) / Iterations;
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "SpanReturn_ValidPath_AllocatesNothing");
     }
 }

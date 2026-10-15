@@ -1,20 +1,24 @@
 using System;
 using Xunit;
+using ZeroAlloc.TestHelpers;
 
 namespace ZeroAlloc.Validation.Tests.Integration;
 
 /// <summary>
 /// Pins the allocation behaviour the library promises, which no other test covers: the valid path
 /// must allocate nothing at all, and a failing validation must cost the result array and nothing
-/// else. Measured with <see cref="GC.GetAllocatedBytesForCurrentThread"/> after warm-up, so these
-/// catch a generator change that reintroduces a scratch allocation even when behaviour is correct.
+/// else. Measured with <see cref="AllocationGate"/>, so these catch a generator change that
+/// reintroduces a scratch allocation even when behaviour is correct.
 /// </summary>
-[Collection("Allocation")]
+[Collection(AllocationCollection.Name)]
 public class AllocationRegressionTests
 {
-    // 24-byte array header + one 32-byte ValidationFailure. Asserted as a ceiling rather than an
-    // equality so a runtime with different header padding does not fail the suite spuriously.
-    private const long OneFailureCeiling = 64;
+    private const int Iterations = 10_000;
+
+    // The result array alone: a 24-byte array header and one 32-byte ValidationFailure struct, on
+    // the 64-bit runtimes the suite runs on. Asserted exactly, so a scratch allocation of any size
+    // on the failure path fails the test.
+    private const long OneFailureArray = 56;
 
     [Fact]
     public void FlatModel_ValidPath_AllocatesNothing()
@@ -22,7 +26,7 @@ public class AllocationRegressionTests
         var validator = new AllocFlatModelValidator();
         var model = new AllocFlatModel { Name = "ok", Age = 30 };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "FlatModel_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -31,7 +35,7 @@ public class AllocationRegressionTests
         var validator = new AllocFlatModelValidator();
         var model = new AllocFlatModel { Name = "", Age = 30 };
 
-        Assert.InRange(Measure(() => validator.Validate(model).IsValid), 1, OneFailureCeiling);
+        Assert.Equal(OneFailureArray, AllocationGate.MeasureBytesPerCall(Iterations, () => validator.Validate(model)));
     }
 
     [Fact]
@@ -40,7 +44,7 @@ public class AllocationRegressionTests
         var validator = new AllocFailFastModelValidator();
         var model = new AllocFailFastModel { Name = "ok", Age = 30 };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "FailFastModel_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -49,7 +53,7 @@ public class AllocationRegressionTests
         var validator = new AllocFailFastModelValidator();
         var model = new AllocFailFastModel { Name = "", Age = 30 };
 
-        Assert.InRange(Measure(() => validator.Validate(model).IsValid), 1, OneFailureCeiling);
+        Assert.Equal(OneFailureArray, AllocationGate.MeasureBytesPerCall(Iterations, () => validator.Validate(model)));
     }
 
     [Fact]
@@ -60,7 +64,7 @@ public class AllocationRegressionTests
         var validator = new GenericMeasureValidator<int>();
         var model = new GenericMeasure<int> { Amount = 5, Optional = 50 };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "GenericValueTypeClosing_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -69,7 +73,7 @@ public class AllocationRegressionTests
         var validator = new GenericMeasureValidator<decimal>();
         var model = new GenericMeasure<decimal> { Amount = 5.5m, Optional = 99.5m };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "GenericValueTypeClosing_OfDecimal_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -87,7 +91,7 @@ public class AllocationRegressionTests
             Lines = [new GenericLine<GenericProduct> { Item = product }, new GenericLine<GenericProduct> { Item = product }],
         };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "GenericReferenceTypeClosing_WithNestedClosings_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -97,7 +101,7 @@ public class AllocationRegressionTests
         var validator = new GenericKindValidator<DayOfWeek>();
         var model = new GenericKind<DayOfWeek>(DayOfWeek.Friday, DayOfWeek.Monday);
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "GenericEnumClosing_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -108,7 +112,7 @@ public class AllocationRegressionTests
         var validator = new AllocEnumModelValidator();
         var model = new AllocEnumModel { Light = TrafficLight.Green, Optional = TrafficLight.Red };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "ConcreteEnum_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -117,7 +121,7 @@ public class AllocationRegressionTests
         var validator = new AllocEnumModelValidator();
         var model = new AllocEnumModel { Light = (TrafficLight)42, Optional = null };
 
-        Assert.InRange(Measure(() => validator.Validate(model).IsValid), 1, OneFailureCeiling);
+        Assert.Equal(OneFailureArray, AllocationGate.MeasureBytesPerCall(Iterations, () => validator.Validate(model)));
     }
 
     [Fact]
@@ -127,7 +131,7 @@ public class AllocationRegressionTests
         var validator = new AllocPrecisionScaleModelValidator();
         var model = new AllocPrecisionScaleModel { Amount = 1234.56m, Optional = 0.5m };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "PrecisionScale_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -136,7 +140,7 @@ public class AllocationRegressionTests
         var validator = new AllocPrecisionScaleModelValidator();
         var model = new AllocPrecisionScaleModel { Amount = 1.234m, Optional = null };
 
-        Assert.InRange(Measure(() => validator.Validate(model).IsValid), 1, OneFailureCeiling);
+        Assert.Equal(OneFailureArray, AllocationGate.MeasureBytesPerCall(Iterations, () => validator.Validate(model)));
     }
 
     [Fact]
@@ -145,7 +149,7 @@ public class AllocationRegressionTests
         var validator = new AllocParentModelValidator(new AllocChildModelValidator());
         var model = new AllocParentModel { Name = "ok", Child = new AllocChildModel { Code = "ok" } };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "NestedModel_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -155,8 +159,9 @@ public class AllocationRegressionTests
         var model = new AllocParentModel { Name = "ok", Child = new AllocChildModel { Code = "" } };
 
         // One failure surfaces from the child and is re-wrapped by the parent, so the child's
-        // result array and the parent's are both in play.
-        Assert.InRange(Measure(() => validator.Validate(model).IsValid), 1, OneFailureCeiling * 3);
+        // result array and the parent's are both in play: 56 B each, plus 48 B for the prefixed
+        // property name "Child.Code".
+        Assert.Equal(2 * OneFailureArray + 48, AllocationGate.MeasureBytesPerCall(Iterations, () => validator.Validate(model)));
     }
 
     [Fact]
@@ -169,7 +174,7 @@ public class AllocationRegressionTests
             Items = [new() { Code = "a" }, new() { Code = "b" }, new() { Code = "c" }]
         };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "ArrayCollection_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -178,7 +183,7 @@ public class AllocationRegressionTests
         var validator = new AllocCustomRuleModelValidator();
         var model = new AllocCustomRuleModel { Name = "ok", Title = "one two three" };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "CustomRuleModel_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -187,7 +192,7 @@ public class AllocationRegressionTests
         var validator = new AllocCustomRuleModelValidator();
         var model = new AllocCustomRuleModel { Name = " ", Title = "one two three" };
 
-        Assert.InRange(Measure(() => validator.Validate(model).IsValid), 1, OneFailureCeiling);
+        Assert.Equal(OneFailureArray, AllocationGate.MeasureBytesPerCall(Iterations, () => validator.Validate(model)));
     }
 
     [Fact]
@@ -196,7 +201,7 @@ public class AllocationRegressionTests
         var validator = new AllocDerivedModelValidator();
         var model = new AllocDerivedModel { Name = "", Code = "ok" };
 
-        Assert.InRange(Measure(() => validator.Validate(model).IsValid), 1, OneFailureCeiling);
+        Assert.Equal(OneFailureArray, AllocationGate.MeasureBytesPerCall(Iterations, () => validator.Validate(model)));
     }
 
     // An async rule whose ValueTask completes at once leaves the generated async method to finish
@@ -207,7 +212,7 @@ public class AllocationRegressionTests
         var validator = new AllocAsyncRuleModelValidator();
         var model = new AllocAsyncRuleModel { Name = "ok" };
 
-        Assert.Equal(0, Measure(() => validator.ValidateAsync(model).Result.IsValid));
+        AllocationGate.AssertBudgetValueTask(0, Iterations, () => validator.ValidateAsync(model), "AsyncRuleModel_SynchronouslyCompletingValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -216,8 +221,8 @@ public class AllocationRegressionTests
         var validator = new AllocAsyncRuleModelValidator();
         var model = new AllocAsyncRuleModel { Name = "" };
 
-        // [NotEmpty] fails; the async rule then fails too, so two failures: 24 + 2 * 32 bytes.
-        Assert.InRange(Measure(() => validator.ValidateAsync(model).Result.IsValid), 1, OneFailureCeiling + 32);
+        // [NotEmpty] fails; the async rule then fails too, so two failures: 24 + 2 * 32 = 88 bytes.
+        Assert.Equal(OneFailureArray + 32, AllocationGate.MeasureBytesPerCallValueTask(Iterations, () => validator.ValidateAsync(model)));
     }
 
     // A behavior on a model with a nested validator: the chain reads the validator's fields, so
@@ -235,7 +240,7 @@ public class AllocationRegressionTests
             Lines = [new PipelineNestedLine { Sku = "B" }],
         };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "BehaviorWithNestedValidator_Sync_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -250,7 +255,7 @@ public class AllocationRegressionTests
             Lines = [new PipelineNestedLine { Sku = "B" }],
         };
 
-        Assert.Equal(0, Measure(() => validator.ValidateAsync(model).Result.IsValid));
+        AllocationGate.AssertBudgetValueTask(0, Iterations, () => validator.ValidateAsync(model), "BehaviorWithNestedValidator_Async_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -259,7 +264,7 @@ public class AllocationRegressionTests
         var validator = new AllocBehaviorAsyncRuleModelValidator(new PipelineNestedLineValidator());
         var model = new AllocBehaviorAsyncRuleModel { Name = "ok", Line = new PipelineNestedLine { Sku = "A" } };
 
-        Assert.Equal(0, Measure(() => validator.ValidateAsync(model).Result.IsValid));
+        AllocationGate.AssertBudgetValueTask(0, Iterations, () => validator.ValidateAsync(model), "BehaviorWithNestedValidator_AsyncRuleModel_SynchronouslyCompletingValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -268,7 +273,7 @@ public class AllocationRegressionTests
         var validator = new AllocGenericBehaviorModelValidator<string>(new PipelineNestedLineValidator());
         var model = new AllocGenericBehaviorModel<string> { Reference = "r", Line = new PipelineNestedLine { Sku = "A" } };
 
-        Assert.Equal(0, Measure(() => validator.Validate(model).IsValid));
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "BehaviorWithNestedValidator_GenericModel_Sync_ValidPath_AllocatesNothing");
     }
 
     [Fact]
@@ -277,19 +282,6 @@ public class AllocationRegressionTests
         var validator = new AllocGenericBehaviorModelValidator<int>(new PipelineNestedLineValidator());
         var model = new AllocGenericBehaviorModel<int> { Reference = "r", Line = new PipelineNestedLine { Sku = "A" } };
 
-        Assert.Equal(0, Measure(() => validator.ValidateAsync(model).Result.IsValid));
-    }
-
-    /// <summary>Bytes allocated per call, averaged over a warmed-up run.</summary>
-    private static long Measure(Func<bool> action)
-    {
-        const int Warmup = 10_000;
-        const int Iterations = 10_000;
-
-        for (int i = 0; i < Warmup; i++) action();
-
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < Iterations; i++) action();
-        return (GC.GetAllocatedBytesForCurrentThread() - before) / Iterations;
+        AllocationGate.AssertBudgetValueTask(0, Iterations, () => validator.ValidateAsync(model), "BehaviorWithNestedValidator_GenericModel_Async_ValidPath_AllocatesNothing");
     }
 }

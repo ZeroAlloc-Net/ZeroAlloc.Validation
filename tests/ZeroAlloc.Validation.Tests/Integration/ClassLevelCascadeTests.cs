@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Xunit;
+using ZeroAlloc.TestHelpers;
 
 namespace ZeroAlloc.Validation.Tests.Integration;
 
@@ -9,8 +10,11 @@ namespace ZeroAlloc.Validation.Tests.Integration;
 /// it does not have to be repeated. Paired with <c>[Validate(StopOnFirstFailure = true)]</c> the
 /// model reports the first failing rule of the first failing property and stops there.
 /// </summary>
+[Collection(AllocationCollection.Name)]
 public class ClassLevelCascadeTests
 {
+    private const int Iterations = 10_000;
+
     [Fact]
     public void ClassCascadeWithModelStop_ReportsOnlyTheFirstFailingRule()
     {
@@ -84,18 +88,7 @@ public class ClassLevelCascadeTests
         var model = new ClassCascadeModel { Tenant = "", User = "" };
 
         // One possible failure per property means the direct return applies: no scratch buffer.
-        Assert.InRange(Measure(() => validator.Validate(model).IsValid), 1, 64);
-    }
-
-    private static long Measure(Func<bool> action)
-    {
-        const int Warmup = 10_000;
-        const int Iterations = 10_000;
-
-        for (int i = 0; i < Warmup; i++) action();
-
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < Iterations; i++) action();
-        return (GC.GetAllocatedBytesForCurrentThread() - before) / Iterations;
+        // The result array alone is 56 B: a 24-byte array header and one 32-byte ValidationFailure.
+        Assert.Equal(56, AllocationGate.MeasureBytesPerCall(Iterations, () => validator.Validate(model)));
     }
 }
