@@ -1,8 +1,12 @@
 # ZeroAlloc.Validation Benchmarks
 
-Compares **ZeroAlloc.Validation** against **FluentValidation 11** across three model shapes, the precision and enum rules, and both the valid and invalid execution paths.
+Compares **ZeroAlloc.Validation** against **FluentValidation** across three model shapes, the precision and enum rules, and both the valid and invalid execution paths.
 
 ## Environment
+
+> **Historical numbers.** These results were measured against FluentValidation 11 with
+> BenchmarkDotNet v0.14.0. The benchmark project now references FluentValidation 12, and a fresh run
+> is tracked in [#330](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/330).
 
 ```
 BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.8037)
@@ -134,7 +138,8 @@ public class BenchPayment
 }
 ```
 
-Measured with BenchmarkDotNet v0.15.8 on .NET 10.0.12, i9-12900HK.
+Measured separately from Benchmarks 1-3, with BenchmarkDotNet v0.15.8 on .NET 10.0.12, i9-12900HK,
+against FluentValidation 12.
 
 | Method     | Mean        | Allocated |
 |----------- |------------:|----------:|

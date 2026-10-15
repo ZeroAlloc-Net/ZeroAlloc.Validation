@@ -2,7 +2,7 @@
 id: performance
 title: Performance
 slug: /docs/performance
-description: Zero allocation on the valid path — benchmark results comparing ZeroAlloc.Validation against FluentValidation 11.
+description: Zero allocation on the valid path — benchmark results comparing ZeroAlloc.Validation against FluentValidation.
 sidebar_position: 9
 ---
 
@@ -29,6 +29,10 @@ Because the generator resolves the rule count statically, there is no need for d
 These costs are unavoidable in FluentValidation's architecture because it has no compile-time knowledge of rule counts or model shapes.
 
 ## Benchmark environment
+
+> **Historical numbers.** These results were measured against FluentValidation 11 with
+> BenchmarkDotNet v0.14.0. The benchmark project now references FluentValidation 12, and a fresh run
+> is tracked in [#330](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/330).
 
 ```
 BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.8037)
@@ -84,7 +88,7 @@ A cart with a string ID and a list of three line items.
 <!-- BENCH:START -->
 _Last refreshed: 2026-05-13_
 
-| Scenario | ZA valid | FluentValidation valid | Speedup | ZA alloc (valid) | FV alloc (valid) |
+| Scenario | ZA valid | FluentValidation 11 valid | Speedup | ZA alloc (valid) | FV alloc (valid) |
 |---|---:|---:|---:|---:|---:|
 | Flat | 6.7 ns | 327 ns | **~49×** | **0 B** | 664 B |
 | Nested | 10.1 ns | 619 ns | **~61×** | **0 B** | 1,488 B |
