@@ -2,7 +2,7 @@
 
 [![NuGet](https://img.shields.io/nuget/v/ZeroAlloc.Validation.svg)](https://www.nuget.org/packages/ZeroAlloc.Validation)
 [![Build](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/actions/workflows/ci.yml/badge.svg)](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/LICENSE)
 [![AOT](https://img.shields.io/badge/AOT--Compatible-passing-brightgreen)](https://learn.microsoft.com/dotnet/core/deploying/native-aot/)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/MarcelRoozekrans?style=flat&logo=githubsponsors&color=ea4aaa&label=Sponsor)](https://github.com/sponsors/MarcelRoozekrans)
 
@@ -51,13 +51,13 @@ if (!result.IsValid)
 
 ## Performance
 
-| Scenario         | ZeroAlloc.Validation | FluentValidation | Speedup | Allocation (valid) |
+| Scenario         | ZeroAlloc.Validation | FluentValidation 11 | Speedup | Allocation (valid) |
 |------------------|---------------------:|-----------------:|:-------:|:------------------:|
 | Flat model       |              6.7 ns  |         327 ns   |  ~49×   |        0 B         |
 | Nested model     |             10.1 ns  |         619 ns   |  ~61×   |        0 B         |
 | Collection (3×)  |             14.3 ns  |        2,043 ns  | ~143×   |        0 B         |
 
-See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/performance.md) for full benchmark results.
+Historical numbers, measured against FluentValidation 11; a re-run against FluentValidation 12 is tracked in [#330](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/330). See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/performance.md) for full benchmark results.
 
 ## Packages
 
@@ -73,7 +73,7 @@ See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/mai
 ## Features
 
 - Zero heap allocation on the valid path
-- 25+ built-in validation attributes
+- 20 built-in rule attributes, plus `[Must]` and `[CustomValidation]` for your own
 - Nested object and collection validation
 - Inherited rules from base types (opt out with `[Validate(IncludeBaseProperties = false)]`)
 - ASP.NET Core auto-validation (HTTP 422 on failure)
@@ -98,6 +98,7 @@ See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/mai
 - [DI Registration (Inject)](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/inject.md)
 - [Options Validation](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/options.md)
 - [Testing](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/testing.md)
+- [Diagnostics](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/diagnostics.md)
 - [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/performance.md)
 - [Advanced Features](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/advanced.md)
 - [Migrating to v2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/migrating-to-v2.md)
