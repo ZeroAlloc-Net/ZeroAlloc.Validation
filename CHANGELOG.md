@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.3](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.3.2...v2.3.3) (2026-10-16)
+
+
+### Documentation
+
+* rewrite the readme as a product page ([#339](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/339)) ([7c6c7e4](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/7c6c7e47202efa705a99bea1e168494672fddefb))
+
 ## [2.3.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.3.1...v2.3.2) (2026-10-15)
 
 
