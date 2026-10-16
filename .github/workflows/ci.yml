@@ -47,26 +47,18 @@ jobs:
       - name: Build
         run: dotnet build --no-restore -c Release -p:Version=${{ steps.gitversion.outputs.version }}
 
-      # --no-build and the build's version, as in release-please.yml. A plain `dotnet pack` here
-      # rebuilt these projects at the default 1.0.0 over the Build step's output, so the tests and
-      # the Pack step below ran against assemblies stamped 1.0.0. The version guard in
-      # Directory.Build.props now fails such a pack; see ZeroAlloc-Net/.github#36.
-      - name: Pack ZA.Validation packages into local feed (for duplicate-generator test)
-        run: |
-          dotnet pack src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj --no-build -c Release -p:Version=${{ steps.gitversion.outputs.version }} -o artifacts/local
-          dotnet pack src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj --no-build -c Release -p:Version=${{ steps.gitversion.outputs.version }} -o artifacts/local
-          dotnet pack src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj --no-build -c Release -p:Version=${{ steps.gitversion.outputs.version }} -o artifacts/local
-
       - name: Test
         run: dotnet test --no-build -c Release --verbosity normal
 
+      # Every src project, so a packing failure in any of them fails CI; the explicit list this
+      # replaces left out Inject and Options. dotnet pack skips a project with IsPackable=false.
+      # Only src/: a solution-wide pack would also pack the benchmarks project.
       - name: Pack
         run: |
-          dotnet pack src/ZeroAlloc.Validation/ZeroAlloc.Validation.csproj --no-build -c Release -p:PackageVersion=${{ steps.gitversion.outputs.version }} -o ./artifacts
-          dotnet pack src/ZeroAlloc.Validation.Generator/ZeroAlloc.Validation.Generator.csproj --no-build -c Release -p:PackageVersion=${{ steps.gitversion.outputs.version }} -o ./artifacts
-          dotnet pack src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj --no-build -c Release -p:PackageVersion=${{ steps.gitversion.outputs.version }} -o ./artifacts
-          dotnet pack src/ZeroAlloc.Validation.AspNetCore.Generator/ZeroAlloc.Validation.AspNetCore.Generator.csproj --no-build -c Release -p:PackageVersion=${{ steps.gitversion.outputs.version }} -o ./artifacts
-          dotnet pack src/ZeroAlloc.Validation.Testing/ZeroAlloc.Validation.Testing.csproj --no-build -c Release -p:PackageVersion=${{ steps.gitversion.outputs.version }} -o ./artifacts
+          set -euo pipefail
+          for csproj in src/*/*.csproj; do
+            dotnet pack "$csproj" --no-build -c Release -p:Version=${{ steps.gitversion.outputs.version }} -o ./artifacts
+          done
 
   api-compat:
     uses: ZeroAlloc-Net/.github/.github/workflows/api-compat.yml@main

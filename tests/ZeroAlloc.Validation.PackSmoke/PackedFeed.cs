@@ -20,6 +20,7 @@ public sealed class PackedFeed : IDisposable
 
     private readonly string _workDir;
     private readonly string _feed;
+    private readonly string _packagesFolder;
 
     public PackedFeed()
     {
@@ -27,6 +28,7 @@ public sealed class PackedFeed : IDisposable
         Version  = $"9.9.9-packsmoke-{Guid.NewGuid():N}";
         _workDir = Path.Combine(Path.GetTempPath(), $"za-validation-packsmoke-{Guid.NewGuid():N}");
         _feed    = Path.Combine(_workDir, "feed");
+        _packagesFolder = Path.Combine(_workDir, "packages");
         Directory.CreateDirectory(_feed);
 
         var repoRoot = LocateRepoRoot();
@@ -56,6 +58,12 @@ public sealed class PackedFeed : IDisposable
     /// <summary>The local feed directory every consumer restores from.</summary>
     public string FeedDirectory => _feed;
 
+    /// <summary>
+    /// The private global packages folder every consumer restores into, so a scaffolded
+    /// consumer neither reads nor pollutes the machine-wide cache.
+    /// </summary>
+    public string PackagesFolder => _packagesFolder;
+
     public string PackagePath(string packageId)
         => Path.Combine(_feed, $"{packageId}.{Version}.nupkg");
 
@@ -76,7 +84,7 @@ public sealed class PackedFeed : IDisposable
         var dir = Path.Combine(_workDir, name);
         Directory.CreateDirectory(dir);
 
-        WriteNuGetConfig(dir, _feed, Path.Combine(_workDir, "packages"));
+        WriteNuGetConfig(dir, _feed, _packagesFolder);
         WriteProject(dir, name, packages, generatedAccessibility);
         WriteSource(dir, packages);
 
@@ -121,7 +129,7 @@ public sealed class PackedFeed : IDisposable
         // ZeroAlloc.Validation bundles ZeroAlloc.Validation.Generator itself, issue #194.
         // Referencing the standalone Generator package here too would trip the ZV9001
         // duplicate-generator guard (build/ZeroAlloc.Validation.targets) and fail every
-        // consumer scaffolded below, on purpose — see DuplicateGeneratorTests for that case.
+        // consumer scaffolded below, on purpose — see DuplicateGeneratorPackTests for that case.
         //
         // CopyLocalLockFileAssemblies: a plain class library does not copy its package
         // dependencies to its output directory by default, so GeneratedAccessibilityPackTests,
