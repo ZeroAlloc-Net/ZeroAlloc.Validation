@@ -16,6 +16,10 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageReference Include="coverlet.collector" Version="10.1.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="ZeroAlloc.TestHelpers" Version="1.7.*" PrivateAssets="all" IncludeAssets="contentfiles;build" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.20" Condition="'$(TargetFramework)' == 'net9.0'" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" Condition="'$(TargetFramework)' == 'net10.0'" />
