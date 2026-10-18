@@ -16,7 +16,7 @@
     <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="1.4.0" GeneratePathProperty="true" />
     <PackageReference Include="ZeroAlloc.Pipeline" Version="1.4.0" GeneratePathProperty="true" />
     <!-- Resolves closings of generic models registered through the generated helper, #238. -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
   </ItemGroup>
 
   <ItemGroup>
