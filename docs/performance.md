@@ -194,7 +194,7 @@ compile at all.
 # From repo root
 dotnet build benchmarks/ZeroAlloc.Validation.Benchmarks -c Release --no-incremental
 cd benchmarks/ZeroAlloc.Validation.Benchmarks
-dotnet run -c Release -- --filter '*' --job Default --inProcess
+dotnet run -c Release -- --filter '*' --launchCount 3
 ```
 
 Note: `--no-incremental` is required because the source generator's output assembly is excluded from MSBuild's incremental-build inputs. Without it, a change to the generator may not be detected and stale generated code may be benchmarked.
