@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.4](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.3.3...v2.3.4) (2026-10-21)
+
+
+### Documentation
+
+* re-run the benchmarks against FluentValidation 12.2.0, pinned ([#355](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/355)) ([cec11d2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/cec11d25b92ae2d0dad4c3d96ff5348b75212c71))
+
 ## [2.3.3](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.3.2...v2.3.3) (2026-10-16)
 
 
