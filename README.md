@@ -12,7 +12,7 @@ Source-generated, attribute-based alternative to FluentValidation for .NET: no r
 ## Why ZeroAlloc.Validation
 
 - **Nothing allocated on the valid path.** A passing validation allocates 0 B, asserted by allocation regression tests for flat, nested and collection models. FluentValidation 12 allocates 696–3,528 B for the same models.
-- **27.8–133.2× faster than FluentValidation 12** on the valid path, measured side by side in the same BenchmarkDotNet run.
+- **22.7–145.0× faster than FluentValidation 12** on the valid path, measured side by side in the same BenchmarkDotNet run.
 - **Works under NativeAOT and trimming.** The validator is plain generated C#, with no reflection or expression trees; CI publishes and runs a NativeAOT sample on every build.
 - **Mistakes surface at compile time.** A numeric rule on a string, an `[IsInEnum]` on a non-enum or a
   `[CustomValidation]` method with the wrong signature fails the build, not a request.
@@ -76,11 +76,11 @@ Optional packages:
 
 | Scenario | Speedup vs FluentValidation 12 | Allocated (valid) |
 |---|---:|---:|
-| Flat model | 27.8× | 0 B vs 696 B |
-| Nested model | 133.2× | 0 B vs 1,488 B |
-| Collection, 3 items | 91.7× | 0 B vs 3,528 B |
+| Flat model | 22.7× | 0 B vs 664 B |
+| Nested model | 100.3× | 0 B vs 1,488 B |
+| Collection, 3 items | 145.0× | 0 B vs 3,528 B |
 
-Valid path, FluentValidation 12.1.1, measured 2026-10-15. Allocations are exact. Speed is shown as same-run ratios, because the benchmark host is a shared VM; absolute timings are not published. On the invalid path ZeroAlloc is 12.7–62.9× faster and allocates 12.4–74.9× less. See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/performance.md) for the full results.
+Valid path, FluentValidation 12.2.0, measured 2026-10-21. Allocations are exact. Speed is shown as same-run ratios; absolute timings are not published. On the invalid path ZeroAlloc is 20.9–129.0× faster and allocates 13.0–77.5× less. See [Performance](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/blob/main/docs/performance.md) for the full results.
 
 ## Learn more
 
