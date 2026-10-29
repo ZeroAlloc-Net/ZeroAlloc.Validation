@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.5](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.3.4...v2.3.5) (2026-10-29)
+
+
+### Bug Fixes
+
+* comparison rules reject NaN ([#367](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/367)) ([63f3dc0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/63f3dc02f74dd4b1e6554a477456cbb901c9a77e)), closes [#360](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/360)
+
 ## [2.3.4](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.3.3...v2.3.4) (2026-10-21)
 
 
