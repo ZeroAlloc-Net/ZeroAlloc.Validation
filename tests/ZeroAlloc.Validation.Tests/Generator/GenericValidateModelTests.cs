@@ -269,15 +269,15 @@ public class GenericValidateModelTests
     public static TheoryData<string, string, string> NumericTypeParameterRules() => new()
     {
         // A possibly-null T is guarded before CreateChecked.
-        { "where T : INumber<T>", "T", "instance.Value is not null && (double.CreateChecked(instance.Value) <= 0)" },
-        { "where T : INumber<T>", "T?", "instance.Value is not null && (double.CreateChecked(instance.Value) <= 0)" },
-        { "where T : INumberBase<T>", "T", "instance.Value is not null && (double.CreateChecked(instance.Value) <= 0)" },
-        { "where T : System.Numerics.IBinaryInteger<T>", "T", "instance.Value is not null && (double.CreateChecked(instance.Value) <= 0)" },
+        { "where T : INumber<T>", "T", "instance.Value is not null && (!(double.CreateChecked(instance.Value) > 0))" },
+        { "where T : INumber<T>", "T?", "instance.Value is not null && (!(double.CreateChecked(instance.Value) > 0))" },
+        { "where T : INumberBase<T>", "T", "instance.Value is not null && (!(double.CreateChecked(instance.Value) > 0))" },
+        { "where T : System.Numerics.IBinaryInteger<T>", "T", "instance.Value is not null && (!(double.CreateChecked(instance.Value) > 0))" },
         // A struct or unmanaged T cannot be null, so it is not guarded.
-        { "where T : struct, INumber<T>", "T", "double.CreateChecked(instance.Value) <= 0" },
-        { "where T : unmanaged, INumber<T>", "T", "double.CreateChecked(instance.Value) <= 0" },
+        { "where T : struct, INumber<T>", "T", "!(double.CreateChecked(instance.Value) > 0)" },
+        { "where T : unmanaged, INumber<T>", "T", "!(double.CreateChecked(instance.Value) > 0)" },
         // A Nullable<T> is compared on its value, as for int?.
-        { "where T : struct, INumber<T>", "T?", "instance.Value.HasValue && (double.CreateChecked(instance.Value.Value) <= 0)" },
+        { "where T : struct, INumber<T>", "T?", "instance.Value.HasValue && (!(double.CreateChecked(instance.Value.Value) > 0))" },
     };
 
     [Theory]
@@ -315,11 +315,11 @@ public class GenericValidateModelTests
 
         Assert.Empty(output.Diagnostics);
         var source = output.Source("Ns.AmountValidator`1.g.cs");
-        Assert.Contains("if (double.CreateChecked(instance.A) < 1)", source, StringComparison.Ordinal);
-        Assert.Contains("if (double.CreateChecked(instance.A) >= 10)", source, StringComparison.Ordinal);
-        Assert.Contains("if (double.CreateChecked(instance.A) > 9)", source, StringComparison.Ordinal);
-        Assert.Contains("if (double.CreateChecked(instance.B) < 1 || double.CreateChecked(instance.B) > 5)", source, StringComparison.Ordinal);
-        Assert.Contains("if (double.CreateChecked(instance.B) <= 0 || double.CreateChecked(instance.B) >= 6)", source, StringComparison.Ordinal);
+        Assert.Contains("if (!(double.CreateChecked(instance.A) >= 1))", source, StringComparison.Ordinal);
+        Assert.Contains("if (!(double.CreateChecked(instance.A) < 10))", source, StringComparison.Ordinal);
+        Assert.Contains("if (!(double.CreateChecked(instance.A) <= 9))", source, StringComparison.Ordinal);
+        Assert.Contains("if (!(double.CreateChecked(instance.B) >= 1 && double.CreateChecked(instance.B) <= 5))", source, StringComparison.Ordinal);
+        Assert.Contains("if (!(double.CreateChecked(instance.B) > 0 && double.CreateChecked(instance.B) < 6))", source, StringComparison.Ordinal);
         Assert.Contains("if (double.CreateChecked(instance.C) != 3)", source, StringComparison.Ordinal);
         Assert.Contains("if (double.CreateChecked(instance.C) == 4)", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Convert.ToDouble", source, StringComparison.Ordinal);
@@ -595,7 +595,7 @@ public class GenericValidateModelTests
             """).Compiles();
 
         Assert.Empty(output.Diagnostics);
-        Assert.Contains("if (double.CreateChecked(instance.Count.Value) <= 0)", output.Source("Ns.LineValidator`1.g.cs"), StringComparison.Ordinal);
+        Assert.Contains("if (!(double.CreateChecked(instance.Count.Value) > 0))", output.Source("Ns.LineValidator`1.g.cs"), StringComparison.Ordinal);
     }
 
 

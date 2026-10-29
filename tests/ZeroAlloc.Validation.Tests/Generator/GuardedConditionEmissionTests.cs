@@ -127,7 +127,7 @@ public class GuardedConditionEmissionTests
     public void UnguardedRule_ConditionIsNotParenthesisedAgain()
     {
         Assert.Equal(
-            "if (System.Convert.ToDouble(instance.Amount) < 2 || System.Convert.ToDouble(instance.Amount) > 10)",
+            "if (!(System.Convert.ToDouble(instance.Amount) >= 2 && System.Convert.ToDouble(instance.Amount) <= 10))",
             RuleLine("InclusiveBetween(2, 10)", "int", guard: null, "Flat", out _));
     }
 
@@ -135,7 +135,7 @@ public class GuardedConditionEmissionTests
     public void IssueRepro_WhenGuardCoversBothBounds()
     {
         Assert.Equal(
-            "if (instance.IsChecked() && (System.Convert.ToDouble(instance.Amount) < 2 || System.Convert.ToDouble(instance.Amount) > 10))",
+            "if (instance.IsChecked() && (!(System.Convert.ToDouble(instance.Amount) >= 2 && System.Convert.ToDouble(instance.Amount) <= 10)))",
             RuleLine("InclusiveBetween(2, 10)", "int", "When", "Flat", out _));
     }
 

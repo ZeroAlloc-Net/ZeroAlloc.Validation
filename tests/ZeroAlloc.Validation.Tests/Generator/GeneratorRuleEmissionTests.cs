@@ -51,7 +51,7 @@ public class GeneratorRuleEmissionTests
             """;
 
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("<= 0", generated, StringComparison.Ordinal);
+        Assert.Contains("> 0", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -431,7 +431,7 @@ public class GeneratorRuleEmissionTests
             public class Foo { [GreaterThanOrEqualTo(0)] public int Age { get; set; } }
             """;
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("< 0", generated, StringComparison.Ordinal);
+        Assert.Contains(">= 0", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -444,7 +444,7 @@ public class GeneratorRuleEmissionTests
             public class Foo { [LessThanOrEqualTo(100)] public int Score { get; set; } }
             """;
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("> 100", generated, StringComparison.Ordinal);
+        Assert.Contains("<= 100", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -457,8 +457,8 @@ public class GeneratorRuleEmissionTests
             public class Foo { [ExclusiveBetween(0, 100)] public int Value { get; set; } }
             """;
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("<= 0", generated, StringComparison.Ordinal);
-        Assert.Contains(">= 100", generated, StringComparison.Ordinal);
+        Assert.Contains("> 0", generated, StringComparison.Ordinal);
+        Assert.Contains("< 100", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1141,8 +1141,8 @@ public class GeneratorRuleEmissionTests
             public class Foo { [InclusiveBetween(1, 10)] public int Value { get; set; } }
             """;
         var generated = RunGeneratorGetSource(source);
-        Assert.Contains("< 1", generated, StringComparison.Ordinal);
-        Assert.Contains("> 10", generated, StringComparison.Ordinal);
+        Assert.Contains(">= 1", generated, StringComparison.Ordinal);
+        Assert.Contains("<= 10", generated, StringComparison.Ordinal);
     }
 
     private static int CountOccurrences(string text, string value)

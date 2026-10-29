@@ -70,7 +70,7 @@ public class NullableComparisonEmissionTests
         var generated = GeneratedValidator("GreaterThan(0)", "int", out _);
 
         Assert.DoesNotContain("HasValue", generated, StringComparison.Ordinal);
-        Assert.Contains("System.Convert.ToDouble(instance.Amount) <= 0", generated, StringComparison.Ordinal);
+        Assert.Contains("!(System.Convert.ToDouble(instance.Amount) > 0)", generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public class NullableComparisonEmissionTests
         var generated = GeneratorTestHelper.GetGeneratedSource(result, "TestModels.FooValidator.g.cs");
 
         Assert.Contains(
-            "instance.Amount.Value.HasValue && (System.Convert.ToDouble(instance.Amount.Value.Value) <= 0)",
+            "instance.Amount.Value.HasValue && (!(System.Convert.ToDouble(instance.Amount.Value.Value) > 0))",
             generated, StringComparison.Ordinal);
         Assert.DoesNotContain(output.GetDiagnostics(), d => d.Severity == DiagnosticSeverity.Error);
     }

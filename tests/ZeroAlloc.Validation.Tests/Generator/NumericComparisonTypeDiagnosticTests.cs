@@ -102,7 +102,7 @@ public class NumericComparisonTypeDiagnosticTests
 
         var generated = GeneratorTestHelper.GetGeneratedSource(result, "TestModels.FooValidator.g.cs");
         Assert.Contains(
-            "instance.Amount is not null && (System.Convert.ToDouble(instance.Amount) <= 0)",
+            "instance.Amount is not null && (!(System.Convert.ToDouble(instance.Amount) > 0))",
             generated, StringComparison.Ordinal);
         Assert.Empty(ProblemsInGeneratedCode(output));
     }
@@ -127,7 +127,7 @@ public class NumericComparisonTypeDiagnosticTests
         var generated = GeneratorTestHelper.GetGeneratedSource(result, "TestModels.FooValidator.g.cs");
         Assert.Contains("instance.When is null", generated, StringComparison.Ordinal);
         Assert.DoesNotContain("instance.When.Value", generated, StringComparison.Ordinal);
-        Assert.Contains("System.Convert.ToDouble(instance.Count) <= 0", generated, StringComparison.Ordinal);
+        Assert.Contains("!(System.Convert.ToDouble(instance.Count) > 0)", generated, StringComparison.Ordinal);
         Assert.Empty(ProblemsInGeneratedCode(output));
     }
 
