@@ -91,6 +91,12 @@ public class ContactForm
 > missing value while `[LessThan(5)]` accepted it. If you relied on a comparison rule to reject
 > null, add `[NotNull]`.
 
+> **Comparison rules and NaN.** `NaN` is not greater than, less than or between anything, so
+> `[GreaterThan]`, `[GreaterThanOrEqualTo]`, `[LessThan]`, `[LessThanOrEqualTo]`,
+> `[InclusiveBetween]` and `[ExclusiveBetween]` reject `double.NaN` and `float.NaN`, on a
+> `double?` or `float?` too once it has a value. Up to 2.3.4 they accepted it.
+> `[Equal]` already rejected `NaN`, and `[NotEqual]` accepts it, as `NaN != x` holds.
+
 > **Comparison rules compare numbers.** Their bounds are `double` arguments, and the value is
 > compared as `Convert.ToDouble(value)`. Use them on numbers, `decimal`, enums and their nullable
 > forms. On a type the conversion cannot handle, such as `DateTime`, `DateOnly`, `TimeOnly`,
