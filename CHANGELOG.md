@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.3.5...v2.4.0) (2026-10-30)
+
+
+### Features
+
+* count length rules in code points on request and report unmeasurable values as ZV0040 ([#370](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/370)) ([153db82](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/153db82396e765b6d46e4d7eebfc85453cc817ab)), closes [#361](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/361)
+
 ## [2.3.5](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.3.4...v2.3.5) (2026-10-29)
 
 
