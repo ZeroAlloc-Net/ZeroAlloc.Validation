@@ -73,6 +73,8 @@ Default messages use the property name (or display name, see below) directly wit
 | `[Matches(@"^\d+$")]` | `Email does not match the required pattern.` |
 | `[Must(nameof(IsValid))]` | `Email is invalid.` |
 
+The length rules count UTF-16 code units by default, so "characters" in their messages means code units: an emoji counts as two. Set `Unit = TextLengthUnit.CodePoints` to count code points, see [What a length counts](attributes.md#string-attributes). The message is the same in either unit.
+
 ## Overriding the message
 
 Every attribute that inherits from `ValidationAttribute` exposes a `Message` property. The value you provide is embedded directly into the generated code as a string literal — there is no runtime format evaluation.

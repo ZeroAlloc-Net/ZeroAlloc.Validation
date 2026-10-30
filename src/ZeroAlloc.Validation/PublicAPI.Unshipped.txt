@@ -1,1 +1,12 @@
 #nullable enable
+static ZeroAlloc.Validation.Internal.TextLength.CountCodePoints(System.ReadOnlySpan<char> text) -> int
+ZeroAlloc.Validation.Internal.TextLength
+ZeroAlloc.Validation.LengthAttribute.Unit.get -> ZeroAlloc.Validation.TextLengthUnit
+ZeroAlloc.Validation.LengthAttribute.Unit.set -> void
+ZeroAlloc.Validation.MaxLengthAttribute.Unit.get -> ZeroAlloc.Validation.TextLengthUnit
+ZeroAlloc.Validation.MaxLengthAttribute.Unit.set -> void
+ZeroAlloc.Validation.MinLengthAttribute.Unit.get -> ZeroAlloc.Validation.TextLengthUnit
+ZeroAlloc.Validation.MinLengthAttribute.Unit.set -> void
+ZeroAlloc.Validation.TextLengthUnit
+ZeroAlloc.Validation.TextLengthUnit.CodePoints = 1 -> ZeroAlloc.Validation.TextLengthUnit
+ZeroAlloc.Validation.TextLengthUnit.CodeUnits = 0 -> ZeroAlloc.Validation.TextLengthUnit

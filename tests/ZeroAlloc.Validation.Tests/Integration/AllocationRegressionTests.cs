@@ -144,6 +144,26 @@ public class AllocationRegressionTests
     }
 
     [Fact]
+    public void CodePointLength_ValidPath_AllocatesNothing()
+    {
+        // Issue #361: counting code points walks the string as a span. Each value is in the band
+        // where Length alone cannot decide, so every call counts.
+        var validator = new AllocCodePointLengthModelValidator();
+        var model = new AllocCodePointLengthModel { Max = "\U0001F600\U0001F600ab", Range = "a\U0001F600\U0001F600" };
+
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "CodePointLength_ValidPath_AllocatesNothing");
+    }
+
+    [Fact]
+    public void CodePointLength_SingleFailure_AllocatesResultArrayOnly()
+    {
+        var validator = new AllocCodePointLengthModelValidator();
+        var model = new AllocCodePointLengthModel { Max = "\U0001F600\U0001F600abc", Range = "ab" };
+
+        Assert.Equal(OneFailureArray, AllocationGate.MeasureBytesPerCall(Iterations, () => validator.Validate(model)));
+    }
+
+    [Fact]
     public void NestedModel_ValidPath_AllocatesNothing()
     {
         var validator = new AllocParentModelValidator(new AllocChildModelValidator());
