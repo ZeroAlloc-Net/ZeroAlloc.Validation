@@ -67,13 +67,14 @@ Default messages use the property name (or display name, see below) directly wit
 | `[NotEmpty]` | `Email must not be empty.` |
 | `[MinLength(5)]` | `Email must be at least 5 characters.` |
 | `[MaxLength(50)]` | `Email must not exceed 50 characters.` |
+| `[MaxLength(5)]` on a collection | `Tags must contain at most 5 items.` |
 | `[GreaterThan(0)]` | `Amount must be greater than 0.` |
 | `[LessThan(100)]` | `Amount must be less than 100.` |
 | `[EmailAddress]` | `Email must be a valid email address.` |
 | `[Matches(@"^\d+$")]` | `Email does not match the required pattern.` |
 | `[Must(nameof(IsValid))]` | `Email is invalid.` |
 
-The length rules count UTF-16 code units by default, so "characters" in their messages means code units: an emoji counts as two. Set `Unit = TextLengthUnit.CodePoints` to count code points, see [What a length counts](attributes.md#string-attributes). The message is the same in either unit.
+The length rules count UTF-16 code units by default, so "characters" in their messages means code units: an emoji counts as two. Set `Unit = TextLengthUnit.CodePoints` to count code points, see [What a length counts](attributes.md#string-attributes). The message is the same in either unit. On a collection, an array included, the length rules count items, and the messages say so: `must contain at least 1 item.`, `must contain at most 5 items.`, `must contain between 1 and 5 items.`
 
 ## Overriding the message
 

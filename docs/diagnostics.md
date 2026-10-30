@@ -1146,41 +1146,35 @@ public class Order
 
 **Title:** Length rule on a value it cannot measure
 
-**When fired:** `[MinLength]`, `[MaxLength]` and `[Length]` compare the value's `Length`. On a type without a numeric `Length` property or field the generated validator can read, such as `int`, `Guid`, `object`, `List<T>`, `ICollection<T>`, `IEnumerable<T>` or a `Nullable<T>` of a struct, the generated validator did not compile, and the error pointed inside generated code. `Unit = TextLengthUnit.CodePoints` counts the code points of a string, so it is reported on any other type too, an array or a `StringBuilder` included. Either is now reported at the attribute and left out of the generated validator:
+**When fired:** `[MinLength]`, `[MaxLength]` and `[Length]` compare the value's `Length`, or, on a collection without one such as `List<T>`, `ICollection<T>` or `IReadOnlyCollection<T>`, its `Count`. On a type with neither the generated validator can read, such as `int`, `Guid`, `object` or a `Nullable<T>` of a struct, the generated validator did not compile, and the error pointed inside generated code. A plain `IEnumerable<T>` has no `Count`, and a length rule does not enumerate it to count, which could allocate, so it is reported too, and so is an interface that inherits `Count` from two interfaces, such as both `ICollection<T>` and `IReadOnlyCollection<T>`, where the read is ambiguous. `Unit = TextLengthUnit.CodePoints` counts the code points of a string, so it is reported on any other type too, an array or a `StringBuilder` included. Either is now reported at the attribute and left out of the generated validator:
 
 ```csharp
 [Validate]
 public class Order
 {
-    [MaxLength(10)]                  // ZV0040 — List<T> has Count, not Length
-    public List<OrderLine> Lines { get; set; } = new();
+    [MaxLength(10)]                  // ZV0040 — a sequence has no Count to compare
+    public IEnumerable<OrderLine> Lines { get; set; } = [];
 
     [MaxLength(10, Unit = TextLengthUnit.CodePoints)]   // ZV0040 — code points need a string
     public char[] Code { get; set; } = [];
 
     [MaxLength(10)]                  // fine — a string, an array, or a type with an int Length
     public string? Reference { get; set; }
+
+    [MaxLength(5)]                   // fine — a collection's Count
+    public List<string> Tags { get; set; } = [];
 }
 ```
 
 > '{Attr}' checks the length of '{Prop}', but its type '{Type}' has no Length the generated validator can read; use [Must] or a custom ValidationAttribute\<T\>
 
+> '{Attr}' checks the length of '{Prop}', but its type '{Type}' has no Count the generated validator can read, and a length rule does not enumerate a sequence to count it; use [Must] or a custom ValidationAttribute\<T\>
+
 > '{Attr}' checks the length of '{Prop}', but its type '{Type}' is not a string, and Unit = TextLengthUnit.CodePoints counts the code points of a string; remove Unit, or use [Must] or a custom ValidationAttribute\<T\>
 
 The value measured is the one the rule reads, after single-property value-object unwrapping: a length rule on a value object that wraps a string is fine, and one on a value object with several properties is reported. A record's positional property is checked the same way. A value whose type is a type parameter of a [generic model](getting-started.md#generic-models) is reported as [ZV0036](#zv0036) instead.
 
-**Fix:** Declare the property as a string or an array, or remove `Unit` from a rule on one that is not a string. To bound the number of items in a collection, use a `[Must]` predicate:
-
-```csharp
-[Validate]
-public class Order
-{
-    [Must(nameof(HasAtMostTenLines))]
-    public List<OrderLine> Lines { get; set; } = new();
-
-    public bool HasAtMostTenLines(List<OrderLine> lines) => lines.Count <= 10;
-}
-```
+**Fix:** Declare the property as a string, an array or a collection with a `Count`, such as `IReadOnlyCollection<T>`, or remove `Unit` from a rule on one that is not a string. Before #369 a collection was reported too, and bounding its items took a `[Must]` predicate; a length rule does that now.
 
 ---
 

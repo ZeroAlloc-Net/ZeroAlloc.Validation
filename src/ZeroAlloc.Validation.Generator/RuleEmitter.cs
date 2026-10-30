@@ -577,7 +577,7 @@ internal static class RuleEmitter
             var fqn = attr.AttributeClass!.ToDisplayString();
             var prefix = (stopMode && emitted > 0) ? "        else if" : "        if";
             var ruleMessage = FindCustomRuleMessage(attr);
-            var message = ResolveRuleMessage(attr, fqn, displayName, ruleMessage);
+            var message = ResolveRuleMessage(attr, fqn, displayName, ruleMessage, prop.Type);
             var condition = BuildCondition(fqn, attr, propAccess, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, ruleIndex: i, fields: fields);
             var propertyValueExpr = message.HasPropertyValue ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
@@ -874,7 +874,7 @@ internal static class RuleEmitter
             var fqn = attr.AttributeClass!.ToDisplayString();
             var prefix = (stopMode && emitted > 0) ? "        else if" : "        if";
             var ruleMessage = FindCustomRuleMessage(attr);
-            var message = ResolveRuleMessage(attr, fqn, displayName, ruleMessage);
+            var message = ResolveRuleMessage(attr, fqn, displayName, ruleMessage, prop.Type);
             var condition = BuildCondition(fqn, attr, propAccess, modelParamName, prop.Type, rawPropAccess, propName: prop.Name, ruleIndex: i, fields: fields);
             var propertyValueExpr = message.HasPropertyValue ? BuildPropertyValueExpr(prop, modelParamName) : null;
             var whenMethod   = GetWhen(attr);
@@ -920,11 +920,12 @@ internal static class RuleEmitter
         AttributeData attr,
         string fqn,
         string displayName,
-        (string Message, string? ErrorCode)? ruleMessage)
+        (string Message, string? ErrorCode)? ruleMessage,
+        ITypeSymbol propType)
     {
         if (!CustomRules.IsCustomRule(attr))
             return ResolveMessage(attr, fqn, displayName)
-                ?? MessageTemplate.Literal(GetDefaultMessage(fqn, attr, displayName));
+                ?? MessageTemplate.Literal(GetDefaultMessage(fqn, attr, displayName, HoldsItems(ValueTypeOf(propType))));
 
         return CustomRules.ResolveMessage(CustomRuleTemplate(attr, ruleMessage), attr, displayName, out _);
     }
@@ -1562,15 +1563,15 @@ internal static class RuleEmitter
         {
             NotNullFqn               => $"{access} is null",
             NotEmptyFqn              => BuildNotEmptyCondition(access, propType),
-            MinLengthFqn             => GuardAgainstNull(access, valueType, LengthCondition(access, GetIntArg(attr, 0), max: null, CountsCodePoints(attr))),
-            MaxLengthFqn             => GuardAgainstNull(access, valueType, LengthCondition(access, min: null, GetIntArg(attr, 0), CountsCodePoints(attr))),
+            MinLengthFqn             => GuardAgainstNull(access, valueType, LengthCondition(access, GetIntArg(attr, 0), max: null, CountsCodePoints(attr), CountsItems(valueType))),
+            MaxLengthFqn             => GuardAgainstNull(access, valueType, LengthCondition(access, min: null, GetIntArg(attr, 0), CountsCodePoints(attr), CountsItems(valueType))),
             GreaterThanFqn           => CompareValue(access, valueType, v => $"!({toDouble(v)} > {Number(attr, 0)})"),
             LessThanFqn              => CompareValue(access, valueType, v => $"!({toDouble(v)} < {Number(attr, 0)})"),
             InclusiveBetweenFqn      => CompareValue(access, valueType, v => $"!({toDouble(v)} >= {Number(attr, 0)} && {toDouble(v)} <= {Number(attr, 1)})"),
             GreaterThanOrEqualToFqn  => CompareValue(access, valueType, v => $"!({toDouble(v)} >= {Number(attr, 0)})"),
             LessThanOrEqualToFqn     => CompareValue(access, valueType, v => $"!({toDouble(v)} <= {Number(attr, 0)})"),
             ExclusiveBetweenFqn      => CompareValue(access, valueType, v => $"!({toDouble(v)} > {Number(attr, 0)} && {toDouble(v)} < {Number(attr, 1)})"),
-            LengthFqn                => GuardAgainstNull(access, valueType, LengthCondition(access, GetIntArg(attr, 0), GetIntArg(attr, 1), CountsCodePoints(attr))),
+            LengthFqn                => GuardAgainstNull(access, valueType, LengthCondition(access, GetIntArg(attr, 0), GetIntArg(attr, 1), CountsCodePoints(attr), CountsItems(valueType))),
             EmailAddressFqn          => GuardAgainstNull(access, valueType, $"!global::ZeroAlloc.Validation.Internal.EmailValidator.IsValid({access})"),
             MatchesFqn               => GuardAgainstNull(access, valueType, BuildMatchesCondition(access, propName, attr, fields)),
             NullFqn                  => $"{access} is not null",
@@ -1598,11 +1599,11 @@ internal static class RuleEmitter
     /// a length in between is counted, once, by <c>TextLength.CountCodePoints</c>, so ASCII and
     /// other BMP text clear of the limit costs the same comparison as a code-unit rule. A twice
     /// that does not fit an int has no string long enough to reach it, and its shortcut is left
-    /// out.
+    /// out. A collection without a <c>Length</c>, #369, compares its <c>Count</c> instead.
     /// </summary>
-    private static string LengthCondition(string access, int? min, int? max, bool codePoints)
+    private static string LengthCondition(string access, int? min, int? max, bool codePoints, bool countsItems)
     {
-        var length = $"{access}.Length";
+        var length = countsItems ? $"{access}.Count" : $"{access}.Length";
         if (!codePoints)
         {
             return (min, max) switch
@@ -1680,11 +1681,15 @@ internal static class RuleEmitter
         return $"!{fieldName}.IsMatch({access})";
     }
 
-    private static string GetDefaultMessage(string fqn, AttributeData attr, string propName) =>
+    // A length rule on a collection, #369, counts items rather than characters.
+    private static string GetDefaultMessage(string fqn, AttributeData attr, string propName, bool holdsItems) =>
         fqn switch
         {
             NotNullFqn               => $"{propName} must not be null.",
             NotEmptyFqn              => $"{propName} must not be empty.",
+            MinLengthFqn when holdsItems => $"{propName} must contain at least {Items(attr, 0)}.",
+            MaxLengthFqn when holdsItems => $"{propName} must contain at most {Items(attr, 0)}.",
+            LengthFqn when holdsItems    => $"{propName} must contain between {GetArg(attr, 0)} and {Items(attr, 1)}.",
             MinLengthFqn             => $"{propName} must be at least {GetArg(attr, 0)} characters.",
             MaxLengthFqn             => $"{propName} must not exceed {GetArg(attr, 0)} characters.",
             GreaterThanFqn           => $"{propName} must be greater than {GetArg(attr, 0)}.",
@@ -2400,14 +2405,19 @@ internal static class RuleEmitter
     private const string NoLengthHint =
         "has no Length the generated validator can read; use [Must] or a custom ValidationAttribute<T>";
 
+    private const string NoCountHint =
+        "has no Count the generated validator can read, and a length rule does not enumerate a sequence to count it; "
+        + "use [Must] or a custom ValidationAttribute<T>";
+
     private const string NotAStringHint =
         "is not a string, and Unit = TextLengthUnit.CodePoints counts the code points of a string; "
         + "remove Unit, or use [Must] or a custom ValidationAttribute<T>";
 
     /// <summary>
     /// Whether a rule that is not a length rule, or a length rule on a value it can measure, can
-    /// be emitted. A length rule reads <c>value.Length</c>, which on a type without one, such as
-    /// <c>List&lt;T&gt;</c>, put a compiler error inside the generated validator; with
+    /// be emitted. A length rule reads <c>value.Length</c>, or <c>value.Count</c> on a collection
+    /// without a Length, #369, see <see cref="CountsItems"/>; a type with neither, or a plain
+    /// <c>IEnumerable&lt;T&gt;</c>, put a compiler error inside the generated validator; with
     /// <c>Unit = TextLengthUnit.CodePoints</c> it counts a string's code points and needs a string,
     /// #361. Either is left out and, when <paramref name="ctx"/> is set, reported as ZV0040 at the
     /// attribute. The value is the one the rule reads, after single-property value-object
@@ -2425,9 +2435,14 @@ internal static class RuleEmitter
             if (valueType.SpecialType == SpecialType.System_String) return true;
             hint = NotAStringHint;
         }
+        else if (CountsItems(valueType))
+        {
+            if (HasReadableMember(compilation, valueType, "Count")) return true;
+            hint = NoCountHint;
+        }
         else
         {
-            if (HasReadableLength(compilation, valueType)) return true;
+            if (HasReadableMember(compilation, valueType, "Length")) return true;
             hint = NoLengthHint;
         }
 
@@ -2435,32 +2450,86 @@ internal static class RuleEmitter
         return false;
     }
 
+    // "1 item", "3 items": a length rule's bound, as its default message on a collection names it.
+    private static string Items(AttributeData attr, int index) =>
+        GetIntArg(attr, index) == 1 ? "1 item" : $"{GetArg(attr, index)} items";
+
     /// <summary>
-    /// Whether <c>value.Length</c> compiles and compares with an int for a value of
-    /// <paramref name="type"/>: an array, or a type with an instance <c>Length</c> property or
-    /// field of a numeric type, which compares with the rule's int bound, declared on it, a base type or, for an interface, an interface
-    /// it extends, that the generated validator can read.
+    /// Whether a length rule's default message on a value of <paramref name="type"/> counts items
+    /// rather than characters, #369: an array or other enumerable whose elements are not
+    /// <c>char</c>. A string, a <c>char[]</c> and a type that is no collection count characters.
     /// </summary>
-    private static bool HasReadableLength(Compilation compilation, ITypeSymbol type)
+    private static bool HoldsItems(ITypeSymbol? type)
     {
-        if (type is IArrayTypeSymbol) return true;
+        if (type is null || type.SpecialType == SpecialType.System_String) return false;
+        if (type is IArrayTypeSymbol array) return array.ElementType.SpecialType != SpecialType.System_Char;
+        var enumerable = type.SpecialType == SpecialType.System_Collections_IEnumerable;
+        foreach (var inherited in type.AllInterfaces)
+        {
+            if (inherited is { Name: "IEnumerable", Arity: 1 } generic
+                && generic.TypeArguments[0].SpecialType == SpecialType.System_Char
+                && string.Equals(generic.ContainingNamespace?.ToDisplayString(), "System.Collections.Generic", StringComparison.Ordinal))
+            {
+                return false;
+            }
+            enumerable |= inherited.SpecialType == SpecialType.System_Collections_IEnumerable;
+        }
+        return enumerable;
+    }
+
+    /// <summary>
+    /// Whether a length rule on a value of <paramref name="type"/> counts items, #369: the type is
+    /// a collection, enumerable, with no member named <c>Length</c> on it, a base type or an
+    /// interface it extends. Such a rule reads <c>Count</c>, which <see cref="MeasuresALength"/>
+    /// checks is readable; every other type reads <c>Length</c>. A string and an array have a
+    /// Length and keep it. Needs no compilation, so the emitter and the filter decide alike.
+    /// </summary>
+    private static bool CountsItems(ITypeSymbol? type)
+    {
+        if (type is null or IArrayTypeSymbol) return false;
+        var enumerable = type.SpecialType == SpecialType.System_Collections_IEnumerable;
+        foreach (var inherited in type.AllInterfaces)
+        {
+            if (!inherited.GetMembers("Length").IsEmpty) return false;
+            enumerable |= inherited.SpecialType == SpecialType.System_Collections_IEnumerable;
+        }
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            if (!current.GetMembers("Length").IsEmpty) return false;
+        }
+        return enumerable;
+    }
+
+    /// <summary>
+    /// Whether <c>value.Length</c> or <c>value.Count</c>, named by <paramref name="name"/>,
+    /// compiles and compares with an int for a value of <paramref name="type"/>: an array's
+    /// Length, or an instance property or field of a numeric type, which compares with the rule's
+    /// int bound, declared on it, a base type or, for an interface, exactly one interface it
+    /// extends, that the generated validator can read. Two inherited interfaces that each declare
+    /// it, such as <c>ICollection&lt;T&gt;</c> and <c>IReadOnlyCollection&lt;T&gt;</c>, make the
+    /// read ambiguous.
+    /// </summary>
+    private static bool HasReadableMember(Compilation compilation, ITypeSymbol type, string name)
+    {
+        if (type is IArrayTypeSymbol) return string.Equals(name, "Length", StringComparison.Ordinal);
         if (type.TypeKind is TypeKind.Dynamic or TypeKind.Pointer or TypeKind.FunctionPointer) return false;
 
         for (var current = type; current is not null; current = current.BaseType)
         {
-            if (DeclaresReadableLength(compilation, current)) return true;
+            if (DeclaresReadable(compilation, current, name)) return true;
         }
         if (type.TypeKind != TypeKind.Interface) return false;
+        var declarers = 0;
         foreach (var inherited in type.AllInterfaces)
         {
-            if (DeclaresReadableLength(compilation, inherited)) return true;
+            if (DeclaresReadable(compilation, inherited, name)) declarers++;
         }
-        return false;
+        return declarers == 1;
     }
 
-    private static bool DeclaresReadableLength(Compilation compilation, ITypeSymbol type)
+    private static bool DeclaresReadable(Compilation compilation, ITypeSymbol type, string name)
     {
-        foreach (var member in type.GetMembers("Length"))
+        foreach (var member in type.GetMembers(name))
         {
             if (member.IsStatic || !compilation.IsSymbolAccessibleWithin(member, compilation.Assembly)) continue;
             var memberType = member switch
