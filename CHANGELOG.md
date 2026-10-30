@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.4.0...v2.5.0) (2026-10-30)
+
+
+### Features
+
+* length rules count the items of a collection ([#373](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/373)) ([32bc623](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/32bc6236ab1e7f3cfea3a2e117cb09df00df837d)), closes [#369](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/369)
+
 ## [2.4.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.3.5...v2.4.0) (2026-10-30)
 
 
