@@ -1146,7 +1146,7 @@ public class Order
 
 **Title:** Length rule on a value it cannot measure
 
-**When fired:** `[MinLength]`, `[MaxLength]` and `[Length]` compare the value's `Length`. On a type without an `int` or `long` `Length` property or field the generated validator can read, such as `int`, `Guid`, `object`, `List<T>`, `ICollection<T>`, `IEnumerable<T>` or a `Nullable<T>` of a struct, the generated validator did not compile, and the error pointed inside generated code. `Unit = TextLengthUnit.CodePoints` counts the code points of a string, so it is reported on any other type too, an array or a `StringBuilder` included. Either is now reported at the attribute and left out of the generated validator:
+**When fired:** `[MinLength]`, `[MaxLength]` and `[Length]` compare the value's `Length`. On a type without a numeric `Length` property or field the generated validator can read, such as `int`, `Guid`, `object`, `List<T>`, `ICollection<T>`, `IEnumerable<T>` or a `Nullable<T>` of a struct, the generated validator did not compile, and the error pointed inside generated code. `Unit = TextLengthUnit.CodePoints` counts the code points of a string, so it is reported on any other type too, an array or a `StringBuilder` included. Either is now reported at the attribute and left out of the generated validator:
 
 ```csharp
 [Validate]

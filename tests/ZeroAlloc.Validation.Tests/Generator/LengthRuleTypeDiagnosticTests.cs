@@ -49,6 +49,8 @@ public class LengthRuleTypeDiagnosticTests
     [InlineData("Length(1, 3)", "char[]")]
     [InlineData("MaxLength(3)", "Sized")]
     [InlineData("MaxLength(3)", "LongSized")]
+    [InlineData("Length(1, 3)", "ShortSized")]
+    [InlineData("MinLength(3)", "DoubleSized")]
     [InlineData("MaxLength(3)", "FieldSized")]
     [InlineData("MaxLength(3)", "Code")]
     [InlineData("MaxLength(3, Unit = TextLengthUnit.CodePoints)", "string?")]
@@ -187,6 +189,8 @@ public class LengthRuleTypeDiagnosticTests
                 public struct Sized { public int Length { get; set; } }
                 public sealed class LongSized { public long Length { get; set; } }
                 public struct FieldSized { public int Length; }
+                public struct ShortSized { public ushort Length { get; set; } }
+                public struct DoubleSized { public double Length { get; set; } }
                 public sealed class HiddenLength { private int Length { get; set; } public int Size => Length; }
                 public sealed class NamedLength { public string Length { get; set; } = ""; }
                 [ZeroAlloc.ValueObjects.ValueObject]

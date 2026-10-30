@@ -39,7 +39,7 @@ All validation attributes live in the `ZeroAlloc.Validation` namespace and inher
 >
 > A surrogate pair counts as one code point, and so does a lone surrogate. A combining sequence such as `e` followed by U+0301 is still two code points; the rules do not count grapheme clusters. `TextLengthUnit.CodePoints` applies to a `string` only, or a single-property value object over one, and is reported as [ZV0040](diagnostics.md#zv0040) on anything else. It does not allocate, and a string well inside or well beyond the limit is decided on its `Length` alone, so it costs a count only when its length is between the limit and twice the limit.
 >
-> The length rules also accept an array, or any type with an `int` or `long` `Length` property the validator can read. A type without one, such as `List<T>`, is reported as [ZV0040](diagnostics.md#zv0040); check a collection's `Count` with `[Must]`.
+> The length rules also accept an array, or any type with a numeric `Length` property or field the validator can read. A type without one, such as `List<T>`, is reported as [ZV0040](diagnostics.md#zv0040); check a collection's `Count` with `[Must]`.
 
 > **Format rules and null.** `[EmailAddress]` and `[Matches]` follow the same split: they check a
 > string that is present and report nothing for `null`. An empty string is a value, so it is still

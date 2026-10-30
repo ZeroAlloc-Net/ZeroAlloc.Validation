@@ -2389,8 +2389,8 @@ internal static class RuleEmitter
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description:
-            "MinLength, MaxLength and Length compare the value's Length. A type without an int or "
-            + "long Length property or field the generated validator can read, such as int, "
+            "MinLength, MaxLength and Length compare the value's Length. A type without a numeric "
+            + "Length property or field the generated validator can read, such as int, "
             + "List<T>, IEnumerable<T> or a Nullable<T>, made the generated validator fail to "
             + "compile. Unit = TextLengthUnit.CodePoints counts the code points of a string, so it "
             + "needs a string. The value measured is the one the rule reads, after single-property "
@@ -2438,7 +2438,7 @@ internal static class RuleEmitter
     /// <summary>
     /// Whether <c>value.Length</c> compiles and compares with an int for a value of
     /// <paramref name="type"/>: an array, or a type with an instance <c>Length</c> property or
-    /// field of type int or long, declared on it, a base type or, for an interface, an interface
+    /// field of a numeric type, which compares with the rule's int bound, declared on it, a base type or, for an interface, an interface
     /// it extends, that the generated validator can read.
     /// </summary>
     private static bool HasReadableLength(Compilation compilation, ITypeSymbol type)
@@ -2470,7 +2470,15 @@ internal static class RuleEmitter
                 IFieldSymbol field => field.Type,
                 _ => null,
             };
-            if (memberType?.SpecialType is SpecialType.System_Int32 or SpecialType.System_Int64) return true;
+            if (memberType?.SpecialType is SpecialType.System_SByte or SpecialType.System_Byte
+                or SpecialType.System_Int16 or SpecialType.System_UInt16
+                or SpecialType.System_Int32 or SpecialType.System_UInt32
+                or SpecialType.System_Int64 or SpecialType.System_UInt64
+                or SpecialType.System_IntPtr or SpecialType.System_UIntPtr
+                or SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Decimal)
+            {
+                return true;
+            }
         }
         return false;
     }
