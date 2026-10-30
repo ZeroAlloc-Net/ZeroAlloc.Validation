@@ -4,6 +4,7 @@ abstract ZeroAlloc.Validation.ValidationAttribute<T>.IsValid(T value) -> bool
 abstract ZeroAlloc.Validation.ValidatorFor<T>.Validate(T instance) -> ZeroAlloc.Validation.ValidationResult
 static ZeroAlloc.Validation.Internal.DecimalValidator.ExceedsPrecisionScale(decimal value, int precision, int scale) -> bool
 static ZeroAlloc.Validation.Internal.EmailValidator.IsValid(string? email) -> bool
+static ZeroAlloc.Validation.Internal.TextLength.CountCodePoints(System.ReadOnlySpan<char> text) -> int
 virtual ZeroAlloc.Validation.ValidatorFor<T>.ValidateAsync(T instance, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Validation.ValidationResult>
 ZeroAlloc.Validation.AsyncValidationAttribute<T>
 ZeroAlloc.Validation.AsyncValidationAttribute<T>.AsyncValidationAttribute() -> void
@@ -55,6 +56,7 @@ ZeroAlloc.Validation.Internal.FailureBuffer.Count.get -> int
 ZeroAlloc.Validation.Internal.FailureBuffer.FailureBuffer() -> void
 ZeroAlloc.Validation.Internal.FailureBuffer.FailureBuffer(int initialCapacity) -> void
 ZeroAlloc.Validation.Internal.FailureBuffer.ToResult() -> ZeroAlloc.Validation.ValidationResult
+ZeroAlloc.Validation.Internal.TextLength
 ZeroAlloc.Validation.IsEnumNameAttribute
 ZeroAlloc.Validation.IsEnumNameAttribute.EnumType.get -> System.Type!
 ZeroAlloc.Validation.IsEnumNameAttribute.IsEnumNameAttribute(System.Type! enumType) -> void
@@ -64,6 +66,8 @@ ZeroAlloc.Validation.LengthAttribute
 ZeroAlloc.Validation.LengthAttribute.LengthAttribute(int min, int max) -> void
 ZeroAlloc.Validation.LengthAttribute.Max.get -> int
 ZeroAlloc.Validation.LengthAttribute.Min.get -> int
+ZeroAlloc.Validation.LengthAttribute.Unit.get -> ZeroAlloc.Validation.TextLengthUnit
+ZeroAlloc.Validation.LengthAttribute.Unit.set -> void
 ZeroAlloc.Validation.LessThanAttribute
 ZeroAlloc.Validation.LessThanAttribute.LessThanAttribute(double value) -> void
 ZeroAlloc.Validation.LessThanAttribute.Value.get -> double
@@ -76,9 +80,13 @@ ZeroAlloc.Validation.MatchesAttribute.Pattern.get -> string!
 ZeroAlloc.Validation.MaxLengthAttribute
 ZeroAlloc.Validation.MaxLengthAttribute.Max.get -> int
 ZeroAlloc.Validation.MaxLengthAttribute.MaxLengthAttribute(int max) -> void
+ZeroAlloc.Validation.MaxLengthAttribute.Unit.get -> ZeroAlloc.Validation.TextLengthUnit
+ZeroAlloc.Validation.MaxLengthAttribute.Unit.set -> void
 ZeroAlloc.Validation.MinLengthAttribute
 ZeroAlloc.Validation.MinLengthAttribute.Min.get -> int
 ZeroAlloc.Validation.MinLengthAttribute.MinLengthAttribute(int min) -> void
+ZeroAlloc.Validation.MinLengthAttribute.Unit.get -> ZeroAlloc.Validation.TextLengthUnit
+ZeroAlloc.Validation.MinLengthAttribute.Unit.set -> void
 ZeroAlloc.Validation.MustAttribute
 ZeroAlloc.Validation.MustAttribute.MethodName.get -> string!
 ZeroAlloc.Validation.MustAttribute.MustAttribute(string! methodName) -> void
@@ -111,6 +119,9 @@ ZeroAlloc.Validation.SkipWhenAttribute.MethodName.get -> string!
 ZeroAlloc.Validation.SkipWhenAttribute.SkipWhenAttribute(string! methodName) -> void
 ZeroAlloc.Validation.StopOnFirstFailureAttribute
 ZeroAlloc.Validation.StopOnFirstFailureAttribute.StopOnFirstFailureAttribute() -> void
+ZeroAlloc.Validation.TextLengthUnit
+ZeroAlloc.Validation.TextLengthUnit.CodePoints = 1 -> ZeroAlloc.Validation.TextLengthUnit
+ZeroAlloc.Validation.TextLengthUnit.CodeUnits = 0 -> ZeroAlloc.Validation.TextLengthUnit
 ZeroAlloc.Validation.ValidateAttribute
 ZeroAlloc.Validation.ValidateAttribute.IncludeBaseProperties.get -> bool
 ZeroAlloc.Validation.ValidateAttribute.IncludeBaseProperties.set -> void
