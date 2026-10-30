@@ -4,7 +4,8 @@ namespace ZeroAlloc.Validation;
 /// Fails when the value is shorter than <see cref="Min"/> or longer than <see cref="Max"/>. A
 /// <c>null</c> value passes; use <see cref="NotNullAttribute"/> or
 /// <see cref="NotEmptyAttribute"/> to require one. The value must have a readable <c>Length</c>,
-/// such as a string or an array.
+/// such as a string or an array, or be a collection with a readable <c>Count</c>, such as
+/// <c>List&lt;T&gt;</c>, whose items it counts.
 /// </summary>
 /// <remarks>
 /// A string's length is counted in UTF-16 code units by default, what <see cref="string.Length"/>

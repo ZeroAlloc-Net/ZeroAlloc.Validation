@@ -164,6 +164,23 @@ public class AllocationRegressionTests
     }
 
     [Fact]
+    public void CollectionLength_ValidPath_AllocatesNothing()
+    {
+        // Issue #369: a length rule on a collection reads Count, through an interface for
+        // IReadOnlyCollection<T>, and enumerates nothing.
+        var validator = new CollectionLengthModelValidator();
+        var model = new CollectionLengthModel
+        {
+            Tags = ["a", "b"],
+            Scores = [1, 2],
+            Limits = new System.Collections.Generic.Dictionary<string, int>(StringComparer.Ordinal) { ["x"] = 1 },
+            Codes = [1],
+        };
+
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "CollectionLength_ValidPath_AllocatesNothing");
+    }
+
+    [Fact]
     public void NestedModel_ValidPath_AllocatesNothing()
     {
         var validator = new AllocParentModelValidator(new AllocChildModelValidator());

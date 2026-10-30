@@ -9,10 +9,12 @@ namespace ZeroAlloc.Validation.Tests.Generator;
 
 /// <summary>
 /// <c>[MinLength]</c>, <c>[MaxLength]</c> and <c>[Length]</c> read the value's <c>.Length</c>. On a
-/// type without one, such as <c>List&lt;T&gt;</c> or <c>int</c>, the generated validator did not
-/// compile, and the error pointed inside generated code. It is now reported as ZV0040 at the
-/// attribute and the rule is left out. <c>Unit = TextLengthUnit.CodePoints</c> counts the code
-/// points of a string, so on any other type it is reported the same way. See #361.
+/// type without one, such as <c>int</c>, the generated validator did not compile, and the error
+/// pointed inside generated code. It is now reported as ZV0040 at the attribute and the rule is
+/// left out. <c>Unit = TextLengthUnit.CodePoints</c> counts the code points of a string, so on any
+/// other type it is reported the same way. See #361. A collection without a Length, such as
+/// <c>List&lt;T&gt;</c>, reads its <c>Count</c> instead, #369; a plain <c>IEnumerable&lt;T&gt;</c>
+/// has none and is reported.
 /// </summary>
 public class LengthRuleTypeDiagnosticTests
 {
@@ -21,9 +23,10 @@ public class LengthRuleTypeDiagnosticTests
     [InlineData("MaxLength(3)", "int?")]
     [InlineData("MinLength(3)", "System.Guid")]
     [InlineData("Length(1, 3)", "object")]
-    [InlineData("MaxLength(3)", "System.Collections.Generic.List<int>")]
-    [InlineData("MinLength(3)", "System.Collections.Generic.ICollection<int>?")]
     [InlineData("Length(1, 3)", "System.Collections.Generic.IEnumerable<int>")]
+    [InlineData("MaxLength(3)", "Sequence")]
+    [InlineData("MaxLength(3)", "IBothCollections")]
+    [InlineData("MinLength(3)", "Tally")]
     [InlineData("MaxLength(3)", "Sized?")]
     [InlineData("MaxLength(3)", "HiddenLength")]
     [InlineData("MaxLength(3)", "NamedLength")]
@@ -57,6 +60,13 @@ public class LengthRuleTypeDiagnosticTests
     [InlineData("MinLength(3, Unit = TextLengthUnit.CodePoints)", "string")]
     [InlineData("Length(1, 3, Unit = TextLengthUnit.CodePoints)", "Code")]
     [InlineData("MaxLength(3, Unit = TextLengthUnit.CodeUnits)", "int[]")]
+    [InlineData("MaxLength(3)", "System.Collections.Generic.List<int>")]
+    [InlineData("MinLength(3)", "System.Collections.Generic.ICollection<int>?")]
+    [InlineData("Length(1, 3)", "System.Collections.Generic.IReadOnlyCollection<int>")]
+    [InlineData("MaxLength(3)", "System.Collections.Generic.IReadOnlyList<string>?")]
+    [InlineData("MaxLength(3)", "System.Collections.Generic.Dictionary<string, int>")]
+    [InlineData("MinLength(3)", "System.Collections.Generic.HashSet<int>")]
+    [InlineData("MaxLength(3)", "Window")]
     public void TypeWithAReadableLength_ReportsNothing_AndEmitsTheRule(string rule, string type)
     {
         var (result, output) = Run(rule, type);
@@ -72,6 +82,7 @@ public class LengthRuleTypeDiagnosticTests
     [InlineData("MinLength(3, Unit = TextLengthUnit.CodePoints)", "char[]?")]
     [InlineData("Length(1, 3, Unit = TextLengthUnit.CodePoints)", "Sized")]
     [InlineData("MaxLength(3, Unit = TextLengthUnit.CodePoints)", "System.Text.StringBuilder")]
+    [InlineData("MaxLength(3, Unit = TextLengthUnit.CodePoints)", "System.Collections.Generic.List<string>")]
     public void CodePointsOnAValueThatIsNotAString_ReportsZV0040_AndLeavesTheRuleOut(string rule, string type)
     {
         var (result, output) = Run(rule, type);
@@ -86,12 +97,39 @@ public class LengthRuleTypeDiagnosticTests
     [Fact]
     public void Message_NamesTheRuleThePropertyAndItsType()
     {
-        var (result, _) = Run("MaxLength(3)", "System.Collections.Generic.List<int>");
+        var (result, _) = Run("MaxLength(3)", "int");
 
         Assert.Equal(
-            "'MaxLengthAttribute' checks the length of 'Value', but its type 'System.Collections.Generic.List<int>' "
+            "'MaxLengthAttribute' checks the length of 'Value', but its type 'int' "
             + "has no Length the generated validator can read; use [Must] or a custom ValidationAttribute<T>",
             SingleZV0040(result).GetMessage(CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public void SequenceMessage_SaysTheRuleDoesNotEnumerate()
+    {
+        var (result, _) = Run("MaxLength(3)", "System.Collections.Generic.IEnumerable<int>");
+
+        Assert.Equal(
+            "'MaxLengthAttribute' checks the length of 'Value', but its type 'System.Collections.Generic.IEnumerable<int>' "
+            + "has no Count the generated validator can read, and a length rule does not enumerate a sequence to count it; "
+            + "use [Must] or a custom ValidationAttribute<T>",
+            SingleZV0040(result).GetMessage(CultureInfo.InvariantCulture));
+    }
+
+    // A collection without a Length compares its Count; an array and a collection with a Length,
+    // such as ImmutableArray<T> or Window here, keep it.
+    [Theory]
+    [InlineData("System.Collections.Generic.List<int>", "instance.Value.Count > 3")]
+    [InlineData("System.Collections.Generic.IReadOnlyCollection<int>?", "instance.Value.Count > 3")]
+    [InlineData("Window", "instance.Value.Length > 3")]
+    [InlineData("int[]", "instance.Value.Length > 3")]
+    public void Collection_ComparesCount_UnlessItHasALength(string type, string condition)
+    {
+        var (result, _) = Run("MaxLength(3)", type);
+
+        var generated = GeneratorTestHelper.GetGeneratedSource(result, "TestModels.FooValidator.g.cs");
+        Assert.Contains(condition, generated, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -113,7 +151,7 @@ public class LengthRuleTypeDiagnosticTests
             using ZeroAlloc.Validation;
             namespace TestModels;
             [Validate]
-            public record Foo([property: MaxLength(3)] System.Collections.Generic.List<int> Items, [property: MaxLength(3)] string Name);
+            public record Foo([property: MaxLength(3)] System.Collections.Generic.IEnumerable<int> Items, [property: MaxLength(3)] string Name);
             """;
         var (result, output) = GeneratorTestHelper.RunGeneratorAndUpdateCompilation(
             source, nullableContextOptions: NullableContextOptions.Enable);
@@ -193,6 +231,19 @@ public class LengthRuleTypeDiagnosticTests
                 public struct DoubleSized { public double Length { get; set; } }
                 public sealed class HiddenLength { private int Length { get; set; } public int Size => Length; }
                 public sealed class NamedLength { public string Length { get; set; } = ""; }
+                public sealed class Sequence : System.Collections.Generic.IEnumerable<int>
+                {
+                    public System.Collections.Generic.IEnumerator<int> GetEnumerator() { yield break; }
+                    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+                }
+                public interface IBothCollections : System.Collections.Generic.ICollection<int>, System.Collections.Generic.IReadOnlyCollection<int> { }
+                public sealed class Tally { public int Count { get; set; } }
+                public readonly struct Window : System.Collections.Generic.IEnumerable<int>
+                {
+                    public int Length => 0;
+                    public System.Collections.Generic.IEnumerator<int> GetEnumerator() { yield break; }
+                    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+                }
                 [ZeroAlloc.ValueObjects.ValueObject]
                 public readonly struct Code { public string Value { get; init; } }
                 [ZeroAlloc.ValueObjects.ValueObject]
