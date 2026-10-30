@@ -92,3 +92,11 @@ ZV0038  | ZeroAlloc.Validation | Warning  | Pipeline behavior applied to a close
 Rule ID | Category             | Severity | Notes
 --------|----------------------|----------|--------------------------------------------------------------------------------
 ZV0039  | ZeroAlloc.Validation | Error    | [IsInEnum] on a value that is not an enum
+
+## Release 2.4.0
+
+### New Rules
+
+Rule ID | Category             | Severity | Notes
+--------|----------------------|----------|--------------------------------------------------------------------------------
+ZV0040  | ZeroAlloc.Validation | Error    | Length rule on a value it cannot measure
