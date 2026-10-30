@@ -50,6 +50,23 @@ public class AttributeDeclarationTests
     }
 
     [Fact]
+    public void LengthAttributes_CountCodeUnitsByDefault()
+    {
+        Assert.Equal(TextLengthUnit.CodeUnits, new ZeroAlloc.Validation.MinLengthAttribute(1).Unit);
+        Assert.Equal(TextLengthUnit.CodeUnits, new ZeroAlloc.Validation.MaxLengthAttribute(1).Unit);
+        Assert.Equal(TextLengthUnit.CodeUnits, new LengthAttribute(1, 2).Unit);
+        Assert.Equal(0, (int)TextLengthUnit.CodeUnits);
+    }
+
+    [Fact]
+    public void LengthAttributes_StoreTheUnit()
+    {
+        Assert.Equal(TextLengthUnit.CodePoints, new ZeroAlloc.Validation.MinLengthAttribute(1) { Unit = TextLengthUnit.CodePoints }.Unit);
+        Assert.Equal(TextLengthUnit.CodePoints, new ZeroAlloc.Validation.MaxLengthAttribute(1) { Unit = TextLengthUnit.CodePoints }.Unit);
+        Assert.Equal(TextLengthUnit.CodePoints, new LengthAttribute(1, 2) { Unit = TextLengthUnit.CodePoints }.Unit);
+    }
+
+    [Fact]
     public void GreaterThanAttribute_StoresValue()
     {
         var attr = new GreaterThanAttribute(0);

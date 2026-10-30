@@ -204,7 +204,7 @@ internal static class RuleEmitter
     /// <summary>
     /// Reports what is wrong with the rules on <paramref name="prop"/>, for the pipeline step of
     /// the type that declares it. A rule <see cref="UsableRules"/> leaves out is reported as ZV0020,
-    /// ZV0021, ZV0023, ZV0033, ZV0036 or ZV0039. The rules that stay are checked for what their emitted code gets
+    /// ZV0021, ZV0023, ZV0033, ZV0036, ZV0039 or ZV0040. The rules that stay are checked for what their emitted code gets
     /// wrong: ZV0016 for a built-in rule on a multi-property value object, ZV0022 for an unknown
     /// placeholder in a custom rule's message. Each depends on the usage alone, not on the model
     /// or on whether the rule's <c>When</c>, <c>Unless</c> and <c>[Must]</c> methods can be called
@@ -222,8 +222,8 @@ internal static class RuleEmitter
     /// is left out for a property type with no implicit conversion to the rule's <c>T</c>, ZV0021,
     /// or an attribute the validator cannot reach, ZV0023. A numeric comparison rule on a type
     /// <c>Convert.ToDouble</c> cannot convert is left out, ZV0033, and so is a built-in rule that
-    /// has no form for a value whose type is a type parameter, ZV0036, and <c>[IsInEnum]</c> on a
-    /// value that is not an enum, ZV0039. A <c>ValidationAttribute</c> subclass that is neither a built-in nor a custom rule is not a
+    /// has no form for a value whose type is a type parameter, ZV0036, <c>[IsInEnum]</c> on a
+    /// value that is not an enum, ZV0039, and a length rule on a value it cannot measure, ZV0040. A <c>ValidationAttribute</c> subclass that is neither a built-in nor a custom rule is not a
     /// rule, ZV0020. Each is reported only when <paramref name="ctx"/> is set.
     /// </summary>
     private static List<AttributeData> UsableRules(Compilation compilation, IPropertySymbol prop, DiagnosticSink? ctx)
@@ -247,6 +247,9 @@ internal static class RuleEmitter
                 continue;
 
             if (!ChecksAnEnum(prop, attr, ctx))
+                continue;
+
+            if (!MeasuresALength(compilation, prop, attr, ctx))
                 continue;
 
             usableRules.Add(attr);
@@ -1559,15 +1562,15 @@ internal static class RuleEmitter
         {
             NotNullFqn               => $"{access} is null",
             NotEmptyFqn              => BuildNotEmptyCondition(access, propType),
-            MinLengthFqn             => GuardAgainstNull(access, propType, $"{access}.Length < {GetIntArg(attr, 0)}"),
-            MaxLengthFqn             => GuardAgainstNull(access, propType, $"{access}.Length > {GetIntArg(attr, 0)}"),
+            MinLengthFqn             => GuardAgainstNull(access, valueType, LengthCondition(access, GetIntArg(attr, 0), max: null, CountsCodePoints(attr))),
+            MaxLengthFqn             => GuardAgainstNull(access, valueType, LengthCondition(access, min: null, GetIntArg(attr, 0), CountsCodePoints(attr))),
             GreaterThanFqn           => CompareValue(access, valueType, v => $"!({toDouble(v)} > {Number(attr, 0)})"),
             LessThanFqn              => CompareValue(access, valueType, v => $"!({toDouble(v)} < {Number(attr, 0)})"),
             InclusiveBetweenFqn      => CompareValue(access, valueType, v => $"!({toDouble(v)} >= {Number(attr, 0)} && {toDouble(v)} <= {Number(attr, 1)})"),
             GreaterThanOrEqualToFqn  => CompareValue(access, valueType, v => $"!({toDouble(v)} >= {Number(attr, 0)})"),
             LessThanOrEqualToFqn     => CompareValue(access, valueType, v => $"!({toDouble(v)} <= {Number(attr, 0)})"),
             ExclusiveBetweenFqn      => CompareValue(access, valueType, v => $"!({toDouble(v)} > {Number(attr, 0)} && {toDouble(v)} < {Number(attr, 1)})"),
-            LengthFqn                => GuardAgainstNull(access, propType, $"{access}.Length < {GetIntArg(attr, 0)} || {access}.Length > {GetIntArg(attr, 1)}"),
+            LengthFqn                => GuardAgainstNull(access, valueType, LengthCondition(access, GetIntArg(attr, 0), GetIntArg(attr, 1), CountsCodePoints(attr))),
             EmailAddressFqn          => GuardAgainstNull(access, valueType, $"!global::ZeroAlloc.Validation.Internal.EmailValidator.IsValid({access})"),
             MatchesFqn               => GuardAgainstNull(access, valueType, BuildMatchesCondition(access, propName, attr, fields)),
             NullFqn                  => $"{access} is not null",
@@ -1585,6 +1588,75 @@ internal static class RuleEmitter
             _                        => "false"
         };
     }
+
+    /// <summary>
+    /// The failure condition of a length rule with lower bound <paramref name="min"/>, upper bound
+    /// <paramref name="max"/>, or both. In UTF-16 code units, the default, it compares
+    /// <c>Length</c>. In code points, #361, it uses that a string of <c>Length</c> code units
+    /// holds between <c>Length / 2</c> and <c>Length</c> code points, a pair being two units and
+    /// anything else one: a length at or within the limit, or beyond twice it, decides alone. Only
+    /// a length in between is counted, once, by <c>TextLength.CountCodePoints</c>, so ASCII and
+    /// other BMP text clear of the limit costs the same comparison as a code-unit rule. A twice
+    /// that does not fit an int has no string long enough to reach it, and its shortcut is left
+    /// out.
+    /// </summary>
+    private static string LengthCondition(string access, int? min, int? max, bool codePoints)
+    {
+        var length = $"{access}.Length";
+        if (!codePoints)
+        {
+            return (min, max) switch
+            {
+                ({ }, { }) => $"{length} < {min} || {length} > {max}",
+                ({ }, null) => $"{length} < {min}",
+                _ => $"{length} > {max}",
+            };
+        }
+
+        var count = $"global::ZeroAlloc.Validation.Internal.TextLength.CountCodePoints({access})";
+        var shortest = Twice(min);
+        var longest = Twice(max);
+        if (max is not { } hi)
+        {
+            return shortest is not null
+                ? $"{length} < {min} || ({length} < {shortest} && {count} < {min})"
+                : $"{length} < {min} || {count} < {min}";
+        }
+        if (min is not { } lo)
+        {
+            return longest is not null
+                ? $"{length} > {hi} && ({length} > {longest} || {count} > {hi})"
+                : $"{length} > {hi} && {count} > {hi}";
+        }
+
+        var sb = new StringBuilder($"{length} < {lo}");
+        if (longest is not null) sb.Append($" || {length} > {longest}");
+        var outOfRange = $"{count} is < {lo} or > {hi}";
+        sb.Append(shortest is not null
+            ? $" || (({length} < {shortest} || {length} > {hi}) && {outOfRange})"
+            : $" || {outOfRange}");
+        return sb.ToString();
+
+        static long? Twice(int? bound) =>
+            bound is { } b && 2L * b <= int.MaxValue ? 2L * b : null;
+    }
+
+    /// <summary>
+    /// Whether a length rule counts code points: its <c>Unit</c> is
+    /// <c>TextLengthUnit.CodePoints</c>. Unset, it is <c>CodeUnits</c>, the enum's zero.
+    /// </summary>
+    private static bool CountsCodePoints(AttributeData attr)
+    {
+        foreach (var named in attr.NamedArguments)
+        {
+            if (string.Equals(named.Key, "Unit", StringComparison.Ordinal))
+                return named.Value.Value is int unit && unit == TextLengthUnitCodePoints;
+        }
+        return false;
+    }
+
+    /// <summary>The value of <c>ZeroAlloc.Validation.TextLengthUnit.CodePoints</c>.</summary>
+    private const int TextLengthUnitCodePoints = 1;
 
     private static string BuildMatchesCondition(
         string access,
@@ -2306,6 +2378,100 @@ internal static class RuleEmitter
         if (Operand(valueType) is ITypeParameterSymbol or { TypeKind: TypeKind.Enum }) return true;
 
         ctx?.Report(ZV0039, AttributeLocation(attr, prop), attr.AttributeClass!.Name, prop.Name, valueType.ToDisplayString());
+        return false;
+    }
+
+    private static readonly DiagnosticDescriptor ZV0040 = new DiagnosticDescriptor(
+        id: "ZV0040",
+        title: "Length rule on a value it cannot measure",
+        messageFormat: "'{0}' checks the length of '{1}', but its type '{2}' {3}",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description:
+            "MinLength, MaxLength and Length compare the value's Length. A type without an int or "
+            + "long Length property or field the generated validator can read, such as int, "
+            + "List<T>, IEnumerable<T> or a Nullable<T>, made the generated validator fail to "
+            + "compile. Unit = TextLengthUnit.CodePoints counts the code points of a string, so it "
+            + "needs a string. The value measured is the one the rule reads, after single-property "
+            + "value-object unwrapping. The rule is left out of the generated validator. A value "
+            + "whose type is a type parameter is checked by ZV0036 instead.");
+
+    private const string NoLengthHint =
+        "has no Length the generated validator can read; use [Must] or a custom ValidationAttribute<T>";
+
+    private const string NotAStringHint =
+        "is not a string, and Unit = TextLengthUnit.CodePoints counts the code points of a string; "
+        + "remove Unit, or use [Must] or a custom ValidationAttribute<T>";
+
+    /// <summary>
+    /// Whether a rule that is not a length rule, or a length rule on a value it can measure, can
+    /// be emitted. A length rule reads <c>value.Length</c>, which on a type without one, such as
+    /// <c>List&lt;T&gt;</c>, put a compiler error inside the generated validator; with
+    /// <c>Unit = TextLengthUnit.CodePoints</c> it counts a string's code points and needs a string,
+    /// #361. Either is left out and, when <paramref name="ctx"/> is set, reported as ZV0040 at the
+    /// attribute. The value is the one the rule reads, after single-property value-object
+    /// unwrapping; a <c>Nullable&lt;T&gt;</c> is not unwrapped, as the rule reads it directly. A
+    /// type parameter is <see cref="HasTypeParameterForm"/>'s to judge, and never reaches here.
+    /// </summary>
+    private static bool MeasuresALength(Compilation compilation, IPropertySymbol prop, AttributeData attr, DiagnosticSink? ctx)
+    {
+        if (attr.AttributeClass?.ToDisplayString() is not (MinLengthFqn or MaxLengthFqn or LengthFqn)) return true;
+
+        var valueType = ValueTypeOf(prop.Type) ?? prop.Type;
+        string hint;
+        if (CountsCodePoints(attr))
+        {
+            if (valueType.SpecialType == SpecialType.System_String) return true;
+            hint = NotAStringHint;
+        }
+        else
+        {
+            if (HasReadableLength(compilation, valueType)) return true;
+            hint = NoLengthHint;
+        }
+
+        ctx?.Report(ZV0040, AttributeLocation(attr, prop), attr.AttributeClass!.Name, prop.Name, valueType.ToDisplayString(), hint);
+        return false;
+    }
+
+    /// <summary>
+    /// Whether <c>value.Length</c> compiles and compares with an int for a value of
+    /// <paramref name="type"/>: an array, or a type with an instance <c>Length</c> property or
+    /// field of type int or long, declared on it, a base type or, for an interface, an interface
+    /// it extends, that the generated validator can read.
+    /// </summary>
+    private static bool HasReadableLength(Compilation compilation, ITypeSymbol type)
+    {
+        if (type is IArrayTypeSymbol) return true;
+        if (type.TypeKind is TypeKind.Dynamic or TypeKind.Pointer or TypeKind.FunctionPointer) return false;
+
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            if (DeclaresReadableLength(compilation, current)) return true;
+        }
+        if (type.TypeKind != TypeKind.Interface) return false;
+        foreach (var inherited in type.AllInterfaces)
+        {
+            if (DeclaresReadableLength(compilation, inherited)) return true;
+        }
+        return false;
+    }
+
+    private static bool DeclaresReadableLength(Compilation compilation, ITypeSymbol type)
+    {
+        foreach (var member in type.GetMembers("Length"))
+        {
+            if (member.IsStatic || !compilation.IsSymbolAccessibleWithin(member, compilation.Assembly)) continue;
+            var memberType = member switch
+            {
+                IPropertySymbol { IsIndexer: false, GetMethod: { } getter }
+                    when compilation.IsSymbolAccessibleWithin(getter, compilation.Assembly) => ((IPropertySymbol)member).Type,
+                IFieldSymbol field => field.Type,
+                _ => null,
+            };
+            if (memberType?.SpecialType is SpecialType.System_Int32 or SpecialType.System_Int64) return true;
+        }
         return false;
     }
 

@@ -36,6 +36,10 @@ public class GuardedConditionEmissionTests
         ("MaxLength(5)", "string?"),
         ("Length(2, 5)", "string?"),
         ("Length(2, 5)", "Code"),
+        ("MinLength(2, Unit = TextLengthUnit.CodePoints)", "string?"),
+        ("MaxLength(5, Unit = TextLengthUnit.CodePoints)", "string?"),
+        ("Length(2, 5, Unit = TextLengthUnit.CodePoints)", "string?"),
+        ("Length(2, 5, Unit = TextLengthUnit.CodePoints)", "Code"),
         ("GreaterThan(0)", "int"),
         ("GreaterThan(0)", "int?"),
         ("GreaterThanOrEqualTo(0)", "int"),
@@ -142,10 +146,10 @@ public class GuardedConditionEmissionTests
     [Fact]
     public void ValueObjectOverAString_LengthGuardCoversBothBounds()
     {
-        // A struct value object cannot be null, so its length check is not null-guarded, and the
-        // condition is a bare "shorter || longer" like a range's.
+        // The string a struct value object wraps is null in a default struct, so the length check
+        // is guarded on it, and the bounds stay inside the guard, #361.
         Assert.Equal(
-            "if (!instance.IsExempt() && (instance.Amount.Value.Length < 2 || instance.Amount.Value.Length > 5))",
+            "if (!instance.IsExempt() && (instance.Amount.Value is not null && (instance.Amount.Value.Length < 2 || instance.Amount.Value.Length > 5)))",
             RuleLine("Length(2, 5)", "Code", "Unless", "Flat", out _));
     }
 

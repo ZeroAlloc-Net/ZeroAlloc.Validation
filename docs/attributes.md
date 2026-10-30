@@ -14,9 +14,9 @@ All validation attributes live in the `ZeroAlloc.Validation` namespace and inher
 |---|---|---|
 | `[NotEmpty]` | Must not be null or empty | `PropertyName must not be empty.` |
 | `[Empty]` | Must be null or empty | `PropertyName must be empty.` |
-| `[MaxLength(n)]` | Length ≤ n, null ignored | `PropertyName must not exceed n characters.` |
-| `[MinLength(n)]` | Length ≥ n, null ignored | `PropertyName must be at least n characters.` |
-| `[Length(min,max)]` | min ≤ length ≤ max, null ignored | `PropertyName must be between min and max characters.` |
+| `[MaxLength(n)]` | Length ≤ n in UTF-16 code units, null ignored | `PropertyName must not exceed n characters.` |
+| `[MinLength(n)]` | Length ≥ n in UTF-16 code units, null ignored | `PropertyName must be at least n characters.` |
+| `[Length(min,max)]` | min ≤ length ≤ max in UTF-16 code units, null ignored | `PropertyName must be between min and max characters.` |
 | `[Matches(pattern)]` | Must match regex pattern, null ignored | `PropertyName does not match the required pattern.` |
 | `[EmailAddress]` | Must be a valid email address, null ignored | `PropertyName must be a valid email address.` |
 
@@ -29,6 +29,17 @@ All validation attributes live in the `ZeroAlloc.Validation` namespace and inher
 > ```
 >
 > A length rule on its own therefore treats `null` as valid. Add `[NotEmpty]` or `[NotNull]` when a missing value should be rejected.
+
+> **What a length counts.** By default the length rules compare `string.Length`, which counts UTF-16 code units. A character outside the Basic Multilingual Plane, such as an emoji or many CJK extension characters, is one character but two code units, so `"😀😀"` has length 4 and fails `[MaxLength(2)]`. That matches `System.ComponentModel.DataAnnotations` and SQL Server's `nvarchar(n)`. To count code points instead, as JSON Schema's `minLength` and `maxLength` and PostgreSQL's `varchar(n)` in a UTF-8 database do, set `Unit`:
+>
+> ```csharp
+> [MaxLength(2, Unit = TextLengthUnit.CodePoints)]   // "😀😀" passes, "😀😀😀" fails
+> public string? Nickname { get; init; }
+> ```
+>
+> A surrogate pair counts as one code point, and so does a lone surrogate. A combining sequence such as `e` followed by U+0301 is still two code points; the rules do not count grapheme clusters. `TextLengthUnit.CodePoints` applies to a `string` only, or a single-property value object over one, and is reported as [ZV0040](diagnostics.md#zv0040) on anything else. It does not allocate, and a string well inside or well beyond the limit is decided on its `Length` alone, so it costs a count only when its length is between the limit and twice the limit.
+>
+> The length rules also accept an array, or any type with an `int` or `long` `Length` property the validator can read. A type without one, such as `List<T>`, is reported as [ZV0040](diagnostics.md#zv0040); check a collection's `Count` with `[Must]`.
 
 > **Format rules and null.** `[EmailAddress]` and `[Matches]` follow the same split: they check a
 > string that is present and report nothing for `null`. An empty string is a value, so it is still

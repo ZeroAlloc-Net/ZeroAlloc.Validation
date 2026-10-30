@@ -68,6 +68,28 @@ namespace ZeroAlloc.Validation.Tests.Integration
                 Assert.Equal(nameof(PaintCommand.Tint), result.Failures[0].PropertyName);
         }
 
+        // A default value object over a string wraps a null string. A length rule says nothing
+        // about a missing value, so it passes; it threw NullReferenceException before #361.
+        [Fact]
+        public void StringValueObject_LengthRules_PassOnTheNullStringOfADefaultStruct()
+        {
+            var validator = new RenameCommandValidator();
+            var result = validator.Validate(new RenameCommand(default, default));
+            Assert.True(result.IsValid);
+        }
+
+        [Theory]
+        [InlineData("ab", "\U0001F600\U0001F600", true)]
+        [InlineData("ab", "\U0001F600\U0001F600\U0001F600", false)]
+        [InlineData("a", "ab", false)]
+        public void StringValueObject_LengthRules_Behave(string alias, string handle, bool expectedValid)
+        {
+            var validator = new RenameCommandValidator();
+            var result = validator.Validate(new RenameCommand(
+                new Username(alias), new Username(handle)));
+            Assert.Equal(expectedValid, result.IsValid);
+        }
+
         // A value object over a nullable enum: a missing value passes, as [IsInEnum] on a
         // Nullable<TEnum> property does, and a present one is checked.
         [Theory]
@@ -83,6 +105,11 @@ namespace ZeroAlloc.Validation.Tests.Integration
     }
 
     public enum PaintColor { Red, Green }
+
+    [Validate]
+    public readonly record struct RenameCommand(
+        [property: MinLength(2)] Username Alias,
+        [property: MaxLength(2, Unit = TextLengthUnit.CodePoints)] Username Handle);
 
     [global::ZeroAlloc.ValueObjects.ValueObject]
     public readonly partial struct Hue

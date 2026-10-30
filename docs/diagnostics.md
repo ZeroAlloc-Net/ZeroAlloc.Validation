@@ -2,7 +2,7 @@
 id: diagnostics
 title: Compiler Diagnostics
 slug: /docs/diagnostics
-description: ZV0011–ZV0038 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
+description: ZV0011–ZV0040 Roslyn analyzer rules emitted by ZeroAlloc.Validation.Generator, with triggers, severities, and fix guidance.
 sidebar_position: 11
 ---
 
@@ -41,6 +41,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0037](#zv0037) | Error | Nested model that nests its model inside itself without end |
 | [ZV0038](#zv0038) | Warning | Pipeline behavior applied to a closed form of a generic model |
 | [ZV0039](#zv0039) | Error | [IsInEnum] on a value that is not an enum |
+| [ZV0040](#zv0040) | Error | Length rule on a value it cannot measure |
 
 A rule or attribute declared on a base type is checked by every `[Validate]` model that inherits it, and a diagnostic about the usage is reported once, however many models derive from the base type, and whether or not it is `[Validate]` itself. A `[Validate(IncludeBaseProperties = false)]` model does not see the types above it, so it does not report their usages; a model deriving from it that includes base properties does. A generic base type is checked for each type argument the models use, and a diagnostic that is the same for each is reported once.
 
@@ -1134,6 +1135,50 @@ public class Order
     public int Status { get; set; }
 
     public bool IsKnownStatus(int status) => Enum.IsDefined((OrderStatus)status);
+}
+```
+
+---
+
+## ZV0040
+
+**Severity:** Error
+
+**Title:** Length rule on a value it cannot measure
+
+**When fired:** `[MinLength]`, `[MaxLength]` and `[Length]` compare the value's `Length`. On a type without an `int` or `long` `Length` property or field the generated validator can read, such as `int`, `Guid`, `object`, `List<T>`, `ICollection<T>`, `IEnumerable<T>` or a `Nullable<T>` of a struct, the generated validator did not compile, and the error pointed inside generated code. `Unit = TextLengthUnit.CodePoints` counts the code points of a string, so it is reported on any other type too, an array or a `StringBuilder` included. Either is now reported at the attribute and left out of the generated validator:
+
+```csharp
+[Validate]
+public class Order
+{
+    [MaxLength(10)]                  // ZV0040 — List<T> has Count, not Length
+    public List<OrderLine> Lines { get; set; } = new();
+
+    [MaxLength(10, Unit = TextLengthUnit.CodePoints)]   // ZV0040 — code points need a string
+    public char[] Code { get; set; } = [];
+
+    [MaxLength(10)]                  // fine — a string, an array, or a type with an int Length
+    public string? Reference { get; set; }
+}
+```
+
+> '{Attr}' checks the length of '{Prop}', but its type '{Type}' has no Length the generated validator can read; use [Must] or a custom ValidationAttribute\<T\>
+
+> '{Attr}' checks the length of '{Prop}', but its type '{Type}' is not a string, and Unit = TextLengthUnit.CodePoints counts the code points of a string; remove Unit, or use [Must] or a custom ValidationAttribute\<T\>
+
+The value measured is the one the rule reads, after single-property value-object unwrapping: a length rule on a value object that wraps a string is fine, and one on a value object with several properties is reported. A record's positional property is checked the same way. A value whose type is a type parameter of a [generic model](getting-started.md#generic-models) is reported as [ZV0036](#zv0036) instead.
+
+**Fix:** Declare the property as a string or an array, or remove `Unit` from a rule on one that is not a string. To bound the number of items in a collection, use a `[Must]` predicate:
+
+```csharp
+[Validate]
+public class Order
+{
+    [Must(nameof(HasAtMostTenLines))]
+    public List<OrderLine> Lines { get; set; } = new();
+
+    public bool HasAtMostTenLines(List<OrderLine> lines) => lines.Count <= 10;
 }
 ```
 
