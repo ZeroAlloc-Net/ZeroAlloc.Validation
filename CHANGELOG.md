@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.6.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.5.0...v2.6.0) (2026-11-11)
+
+
+### Features
+
+* add .NET 11 support ([#386](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/386)) ([ca14e48](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/ca14e48be79cff17e8788dfbe0a1530704ac377b))
+
+
+### Documentation
+
+* add context7.json to claim the library on Context7 ([#383](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/383)) ([c1a0bcf](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/c1a0bcff5d540b15972bbb85d5748d4683f6c921))
+
 ## [2.5.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.4.0...v2.5.0) (2026-10-30)
 
 
