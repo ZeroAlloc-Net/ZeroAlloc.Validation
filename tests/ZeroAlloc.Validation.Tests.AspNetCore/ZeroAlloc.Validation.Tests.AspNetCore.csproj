@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net9.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net9.0;net10.0;net11.0</TargetFrameworks>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
@@ -23,6 +23,7 @@
     <PackageReference Include="ZeroAlloc.TestHelpers" Version="1.7.*" PrivateAssets="all" IncludeAssets="contentfiles;build" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.22" Condition="'$(TargetFramework)' == 'net9.0'" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.14" Condition="'$(TargetFramework)' == 'net10.0'" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="11.0.0" Condition="'$(TargetFramework)' == 'net11.0'" />
   </ItemGroup>
 
   <!-- Required so Roslyn can locate ZeroAlloc.Pipeline.Generators when loading ValidatorGenerator -->
