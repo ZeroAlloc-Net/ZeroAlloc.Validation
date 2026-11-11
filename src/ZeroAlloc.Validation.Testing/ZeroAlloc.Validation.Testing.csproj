@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net8.0;net9.0;net10.0;net11.0</TargetFrameworks>
     <PackageId>ZeroAlloc.Validation.Testing</PackageId>
     <IsAotCompatible>true</IsAotCompatible>
     <Description>Testing helpers for ZeroAlloc.Validation. Provides assertion utilities to verify validation results in unit tests.</Description>

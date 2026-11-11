@@ -60,6 +60,7 @@ jobs:
         8.0.x
         9.0.x
         10.0.x
+        11.0.x
       # The same destinations as the release's own publish job in release-please.yml.
       github-packages: false
       release-assets: true

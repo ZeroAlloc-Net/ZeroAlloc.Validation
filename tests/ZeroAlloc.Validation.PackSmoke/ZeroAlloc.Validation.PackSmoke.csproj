@@ -8,7 +8,7 @@
     ZeroAlloc.Validation.Options with no analyzer in it, issue #183.
   -->
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 

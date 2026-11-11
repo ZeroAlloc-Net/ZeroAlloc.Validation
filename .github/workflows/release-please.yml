@@ -88,6 +88,7 @@ jobs:
         8.0.x
         9.0.x
         10.0.x
+        11.0.x
       # The destinations this repository already had: nuget.org and the release assets.
       github-packages: false
       release-assets: true
