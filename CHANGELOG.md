@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.6.0...v2.6.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* embed PDBs so Go to Definition shows the package source ([#402](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/402)) ([5f1a328](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/5f1a328b2510f2b3133876acab498469f24dd601))
+
 ## [2.6.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.5.0...v2.6.0) (2026-11-11)
 
 
