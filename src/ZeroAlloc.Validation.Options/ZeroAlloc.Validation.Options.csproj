@@ -45,11 +45,6 @@
             Pack="true"
             PackagePath="analyzers/dotnet/cs"
             Visible="false" />
-      <None Include="@(_BundledGeneratorAssembly->'%(RootDir)%(Directory)%(Filename).pdb')"
-            Condition="Exists('%(RootDir)%(Directory)%(Filename).pdb')"
-            Pack="true"
-            PackagePath="analyzers/dotnet/cs"
-            Visible="false" />
     </ItemGroup>
   </Target>
 
