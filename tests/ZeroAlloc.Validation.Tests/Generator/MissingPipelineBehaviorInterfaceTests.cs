@@ -11,7 +11,8 @@ namespace ZeroAlloc.Validation.Tests.Generator;
 /// <summary>
 /// Issue #288: a <c>[PipelineBehavior]</c> type that does not implement <c>IPipelineBehavior</c>
 /// never joins a validator's pipeline. It used to be dropped without a word; it is now reported
-/// as ZV0035, a warning.
+/// as ZV0035, an error since ZeroAlloc-Net/.github#48, so the build fails instead of shipping a
+/// behavior that never runs.
 /// </summary>
 public class MissingPipelineBehaviorInterfaceTests
 {
@@ -66,7 +67,7 @@ public class MissingPipelineBehaviorInterfaceTests
         var result = RunGenerator(source);
 
         var diagnostic = OnlyOne(WithId(result, Id));
-        Assert.Equal(DiagnosticSeverity.Warning, diagnostic.Severity);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
         Assert.Equal(
             "'StaticLogging' has [PipelineBehavior] but does not implement IPipelineBehavior, so it never "
             + "runs in a validator's pipeline; make the class non-static and implement IPipelineBehavior",
@@ -90,7 +91,7 @@ public class MissingPipelineBehaviorInterfaceTests
         var result = RunGenerator(source);
 
         var diagnostic = OnlyOne(WithId(result, Id));
-        Assert.Equal(DiagnosticSeverity.Warning, diagnostic.Severity);
+        Assert.Equal(DiagnosticSeverity.Error, diagnostic.Severity);
         Assert.Equal(
             "'ForgotInterface' has [PipelineBehavior] but does not implement IPipelineBehavior, so it never "
             + "runs in a validator's pipeline; implement IPipelineBehavior",
