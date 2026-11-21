@@ -29,8 +29,8 @@ NuGet packages ship: `ZeroAlloc.Validation` (runtime, attributes and the bundled
 ## Build and test
 
 SDK: `global.json` pins 11.0.100 with `rollForward: latestMinor`. Test projects target
-`net8.0;net9.0;net10.0;net11.0` (`Tests.AspNetCore`: `net9.0` to `net11.0`; `PackSmoke`:
-`net10.0;net11.0`), so a full `dotnet test` needs the .NET 8, 9, 10 and 11 runtimes. The AOT
+`net10.0;net11.0`, the same frameworks as the runtime libraries, so a full `dotnet test` needs
+the .NET 10 and 11 runtimes. The AOT
 sample targets `net11.0` and publishes with clang and the zlib headers installed. The benchmark
 project targets `net10.0` only.
 

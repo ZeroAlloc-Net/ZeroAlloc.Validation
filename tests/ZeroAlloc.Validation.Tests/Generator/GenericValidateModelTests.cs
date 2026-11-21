@@ -121,11 +121,8 @@ public class GenericValidateModelTests
         { "where T : IComparable<T>?", "where T : global::System.IComparable<T>?" },
         { "where T : Base", "where T : global::Ns.Base" },
         { "where T : Base, IDisposable, new()", "where T : global::Ns.Base, global::System.IDisposable, new()" },
-#if NET9_0_OR_GREATER
-        // allows ref struct needs a runtime with by-ref-like generics, which net8.0 lacks.
         { "where T : allows ref struct", "where T : allows ref struct" },
         { "where T : IDisposable, allows ref struct", "where T : global::System.IDisposable, allows ref struct" },
-#endif
         { "where T : struct, Enum", "where T : struct, global::System.Enum" },
     };
 

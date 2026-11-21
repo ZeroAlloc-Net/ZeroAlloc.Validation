@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- https://learn.microsoft.com/dotnet/fundamentals/package-validation/diagnostic-ids -->
+<!--
+  Intentional breaks of the 3.0 major, against the 2.6.1 baseline. Shared by every package
+  under src/ that ships lib/ assemblies: ZeroAlloc.Validation, .AspNetCore, .Options and .Testing.
+  PKV006: net8.0 and net9.0 are no longer shipped. .NET 8 and .NET 9 went out of support on
+  2026-11-10; the packages target net10.0 and net11.0.
+-->
+<Suppressions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Suppression>
+    <DiagnosticId>PKV006</DiagnosticId>
+    <Target>net8.0</Target>
+  </Suppression>
+  <Suppression>
+    <DiagnosticId>PKV006</DiagnosticId>
+    <Target>net9.0</Target>
+  </Suppression>
+</Suppressions>

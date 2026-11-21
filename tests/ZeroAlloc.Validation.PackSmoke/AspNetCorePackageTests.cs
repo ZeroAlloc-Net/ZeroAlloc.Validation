@@ -25,7 +25,7 @@ public sealed class AspNetCorePackageTests
         Assert.Contains("analyzers/dotnet/cs/ZeroAlloc.Validation.AspNetCore.Generator.dll", entries, StringComparer.Ordinal);
 
         // The runtime assembly still ships for every target framework.
-        foreach (var tfm in new[] { "net8.0", "net9.0", "net10.0" })
+        foreach (var tfm in new[] { "net10.0", "net11.0" })
             Assert.Contains($"lib/{tfm}/ZeroAlloc.Validation.AspNetCore.dll", entries, StringComparer.Ordinal);
 
         // A bundled copy of the Inject assembly would run InjectGenerator a second time for

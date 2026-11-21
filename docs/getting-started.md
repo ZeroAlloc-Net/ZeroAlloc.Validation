@@ -9,6 +9,7 @@ sidebar_position: 1
 ## Installation
 
 Add the core library to your project. The integration and testing packages are optional.
+The packages target .NET 10 and .NET 11.
 
 **Core library (required)**
 
