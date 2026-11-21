@@ -24,9 +24,8 @@ public sealed class AspNetCorePackageTests
         // Roslyn only loads assemblies under analyzers/.
         Assert.Contains("analyzers/dotnet/cs/ZeroAlloc.Validation.AspNetCore.Generator.dll", entries, StringComparer.Ordinal);
 
-        // The runtime assembly still ships for every target framework.
-        foreach (var tfm in new[] { "net10.0", "net11.0" })
-            Assert.Contains($"lib/{tfm}/ZeroAlloc.Validation.AspNetCore.dll", entries, StringComparer.Ordinal);
+        // The runtime assembly ships for exactly the supported target frameworks; see
+        // RuntimePackageTargetFrameworkTests.
 
         // A bundled copy of the Inject assembly would run InjectGenerator a second time for
         // anyone who also references ZeroAlloc.Validation.Inject, see the tests below.

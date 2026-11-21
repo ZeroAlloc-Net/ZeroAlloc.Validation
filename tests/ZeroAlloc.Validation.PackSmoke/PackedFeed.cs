@@ -16,6 +16,7 @@ public sealed class PackedFeed : IDisposable
         "src/ZeroAlloc.Validation.Inject/ZeroAlloc.Validation.Inject.csproj",
         "src/ZeroAlloc.Validation.Options/ZeroAlloc.Validation.Options.csproj",
         "src/ZeroAlloc.Validation.AspNetCore/ZeroAlloc.Validation.AspNetCore.csproj",
+        "src/ZeroAlloc.Validation.Testing/ZeroAlloc.Validation.Testing.csproj",
     ];
 
     private readonly string _workDir;
