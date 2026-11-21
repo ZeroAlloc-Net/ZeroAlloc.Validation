@@ -25,6 +25,8 @@ dotnet add package ZeroAlloc.Validation
 
 The source generator ships inside this package; nothing else is required.
 
+The runtime packages target .NET 10 and .NET 11.
+
 ## Quick start
 
 ```csharp

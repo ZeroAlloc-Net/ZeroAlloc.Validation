@@ -110,14 +110,13 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         title: "[PipelineBehavior] type that does not implement IPipelineBehavior",
         messageFormat: "'{0}' has [PipelineBehavior] but does not implement IPipelineBehavior, so it never runs in a validator's pipeline; {1}",
         category: "ZeroAlloc.Validation",
-        defaultSeverity: DiagnosticSeverity.Warning,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description:
             "Only a type that implements ZeroAlloc.Pipeline.IPipelineBehavior joins the pipeline of "
             + "the generated validators. A [PipelineBehavior] type without it is left out, so its "
             + "Handle method is never called. A static class cannot implement an interface; make it "
-            + "non-static. It is a warning, not an error, so a build that compiled before keeps "
-            + "compiling.");
+            + "non-static. It is an error because the behavior the code asks for does not exist.");
 
     private static readonly DiagnosticDescriptor ZV0017 = new DiagnosticDescriptor(
         id: "ZV0017",

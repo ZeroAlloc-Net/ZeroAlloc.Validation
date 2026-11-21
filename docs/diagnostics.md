@@ -36,7 +36,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0032](#zv0032) | Warning | Validation call that raises a compiler warning in the generated validator |
 | [ZV0033](#zv0033) | Error | Numeric comparison rule on a type that is not a number |
 | [ZV0034](#zv0034) | Error | Options validation of a model with asynchronous rules |
-| [ZV0035](#zv0035) | Warning | [PipelineBehavior] type that does not implement IPipelineBehavior |
+| [ZV0035](#zv0035) | Error | [PipelineBehavior] type that does not implement IPipelineBehavior |
 | [ZV0036](#zv0036) | Error | Built-in rule on a value whose type is a type parameter |
 | [ZV0037](#zv0037) | Error | Nested model that nests its model inside itself without end |
 | [ZV0038](#zv0038) | Warning | Pipeline behavior applied to a closed form of a generic model |
@@ -973,7 +973,7 @@ The call is recognised as `builder.ValidateWithZeroAlloc()`, `builder?.ValidateW
 
 ## ZV0035
 
-**Severity:** Warning
+**Severity:** Error
 
 **Title:** [PipelineBehavior] type that does not implement IPipelineBehavior
 
@@ -990,7 +990,7 @@ public static class LoggingBehavior
 
 > 'LoggingBehavior' has [PipelineBehavior] but does not implement IPipelineBehavior, so it never runs in a validator's pipeline; make the class non-static and implement IPipelineBehavior
 
-For a non-static class the message ends with "implement IPipelineBehavior". It is a warning rather than an error so that a build that compiled before still compiles.
+For a non-static class the message ends with "implement IPipelineBehavior". Before version 3.0 it was a warning; it is an error now, because the build would otherwise ship a behavior that never runs.
 
 **Fix:** Make the class non-static and implement `IPipelineBehavior`. `Handle` stays static:
 
