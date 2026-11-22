@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.0.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.6.1...v3.0.0) (2026-11-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* a validation pipeline behavior must now take the validator as state, with Handle declared over TModel and TState, the state as its second parameter and next receiving it, in both the sync and async forms; ZeroAlloc.Pipeline.Generators 2.0.0 is required and the generator package no longer ships ZeroAlloc.Pipeline.dll, and ZV0041 reports a behavior still on the old shape. See the Behaviour change section of the PR for migration steps.
+* net8.0 and net9.0 assets are no longer shipped, so target net10.0 or later; ZV0035, a [PipelineBehavior] type that does not implement IPipelineBehavior, is now an error instead of a warning. See the Behaviour change section of PR #411 for the migration steps.
+
+### Features
+
+* emit every behavior chain with static lambdas so no delegate is allocated per call ([6ee8116](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/6ee8116cefb88112b4de50e7c939fe5b9880071b))
+* pass the validator as pipeline state and drop EmitCachedChain ([6ee8116](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/6ee8116cefb88112b4de50e7c939fe5b9880071b))
+* read nested validators through the pipeline state instead of cached delegate fields ([6ee8116](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/6ee8116cefb88112b4de50e7c939fe5b9880071b))
+* report ZV0041 when a pipeline behavior has no Handle method of the validation shape ([6ee8116](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/6ee8116cefb88112b4de50e7c939fe5b9880071b))
+* target net10.0 and net11.0, drop net8.0 and net9.0 ([66060a9](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/66060a989f36d6ae23987fed600433674217b00d))
+
+
+### Bug Fixes
+
+* report ZV0035 as an error instead of a warning ([66060a9](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/66060a989f36d6ae23987fed600433674217b00d))
+* stop declaring the __validateNext cache fields in generated validators ([6ee8116](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/6ee8116cefb88112b4de50e7c939fe5b9880071b))
+
 ## [2.6.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.6.0...v2.6.1) (2026-11-16)
 
 
