@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Builds a consumer of the packed packages with the oldest supported .NET SDK band, 10.0.1xx,
+    whose compiler is Roslyn 5.0. Each package bundles its generator in analyzers/dotnet/cs:
+    ZeroAlloc.Validation the validator generator and the ZeroAlloc.Pipeline.Generators.dll it
+    uses, ZeroAlloc.Validation.Inject, .Options and .AspNetCore their own. If any of them
+    references a newer Roslyn than the compiler that loads it, that generator is skipped with
+    CS9057, a generated type or method is missing, and the build fails.
+
+    The parent folder's global.json pins the 10.0.1xx band with rollForward latestPatch, so a
+    newer band cannot stand in for it. Run locally with a 10.0.1xx SDK installed, for each of
+    ZeroAlloc.Validation, .Inject, .Options and .AspNetCore:
+      dotnet pack src/<project> -c Release -o artifacts -p:Version=9.9.9-local.<sha>
+    then:
+      cd tests/ZeroAlloc.Validation.Sdk10Smoke/Consumer
+      dotnet run -c Release -p:ZeroAllocValidationVersion=9.9.9-local.<sha>
+    Not part of ZeroAlloc.Validation.slnx; the sdk10-consumer job in ci.yml runs it.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <WarningsAsErrors>$(WarningsAsErrors);CS8032;CS9057</WarningsAsErrors>
+  </PropertyGroup>
+
+  <Target Name="RequireZeroAllocValidationVersion" BeforeTargets="CollectPackageReferences">
+    <Error Condition="'$(ZeroAllocValidationVersion)' == ''"
+           Text="Pass the version of the packed packages: -p:ZeroAllocValidationVersion=..." />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="ZeroAlloc.Validation" Version="[$(ZeroAllocValidationVersion)]" />
+    <PackageReference Include="ZeroAlloc.Validation.Inject" Version="[$(ZeroAllocValidationVersion)]" />
+    <PackageReference Include="ZeroAlloc.Validation.Options" Version="[$(ZeroAllocValidationVersion)]" />
+    <PackageReference Include="ZeroAlloc.Validation.AspNetCore" Version="[$(ZeroAllocValidationVersion)]" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
+  </ItemGroup>
+</Project>
