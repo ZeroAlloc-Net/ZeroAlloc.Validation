@@ -66,11 +66,12 @@ pins 10.0.100 with `rollForward: latestPatch`, so a newer band cannot stand in f
 a consumer of the four generator-bearing packages with Roslyn 5.0:
 
 ```bash
+v=9.9.9-local.sha$(git rev-parse --short HEAD).$(date +%s)
 for p in ZeroAlloc.Validation ZeroAlloc.Validation.Inject ZeroAlloc.Validation.Options ZeroAlloc.Validation.AspNetCore; do
-  dotnet pack src/$p -c Release -o artifacts -p:Version=9.9.9-local.sha$(git rev-parse --short HEAD)
+  dotnet pack src/$p -c Release -o artifacts -p:Version="$v"
 done
 cd tests/ZeroAlloc.Validation.Sdk10Smoke/Consumer
-dotnet run -c Release -p:ZeroAllocValidationVersion=9.9.9-local.sha$(git rev-parse --short HEAD)
+dotnet run -c Release -p:ZeroAllocValidationVersion="$v"
 ```
 
 CI job `roslyn-floor` (`ci.yml`) is the shared `ZeroAlloc-Net/.github` workflow: it packs the solution
