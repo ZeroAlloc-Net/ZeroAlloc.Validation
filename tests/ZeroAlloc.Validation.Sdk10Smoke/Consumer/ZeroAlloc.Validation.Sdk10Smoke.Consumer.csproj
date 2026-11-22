@@ -10,10 +10,10 @@
     The parent folder's global.json pins the 10.0.1xx band with rollForward latestPatch, so a
     newer band cannot stand in for it. Run locally with a 10.0.1xx SDK installed, for each of
     ZeroAlloc.Validation, .Inject, .Options and .AspNetCore:
-      dotnet pack src/<project> -c Release -o artifacts -p:Version=9.9.9-local.sha$(git rev-parse --short HEAD)
+      dotnet pack src/<project> -c Release -o artifacts -p:Version=9.9.9-local.sha$(git rev-parse HEAD | cut -c1-7)
     then:
       cd tests/ZeroAlloc.Validation.Sdk10Smoke/Consumer
-      dotnet run -c Release -p:ZeroAllocValidationVersion=9.9.9-local.sha$(git rev-parse --short HEAD)
+      dotnet run -c Release -p:ZeroAllocValidationVersion=9.9.9-local.sha$(git rev-parse HEAD | cut -c1-7)
     Not part of ZeroAlloc.Validation.slnx; the sdk10-consumer job in ci.yml runs it.
   -->
   <PropertyGroup>
