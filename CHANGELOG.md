@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v3.0.0...v3.0.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* build the generators against Roslyn 5.0 so every .NET 10 SDK loads them ([#415](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/415)) ([2850fe2](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/commit/2850fe2ed9334c1217f00d250dfd6d9d9149241d))
+
 ## [3.0.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/compare/v2.6.1...v3.0.0) (2026-11-22)
 
 
