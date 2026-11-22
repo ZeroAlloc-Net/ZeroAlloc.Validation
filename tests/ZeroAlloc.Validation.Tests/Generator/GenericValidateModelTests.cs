@@ -618,16 +618,16 @@ public class GenericValidateModelTests
         [PipelineBehavior(Order = {{order}}, AppliesTo = typeof({{appliesTo}}))]
         public sealed class {{name}} : IPipelineBehavior
         {
-            public static ValidationResult Handle<TModel>(TModel instance, Func<TModel, ValidationResult> next) => next(instance);
+            public static ValidationResult Handle<TModel, TState>(TModel instance, TState state, Func<TModel, TState, ValidationResult> next) => next(instance, state);
         }
 
         """;
 
     [Theory]
-    [InlineData("Page<>", "Ns.PageValidator`1.g.cs", "Handle<global::Ns.Page<T>>")]
-    [InlineData("Pair<,>", "Ns.PairValidator`2.g.cs", "Handle<global::Ns.Pair<TKey, TValue>>")]
-    [InlineData("Outer<>.Inner<>", "Ns.Outer_InnerValidator`2.g.cs", "Handle<global::Ns.Outer<T>.Inner<U>>")]
-    [InlineData("Outer<>.Plain", "Ns.Outer_PlainValidator`1.g.cs", "Handle<global::Ns.Outer<T>.Plain>")]
+    [InlineData("Page<>", "Ns.PageValidator`1.g.cs", "Handle<global::Ns.Page<T>, PageValidator<T>>")]
+    [InlineData("Pair<,>", "Ns.PairValidator`2.g.cs", "Handle<global::Ns.Pair<TKey, TValue>, PairValidator<TKey, TValue>>")]
+    [InlineData("Outer<>.Inner<>", "Ns.Outer_InnerValidator`2.g.cs", "Handle<global::Ns.Outer<T>.Inner<U>, Outer_InnerValidator<T, U>>")]
+    [InlineData("Outer<>.Plain", "Ns.Outer_PlainValidator`1.g.cs", "Handle<global::Ns.Outer<T>.Plain, Outer_PlainValidator<T>>")]
     public void BehaviorAppliedToTheOpenForm_RunsInTheGenericValidator(string appliesTo, string hintName, string call)
     {
         var output = RunModel(Behaviors + Behavior("Audit", appliesTo, 0)).Compiles();
@@ -676,10 +676,11 @@ public class GenericValidateModelTests
     }
 
     [Fact]
-    public void BehaviorOnAGenericModelWithNestedValidators_UsesInstanceLambdas()
+    public void BehaviorOnAGenericModelWithNestedValidators_ThreadsTheValidatorAsState()
     {
-        // The body reads the nested Line<T> validator through an instance field, so the chain's
-        // lambdas cannot be static, #294; generic validators get the same treatment.
+        // The body reads the nested Line<T> validator through an instance field, which a static
+        // lambda cannot capture, #294. The validator is the chain's state, #410, and the body
+        // reads the field through it; generic validators get the same treatment.
         var output = RunModel("""
             using ZeroAlloc.Pipeline;
 
@@ -689,15 +690,15 @@ public class GenericValidateModelTests
             [PipelineBehavior(AppliesTo = typeof(Page<>))]
             public sealed class Audit : IPipelineBehavior
             {
-                public static ValidationResult Handle<TModel>(TModel instance, Func<TModel, ValidationResult> next) => next(instance);
+                public static ValidationResult Handle<TModel, TState>(TModel instance, TState state, Func<TModel, TState, ValidationResult> next) => next(instance, state);
             }
             """).Compiles();
 
         Assert.Empty(output.Diagnostics);
         var source = output.Source("Ns.PageValidator`1.g.cs");
-        Assert.Contains("global::Ns.Audit.Handle<global::Ns.Page<T>>", source, StringComparison.Ordinal);
-        Assert.Contains("_linesValidator", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("static r1", source, StringComparison.Ordinal);
+        Assert.Contains("global::Ns.Audit.Handle<global::Ns.Page<T>, PageValidator<T>>(", source, StringComparison.Ordinal);
+        Assert.Contains("s1._linesValidator", source, StringComparison.Ordinal);
+        Assert.Contains("static (r1, s1) =>", source, StringComparison.Ordinal);
     }
 
     // ---------------------------------------------------------------- composition

@@ -229,15 +229,15 @@ public class MirroredCallWarningTests
             [ZeroAlloc.Pipeline.PipelineBehavior(Order = 0)]
             public class LoggingBehavior : ZeroAlloc.Pipeline.IPipelineBehavior
             {
-                public static ValidationResult Handle<TModel>(TModel instance, Func<TModel, ValidationResult> next) => next(instance);
+                public static ValidationResult Handle<TModel, TState>(TModel instance, TState state, Func<TModel, TState, ValidationResult> next) => next(instance, state);
             }
 
             [ZeroAlloc.Pipeline.PipelineBehavior(Order = 1)]
             public class CachingBehavior : ZeroAlloc.Pipeline.IPipelineBehavior
             {
-                public static System.Threading.Tasks.ValueTask<ValidationResult> Handle<TModel>(
-                    TModel instance, System.Threading.CancellationToken ct,
-                    Func<TModel, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<ValidationResult>> next) => next(instance, ct);
+                public static System.Threading.Tasks.ValueTask<ValidationResult> Handle<TModel, TState>(
+                    TModel instance, TState state, System.Threading.CancellationToken ct,
+                    Func<TModel, TState, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<ValidationResult>> next) => next(instance, state, ct);
             }
             """;
 

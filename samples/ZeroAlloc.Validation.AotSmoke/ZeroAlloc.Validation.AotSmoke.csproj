@@ -13,8 +13,8 @@
 
   <!-- Required so Roslyn can locate ZeroAlloc.Pipeline.Generators when loading ValidatorGenerator -->
   <ItemGroup>
-    <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="1.4.0" GeneratePathProperty="true" />
-    <PackageReference Include="ZeroAlloc.Pipeline" Version="1.4.0" GeneratePathProperty="true" />
+    <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="2.0.0" GeneratePathProperty="true" />
+    <PackageReference Include="ZeroAlloc.Pipeline" Version="2.0.0" />
     <!-- Resolves closings of generic models registered through the generated helper, #238. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
   </ItemGroup>
@@ -36,6 +36,5 @@
        during this project's build. -->
   <ItemGroup>
     <Analyzer Include="$(PkgZeroAlloc_Pipeline_Generators)\lib\netstandard2.0\ZeroAlloc.Pipeline.Generators.dll" />
-    <Analyzer Include="$(PkgZeroAlloc_Pipeline)\lib\netstandard2.0\ZeroAlloc.Pipeline.dll" />
   </ItemGroup>
 </Project>

@@ -16,9 +16,14 @@ internal static class BehaviorDiscoverer
     {
         var sync  = new List<PipelineBehaviorInfo>();
         var async_ = new List<PipelineBehaviorInfo>();
+        var missing = MissingHandle(PipelineBehaviorDiscoverer.Discover(compilation).ToList(), out var all);
 
-        foreach (var info in PipelineBehaviorDiscoverer.Discover(compilation))
+        foreach (var info in all)
         {
+            // A behavior without a Handle of the validation shape is reported as ZV0041 and left
+            // out, so the validator does not call a method that does not exist, issue #410.
+            if (missing.Contains(info)) continue;
+
             // Re-resolve the symbol to inspect the Handle method return type.
             var symbol = ResolveSymbol(compilation, info.BehaviorTypeName);
             if (symbol is null) continue;
@@ -30,6 +35,37 @@ internal static class BehaviorDiscoverer
         }
 
         return (sync, async_);
+    }
+
+    /// <summary>
+    /// The shape every validation chain has: the model, and the validator as the pipeline state,
+    /// so a behavior's <c>Handle</c> has two type parameters, <c>TModel</c> and <c>TState</c>,
+    /// whether it is synchronous or asynchronous, issue #410.
+    /// </summary>
+    private static readonly PipelineShape ChainShape = new()
+    {
+        TypeArguments = new[] { "TModel" },
+        OuterParameterNames = new[] { "instance" },
+        LambdaParameterPrefixes = new[] { "r" },
+        InnermostBodyTemplate = "default",
+        State = new PipelineState { TypeName = "TState", Argument = "this" },
+    };
+
+    /// <summary>
+    /// The <c>[PipelineBehavior]</c> types in <paramref name="compilation"/> whose <c>Handle</c>
+    /// does not take the state: none, or one with another number of type parameters, such as the
+    /// <c>Handle&lt;TModel&gt;</c> of Validation 2. The generated validators do not call them.
+    /// </summary>
+    public static List<PipelineBehaviorInfo> DiscoverMissingHandle(Compilation compilation)
+    {
+        var missing = MissingHandle(PipelineBehaviorDiscoverer.Discover(compilation).ToList(), out _);
+        return missing.ToList();
+    }
+
+    private static HashSet<PipelineBehaviorInfo> MissingHandle(List<PipelineBehaviorInfo> all, out List<PipelineBehaviorInfo> discovered)
+    {
+        discovered = all;
+        return new HashSet<PipelineBehaviorInfo>(PipelineDiagnosticRules.FindMissingHandleMethod(all, ChainShape));
     }
 
     /// <summary>

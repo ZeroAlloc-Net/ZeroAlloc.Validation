@@ -15,13 +15,13 @@ public class AsyncAuditBehavior : IPipelineBehavior
     [System.ThreadStatic]
     public static List<string>? CallLog;
 
-    public static async ValueTask<ValidationResult> Handle<TModel>(
-        TModel instance,
+    public static async ValueTask<ValidationResult> Handle<TModel, TState>(
+        TModel instance, TState state,
         CancellationToken ct,
-        System.Func<TModel, CancellationToken, ValueTask<ValidationResult>> next)
+        System.Func<TModel, TState, CancellationToken, ValueTask<ValidationResult>> next)
     {
         CallLog?.Add("pre");
-        var result = await next(instance, ct).ConfigureAwait(false);
+        var result = await next(instance, state, ct).ConfigureAwait(false);
         CallLog?.Add("post");
         return result;
     }

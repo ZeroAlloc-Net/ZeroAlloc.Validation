@@ -171,22 +171,34 @@ A `[CustomValidation]` method written with `yield return` also allocates its ite
 
 ### Pipeline behaviors
 
-A `[PipelineBehavior]` wraps the validation body in a chain of `next` delegates. On a model
-without nested validators those delegates are `static` lambdas, which the compiler creates once,
-so the chain allocates nothing.
+A `[PipelineBehavior]` wraps the validation body in a chain of `next` delegates. Every lambda of
+the chain is `static`, so the compiler creates each one once and a call through the chain
+allocates no delegate, on every model.
 
-On a model with a nested, collection or `[ValidateWith]` validator, the body reads those
-validators through the validator's fields, so the delegates capture the validator and cannot be
-`static`. The generated validator keeps each of them in a private field, created on the first
-call, so from then on the chain allocates nothing either, generic models included. This covers
-`Validate`, `ValidateAsync`, and the asynchronous validation of a model with asynchronous rules.
+The validator itself is the chain's state. Each behavior's `Handle` takes it as its second
+argument and passes it on to `next`; a behavior never names the validator's type, it is a plain
+`TState`. A model with a nested, collection or `[ValidateWith]` validator reads those validators
+through that state instead of through `this`, which a `static` lambda cannot capture. This covers
+`Validate`, `ValidateAsync`, and the asynchronous validation of a model with asynchronous rules,
+and generic models.
 
-The cached delegates live as long as the validator. Two threads that make a validator's first call
-together may each create one; they are equivalent, and one is kept. Before
-[#298](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/298) each call allocated one
-delegate per behavior, 64 B for one behavior on a 64-bit runtime, and before
-[#294](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/294) such a validator did not
-compile at all.
+The shape of `Handle` is the same whether or not the model has nested validators:
+
+```csharp
+public static ValidationResult Handle<TModel, TState>(
+    TModel instance, TState state, Func<TModel, TState, ValidationResult> next)
+    => next(instance, state);
+
+public static ValueTask<ValidationResult> Handle<TModel, TState>(
+    TModel instance, TState state, CancellationToken ct,
+    Func<TModel, TState, CancellationToken, ValueTask<ValidationResult>> next)
+    => next(instance, state, ct);
+```
+
+Before [#298](https://github.com/ZeroAlloc-Net/ZeroAlloc.Validation/issues/298) each call on a
+model with nested validators allocated one delegate per behavior, 64 B for one behavior on a
+64-bit runtime. #298 cached them in fields of the validator, which cost a field, a first-call
+race and a second code path; the state removes the cache.
 
 ## Running the benchmarks yourself
 

@@ -33,9 +33,9 @@ public class MissingPipelineBehaviorInterfaceTests
         """;
 
     private const string HandleMethod = """
-            public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
-                TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
-                => next(inst);
+            public static ZeroAlloc.Validation.ValidationResult Handle<TModel, TState>(
+                TModel inst, TState state, System.Func<TModel, TState, ZeroAlloc.Validation.ValidationResult> next)
+                => next(inst, state);
         """;
 
     private static GeneratorDriverRunResult RunGenerator(string source, IEnumerable<string>? extraSources = null) =>
@@ -146,7 +146,7 @@ public class MissingPipelineBehaviorInterfaceTests
             [PipelineBehavior(Order = 0)]
             public static class StaticLogging
             {
-                public static T Handle<T>(T inst, System.Func<T, T> next) => next(inst);
+                public static T Handle<T, TState>(T inst, TState state, System.Func<T, TState, T> next) => next(inst, state);
             }
             """;
 

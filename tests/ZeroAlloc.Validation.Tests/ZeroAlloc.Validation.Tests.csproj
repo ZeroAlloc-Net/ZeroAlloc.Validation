@@ -20,8 +20,8 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.12.0" />
     <!-- Builds containers over in-memory compilations in ComposedValidatorRegistrationTests, #246. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
-    <PackageReference Include="ZeroAlloc.Pipeline" Version="1.4.0" GeneratePathProperty="true" />
-    <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="1.4.0" GeneratePathProperty="true" />
+    <PackageReference Include="ZeroAlloc.Pipeline" Version="2.0.0" />
+    <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="2.0.0" GeneratePathProperty="true" />
   </ItemGroup>
 
   <ItemGroup>
@@ -43,7 +43,6 @@
   <!-- Expose generator dependency DLLs as Analyzer items so Roslyn's loader can find them -->
   <ItemGroup>
     <Analyzer Include="$(PkgZeroAlloc_Pipeline_Generators)\lib\netstandard2.0\ZeroAlloc.Pipeline.Generators.dll" />
-    <Analyzer Include="$(PkgZeroAlloc_Pipeline)\lib\netstandard2.0\ZeroAlloc.Pipeline.dll" />
   </ItemGroup>
 
 </Project>

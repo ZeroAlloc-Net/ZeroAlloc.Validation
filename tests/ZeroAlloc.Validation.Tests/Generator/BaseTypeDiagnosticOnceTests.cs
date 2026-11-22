@@ -393,12 +393,12 @@ public class BaseTypeDiagnosticOnceTests
             [ZeroAlloc.Pipeline.PipelineBehavior(Order = 0)]
             public class First : ZeroAlloc.Pipeline.IPipelineBehavior
             {
-                public static ValidationResult Handle<TModel>(TModel instance, System.Func<TModel, ValidationResult> next) => next(instance);
+                public static ValidationResult Handle<TModel, TState>(TModel instance, TState state, System.Func<TModel, TState, ValidationResult> next) => next(instance, state);
             }
             [ZeroAlloc.Pipeline.PipelineBehavior(Order = 1)]
             public class Second : ZeroAlloc.Pipeline.IPipelineBehavior
             {
-                public static ValidationResult Handle<TModel>(TModel instance, System.Func<TModel, ValidationResult> next) => next(instance);
+                public static ValidationResult Handle<TModel, TState>(TModel instance, TState state, System.Func<TModel, TState, ValidationResult> next) => next(instance, state);
             }
             [Validate]
             public class Booking

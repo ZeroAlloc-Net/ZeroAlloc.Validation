@@ -263,6 +263,24 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             + "AppliesTo naming one closing, such as typeof(Page<Order>), matches no validator and "
             + "the behavior never runs. Name the model's open form instead, typeof(Page<>).");
 
+    private static readonly DiagnosticDescriptor ZV0041 = new DiagnosticDescriptor(
+        id: "ZV0041",
+        title: "Pipeline behavior without a Handle method of the validation shape",
+        messageFormat: "'{0}' has no Handle method that matches a validation pipeline behavior, so it never runs; declare "
+            + "Handle<TModel, TState>(TModel instance, TState state, Func<TModel, TState, ValidationResult> next), or for an "
+            + "asynchronous behavior Handle<TModel, TState>(TModel instance, TState state, CancellationToken ct, "
+            + "Func<TModel, TState, CancellationToken, ValueTask<ValidationResult>> next); a Handle<TModel> without the state is "
+            + "the shape of Validation 2",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description:
+            "Every pipeline behavior of a generated validator takes the validator as its state: Handle "
+            + "has the type parameters TModel and TState, takes the state as its second parameter and passes "
+            + "it on to next. A behavior still written as Handle<TModel>, or without a public static Handle "
+            + "that has type parameters, is left out of the pipeline and reported here, instead of failing "
+            + "inside the generated validator.");
+
     private static readonly DiagnosticDescriptor ZV0031 = new DiagnosticDescriptor(
         id: "ZV0031",
         title: "Two [Validate] models whose validators would have the same name",
@@ -392,6 +410,17 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             .Select(static (compilation, _) => FindMissingPipelineBehaviorInterface(compilation));
 
         context.RegisterSourceOutput(missingInterface, static (ctx, diagnostics) =>
+        {
+            foreach (var diagnostic in diagnostics)
+                ctx.ReportDiagnostic(diagnostic.ToDiagnostic());
+        });
+
+        // ZV0041: a [PipelineBehavior] whose Handle does not take the validator as state, which
+        // DiscoverAll leaves out, issue #410. Reported once per compilation, as ZV0035 is.
+        var missingHandle = context.CompilationProvider
+            .Select(static (compilation, _) => FindMissingHandleMethod(compilation));
+
+        context.RegisterSourceOutput(missingHandle, static (ctx, diagnostics) =>
         {
             foreach (var diagnostic in diagnostics)
                 ctx.ReportDiagnostic(diagnostic.ToDiagnostic());
@@ -619,9 +648,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // run guarantees each field appears exactly once at class scope
         // (no CS0102 duplicate-member errors when both paths reference the same prop).
         var fields = new GeneratedFields();
-        // Only the nested validators are instance fields; a chain whose body reads them cannot
-        // use static lambdas, #294, so it caches its delegates in fields instead, #298.
-        var chains = new BehaviorChains(modelName, readsInstanceState: nestedFields.Count > 0);
+        // Every chain lambda is static, so the validator reaches its nested validators, the only
+        // instance fields its body reads, through the pipeline state, #410.
+        var chains = BehaviorChains.For(classSymbol, readsInstanceState: nestedFields.Count > 0);
         if (RuleEmitter.RequiresAsync(classSymbol, compilation))
         {
             EmitThrowingValidateMethod(sb, classSymbol, modelName);
@@ -634,7 +663,6 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         }
 
         fields.AppendDeclarations(sb);
-        chains.AppendDeclarations(sb);
 
         sb.AppendLine("}");
 
@@ -673,11 +701,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 {
                     var paramName = depth == 0 ? "instance" : $"r{depth}";
                     return "{\n"
-                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, fields)
+                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, fields, chains.StateAt(depth))
                         + "        }";
                 }
             };
-            var chain = chains.Emit(syncBehaviors, syncShape, BehaviorChains.Sync);
+            var chain = chains.Emit(syncBehaviors, syncShape);
             sb.AppendLine($"        return {chain};");
         }
         sb.AppendLine("    }");
@@ -733,9 +761,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 LambdaParameterPrefixes = new[] { "r", "c" },
                 InnermostBodyFactory    = depth => depth == 0
                     ? $"{{\n            return {core}(instance, {ct});\n        }}"
-                    : $"{{\n            return {core}(r{depth}, c{depth});\n        }}",
+                    : $"{{\n            return {(chains.StateAt(depth) is { } state ? state + "." : "")}{core}(r{depth}, c{depth});\n        }}",
             };
-            call = chains.Emit(asyncBehaviors, asyncShape, BehaviorChains.Async);
+            call = chains.Emit(asyncBehaviors, asyncShape);
         }
 
         sb.AppendLine();
@@ -782,12 +810,12 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 // wrapClose adds one extra closing paren for FromResult(...) and the semicolon.
                 // The closing paren for ValidationResult(...) is already included in the matched substring.
                 const string wrapClose    = ");";
-                var body = RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, fields: fields);
+                var body = RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, fields, chains.StateAt(depth));
                 var asyncBody = WrapReturnSites(body, returnPrefix, wrapOpen, wrapClose);
                 return "{\n" + asyncBody + "        }";
             }
         };
-        var chain = chains.Emit(asyncBehaviors, asyncShape, BehaviorChains.Async);
+        var chain = chains.Emit(asyncBehaviors, asyncShape);
         sb.AppendLine();
         sb.AppendLine("    /// <inheritdoc/>");
         sb.AppendLine($"    public override global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult> ValidateAsync({modelName} instance, global::System.Threading.CancellationToken ct = default)");
@@ -981,6 +1009,23 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 candidate.IsStatic
                     ? "make the class non-static and implement IPipelineBehavior"
                     : "implement IPipelineBehavior");
+        }
+        return diagnostics.ToEquatableArray();
+    }
+
+    /// <summary>
+    /// ZV0041 for each <c>[PipelineBehavior]</c> type whose <c>Handle</c> does not take the
+    /// validator as state, at its attribute, or at the type when the attribute is not in source.
+    /// </summary>
+    private static EquatableArray<DiagnosticInfo> FindMissingHandleMethod(Compilation compilation)
+    {
+        var diagnostics = new DiagnosticSink();
+        foreach (var behavior in BehaviorDiscoverer.DiscoverMissingHandle(compilation))
+        {
+            var location = FindBehaviorAttributeLocation(behavior.BehaviorTypeName, compilation)
+                ?? BehaviorDiscoverer.ResolveSymbol(compilation, behavior.BehaviorTypeName)?.Locations.FirstOrDefault()
+                ?? Location.None;
+            diagnostics.Report(ZV0041, location, DescribeBehavior(behavior));
         }
         return diagnostics.ToEquatableArray();
     }
