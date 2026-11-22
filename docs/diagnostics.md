@@ -42,6 +42,7 @@ ZeroAlloc.Validation.Generator emits the following Roslyn diagnostics at compile
 | [ZV0038](#zv0038) | Warning | Pipeline behavior applied to a closed form of a generic model |
 | [ZV0039](#zv0039) | Error | [IsInEnum] on a value that is not an enum |
 | [ZV0040](#zv0040) | Error | Length rule on a value it cannot measure |
+| [ZV0041](#zv0041) | Error | Pipeline behavior without a Handle method of the validation shape |
 
 A rule or attribute declared on a base type is checked by every `[Validate]` model that inherits it, and a diagnostic about the usage is reported once, however many models derive from the base type, and whether or not it is `[Validate]` itself. A `[Validate(IncludeBaseProperties = false)]` model does not see the types above it, so it does not report their usages; a model deriving from it that includes base properties does. A generic base type is checked for each type argument the models use, and a diagnostic that is the same for each is reported once.
 
@@ -1183,3 +1184,39 @@ The value measured is the one the rule reads, after single-property value-object
 `src/ZeroAlloc.Validation.Generator/AnalyzerReleases.Shipped.md` records the release each analyzer rule first shipped in, and any later change to its category or severity. A new rule goes into `AnalyzerReleases.Unshipped.md`. Changing a shipped rule's severity or category, or removing it, has to be declared there under `### Changed Rules` or `### Removed Rules`, or the build fails. The same move covers every `PublicAPI.Unshipped.txt`: new public API goes there, and removing shipped API is declared with a `*REMOVED*` line.
 
 Nobody moves entries by hand. When release-please opens or updates the release PR, the `ship-release-tracking` job in `.github/workflows/release-please.yml` moves everything unshipped into the Shipped files on that branch, in a `chore: mark analyzer rules and public api shipped in <version>` commit. The `release-tracking` job in CI fails a release PR while anything is still unshipped. Both use the shared [`ship-release-tracking.py`](https://github.com/ZeroAlloc-Net/.github/blob/main/scripts/ship-release-tracking.py). **Before merging a release PR,** check that it has that commit. If it doesn't, run the script with the release version from the root of the release branch and push the result.
+
+---
+
+## ZV0041
+
+**Severity:** Error
+
+**Title:** Pipeline behavior without a Handle method of the validation shape
+
+**When fired:** Every behavior of a generated validator takes the validator as its pipeline state, so its public static `Handle` has two type parameters, `TModel` and `TState`. A `[PipelineBehavior]` type whose `Handle` has another number of type parameters, or none, cannot be called from the validator. The most common case is a behavior written for Validation 2, `Handle<TModel>(TModel instance, Func<TModel, ValidationResult> next)`. It is reported at the `[PipelineBehavior]` attribute and left out of the generated validators, so the build fails here and not inside generated code:
+
+```csharp
+[PipelineBehavior(Order = 0)]
+public class LoggingBehavior : IPipelineBehavior
+{
+    public static ValidationResult Handle<TModel>(                  // ZV0041
+        TModel instance, Func<TModel, ValidationResult> next) => next(instance);
+}
+```
+
+> 'LoggingBehavior' has no Handle method that matches a validation pipeline behavior, so it never runs; declare Handle\<TModel, TState\>(TModel instance, TState state, Func\<TModel, TState, ValidationResult\> next), or for an asynchronous behavior Handle\<TModel, TState\>(TModel instance, TState state, CancellationToken ct, Func\<TModel, TState, CancellationToken, ValueTask\<ValidationResult\>\> next); a Handle\<TModel\> without the state is the shape of Validation 2
+
+**Fix:** Take the state as the second parameter and pass it on to `next`:
+
+```csharp
+public static ValidationResult Handle<TModel, TState>(
+    TModel instance, TState state, Func<TModel, TState, ValidationResult> next)
+    => next(instance, state);
+
+public static ValueTask<ValidationResult> Handle<TModel, TState>(
+    TModel instance, TState state, CancellationToken ct,
+    Func<TModel, TState, CancellationToken, ValueTask<ValidationResult>> next)
+    => next(instance, state, ct);
+```
+
+A behavior that is not meant for validators can drop `[PipelineBehavior]` or name another model with `AppliesTo`; a behavior without `AppliesTo` applies to every validator, so one written for another pipeline is reported here too.

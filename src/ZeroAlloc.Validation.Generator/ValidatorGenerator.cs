@@ -263,6 +263,24 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             + "AppliesTo naming one closing, such as typeof(Page<Order>), matches no validator and "
             + "the behavior never runs. Name the model's open form instead, typeof(Page<>).");
 
+    private static readonly DiagnosticDescriptor ZV0041 = new DiagnosticDescriptor(
+        id: "ZV0041",
+        title: "Pipeline behavior without a Handle method of the validation shape",
+        messageFormat: "'{0}' has no Handle method that matches a validation pipeline behavior, so it never runs; declare "
+            + "Handle<TModel, TState>(TModel instance, TState state, Func<TModel, TState, ValidationResult> next), or for an "
+            + "asynchronous behavior Handle<TModel, TState>(TModel instance, TState state, CancellationToken ct, "
+            + "Func<TModel, TState, CancellationToken, ValueTask<ValidationResult>> next); a Handle<TModel> without the state is "
+            + "the shape of Validation 2",
+        category: "ZeroAlloc.Validation",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description:
+            "Every pipeline behavior of a generated validator takes the validator as its state: Handle "
+            + "has the type parameters TModel and TState, takes the state as its second parameter and passes "
+            + "it on to next. A behavior still written as Handle<TModel>, or without a public static Handle "
+            + "that has type parameters, is left out of the pipeline and reported here, instead of failing "
+            + "inside the generated validator.");
+
     private static readonly DiagnosticDescriptor ZV0031 = new DiagnosticDescriptor(
         id: "ZV0031",
         title: "Two [Validate] models whose validators would have the same name",
@@ -392,6 +410,17 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
             .Select(static (compilation, _) => FindMissingPipelineBehaviorInterface(compilation));
 
         context.RegisterSourceOutput(missingInterface, static (ctx, diagnostics) =>
+        {
+            foreach (var diagnostic in diagnostics)
+                ctx.ReportDiagnostic(diagnostic.ToDiagnostic());
+        });
+
+        // ZV0041: a [PipelineBehavior] whose Handle does not take the validator as state, which
+        // DiscoverAll leaves out, issue #410. Reported once per compilation, as ZV0035 is.
+        var missingHandle = context.CompilationProvider
+            .Select(static (compilation, _) => FindMissingHandleMethod(compilation));
+
+        context.RegisterSourceOutput(missingHandle, static (ctx, diagnostics) =>
         {
             foreach (var diagnostic in diagnostics)
                 ctx.ReportDiagnostic(diagnostic.ToDiagnostic());
@@ -980,6 +1009,23 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 candidate.IsStatic
                     ? "make the class non-static and implement IPipelineBehavior"
                     : "implement IPipelineBehavior");
+        }
+        return diagnostics.ToEquatableArray();
+    }
+
+    /// <summary>
+    /// ZV0041 for each <c>[PipelineBehavior]</c> type whose <c>Handle</c> does not take the
+    /// validator as state, at its attribute, or at the type when the attribute is not in source.
+    /// </summary>
+    private static EquatableArray<DiagnosticInfo> FindMissingHandleMethod(Compilation compilation)
+    {
+        var diagnostics = new DiagnosticSink();
+        foreach (var behavior in BehaviorDiscoverer.DiscoverMissingHandle(compilation))
+        {
+            var location = FindBehaviorAttributeLocation(behavior.BehaviorTypeName, compilation)
+                ?? BehaviorDiscoverer.ResolveSymbol(compilation, behavior.BehaviorTypeName)?.Locations.FirstOrDefault()
+                ?? Location.None;
+            diagnostics.Report(ZV0041, location, DescribeBehavior(behavior));
         }
         return diagnostics.ToEquatableArray();
     }
