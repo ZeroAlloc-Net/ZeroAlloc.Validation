@@ -104,7 +104,7 @@ jobs:
 
       - name: Pack
         run: |
-          version="9.9.9-local.${GITHUB_SHA::7}"
+          version="9.9.9-local.sha${GITHUB_SHA::7}"
           echo "VALIDATION_VERSION=$version" >> "$GITHUB_ENV"
           for project in ZeroAlloc.Validation ZeroAlloc.Validation.Inject ZeroAlloc.Validation.Options ZeroAlloc.Validation.AspNetCore; do
             dotnet pack "src/$project/$project.csproj" -c Release -o artifacts -p:Version="$version"

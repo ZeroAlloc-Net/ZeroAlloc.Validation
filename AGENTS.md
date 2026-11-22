@@ -67,10 +67,10 @@ a consumer of the four generator-bearing packages with Roslyn 5.0:
 
 ```bash
 for p in ZeroAlloc.Validation ZeroAlloc.Validation.Inject ZeroAlloc.Validation.Options ZeroAlloc.Validation.AspNetCore; do
-  dotnet pack src/$p -c Release -o artifacts -p:Version=9.9.9-local.<sha>
+  dotnet pack src/$p -c Release -o artifacts -p:Version=9.9.9-local.sha$(git rev-parse --short HEAD)
 done
 cd tests/ZeroAlloc.Validation.Sdk10Smoke/Consumer
-dotnet run -c Release -p:ZeroAllocValidationVersion=9.9.9-local.<sha>
+dotnet run -c Release -p:ZeroAllocValidationVersion=9.9.9-local.sha$(git rev-parse --short HEAD)
 ```
 
 CI job `roslyn-floor` (`ci.yml`) is the shared `ZeroAlloc-Net/.github` workflow: it packs the solution
