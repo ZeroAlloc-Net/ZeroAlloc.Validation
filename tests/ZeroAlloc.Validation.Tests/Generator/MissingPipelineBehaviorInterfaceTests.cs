@@ -146,7 +146,7 @@ public class MissingPipelineBehaviorInterfaceTests
             [PipelineBehavior(Order = 0)]
             public static class StaticLogging
             {
-                public static T Handle<T>(T inst, System.Func<T, T> next) => next(inst, state);
+                public static T Handle<T, TState>(T inst, TState state, System.Func<T, TState, T> next) => next(inst, state);
             }
             """;
 
