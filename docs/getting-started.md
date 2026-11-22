@@ -9,7 +9,10 @@ sidebar_position: 1
 ## Installation
 
 Add the core library to your project. The integration and testing packages are optional.
-The packages target .NET 10 and .NET 11.
+The packages target .NET 10 and .NET 11. The bundled generators need the .NET 10 SDK 10.0.100 or later,
+or Visual Studio 2026 or later: they are built against Roslyn 5.0, and an older compiler skips them with
+warning CS9057, after which the generated validators are missing. The 3.0.0 packages were built against
+Roslyn 5.12 and load only in the .NET 11 SDK; on .NET 10, use 3.0.1 or later.
 
 **Core library (required)**
 

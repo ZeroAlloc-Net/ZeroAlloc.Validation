@@ -61,6 +61,22 @@ timeout --kill-after=10s 120s ./aot-out/ZeroAlloc.Validation.AotSmoke
 
 CI job `api-compat` (`ci.yml`) is the shared `ZeroAlloc-Net/.github` workflow, not a local command.
 
+CI job `sdk10-consumer` (`ci.yml`) needs a 10.0.1xx SDK; `tests/ZeroAlloc.Validation.Sdk10Smoke/global.json`
+pins 10.0.100 with `rollForward: latestPatch`, so a newer band cannot stand in for it. It builds and runs
+a consumer of the four generator-bearing packages with Roslyn 5.0:
+
+```bash
+v=9.9.9-local.sha$(git rev-parse --short HEAD).$(date +%s)
+for p in ZeroAlloc.Validation ZeroAlloc.Validation.Inject ZeroAlloc.Validation.Options ZeroAlloc.Validation.AspNetCore; do
+  dotnet pack src/$p -c Release -o artifacts -p:Version="$v"
+done
+cd tests/ZeroAlloc.Validation.Sdk10Smoke/Consumer
+dotnet run -c Release -p:ZeroAllocValidationVersion="$v"
+```
+
+CI job `roslyn-floor` (`ci.yml`) is the shared `ZeroAlloc-Net/.github` workflow: it packs the solution
+and fails when a packed DLL references Roslyn above 5.0.0.
+
 CI workflow `benchmarks.yml` runs the shared `benchmark-smoke.yml` gate on
 `benchmarks/ZeroAlloc.Validation.Benchmarks`; its manual `full` job builds and runs:
 
@@ -85,6 +101,12 @@ input (`ReferenceOutputAssembly="false"`), so a generator change is otherwise no
 
 ## Conventions and gotchas
 
+- Every generator project references `Microsoft.CodeAnalysis.CSharp` 5.0.0, the compiler of SDK band
+  10.0.1xx, the oldest supported SDK, and the bundled `ZeroAlloc.Pipeline.Generators` is 2.0.1 or later,
+  which does too. A compiler older than the Roslyn a bundled DLL references skips the generator with
+  `CS9057`, and nothing is generated. The shared Renovate preset holds it below 5.1. If a newer Roslyn
+  API is needed, change the code; raise the floor only together with the minimum SDK. Test projects may
+  use a newer Roslyn.
 - Every pack needs the version stamped into the assembly. Build and pack with the same
   `-p:Version`; `-p:PackageVersion` alone fails with ZAVERSION002. Pack with `--no-build` only
   after a build that got `-p:Version`.
