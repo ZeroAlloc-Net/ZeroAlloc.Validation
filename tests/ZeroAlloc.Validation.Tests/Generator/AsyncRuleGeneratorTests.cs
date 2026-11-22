@@ -348,11 +348,11 @@ public class AsyncRuleGeneratorTests
             [PipelineBehavior(Order = 0, AppliesTo = typeof(Request))]
             public class AuditBehavior : IPipelineBehavior
             {
-                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel>(
-                    TModel instance,
+                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel, TState>(
+                    TModel instance, TState state,
                     CancellationToken ct,
-                    System.Func<TModel, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
-                    => await next(instance, ct).ConfigureAwait(false);
+                    System.Func<TModel, TState, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
+                    => await next(instance, state, ct).ConfigureAwait(false);
             }
             """;
 

@@ -262,9 +262,30 @@ public class AllocationRegressionTests
         Assert.Equal(OneFailureArray + 32, AllocationGate.MeasureBytesPerCallValueTask(Iterations, () => validator.ValidateAsync(model)));
     }
 
-    // A behavior on a model with a nested validator: the chain reads the validator's fields, so
-    // its lambdas cannot be static, and it caches their delegates instead of allocating them on
-    // every call, issue #298.
+    // A behavior on a model with a nested validator: the chain reads the validator's fields, which
+    // a static lambda cannot capture, so the validator is the chain's state and every lambda stays
+    // static. No delegate is allocated per call, issues #298 and #410.
+    // The same state is threaded when the model has no nested validator, so the chain allocates no
+    // delegate there either, issue #410.
+    [Fact]
+    public void BehaviorWithoutNestedValidator_Sync_ValidPath_AllocatesNothing()
+    {
+        var validator = new AllocBehaviorFlatModelValidator();
+        var model = new AllocBehaviorFlatModel { Reference = "REF-001" };
+
+        AllocationGate.AssertBudget(0, Iterations, () => validator.Validate(model), "BehaviorWithoutNestedValidator_Sync_ValidPath_AllocatesNothing");
+    }
+
+    [Fact]
+    public void BehaviorWithoutNestedValidator_Async_ValidPath_AllocatesNothing()
+    {
+        AsyncAuditBehavior.CallLog = null;
+        var validator = new PipelineOrderValidator();
+        var model = new PipelineOrder { Reference = "REF-001" };
+
+        AllocationGate.AssertBudgetValueTask(0, Iterations, () => validator.ValidateAsync(model), "BehaviorWithoutNestedValidator_Async_ValidPath_AllocatesNothing");
+    }
+
     [Fact]
     public void BehaviorWithNestedValidator_Sync_ValidPath_AllocatesNothing()
     {

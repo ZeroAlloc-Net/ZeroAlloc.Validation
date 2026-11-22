@@ -13,9 +13,9 @@ public class GenericAuditBehavior : IPipelineBehavior
     [System.ThreadStatic]
     public static List<string>? CallLog;
 
-    public static ValidationResult Handle<TModel>(TModel instance, System.Func<TModel, ValidationResult> next)
+    public static ValidationResult Handle<TModel, TState>(TModel instance, TState state, System.Func<TModel, TState, ValidationResult> next)
     {
         CallLog?.Add(typeof(TModel).Name);
-        return next(instance);
+        return next(instance, state);
     }
 }

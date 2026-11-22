@@ -85,7 +85,7 @@ internal static class RuleEmitter
     /// ZV0032 mirrors at the attribute. <see cref="MethodCallProbe"/> passes a recording one to
     /// compile this same body.
     /// </summary>
-    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName = "instance", GeneratedFields? fields = null, CallLineWriter? calls = null)
+    public static void EmitValidateBody(StringBuilder sb, INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName = "instance", GeneratedFields? fields = null, CallLineWriter? calls = null, string? validatorState = null)
     {
         calls ??= CallLineWriter.Emitting(MethodCallProbe.CallWarnings(compilation, classSymbol));
         bool isAsync = RequiresAsync(classSymbol, compilation);
@@ -105,6 +105,12 @@ internal static class RuleEmitter
         var nestedProperties = GetNestedValidateProperties(classSymbol, compilation).ToList();
         var collectionProperties = GetCollectionValidateProperties(classSymbol, compilation).ToList();
         var validatorFields = NestedValidatorFieldsByProperty(classSymbol, compilation);
+        if (validatorState is not null)
+        {
+            // A chain lambda is static: the nested validators are read through the pipeline state.
+            foreach (var property in new List<IPropertySymbol>(validatorFields.Keys))
+                validatorFields[property] = $"{validatorState}.{validatorFields[property]}";
+        }
         var customMethods = CollectCustomValidationMethods(classSymbol, compilation);
         bool hasNested = nestedProperties.Count > 0 || collectionProperties.Count > 0 || customMethods.Count > 0;
         int totalDirectRules = byProperty.Sum(x => x.Rules.Count);
@@ -2148,10 +2154,10 @@ internal static class RuleEmitter
     /// Returns the Validate method body as a string (multi-statement block WITHOUT outer braces),
     /// using <paramref name="modelParamName"/> as the instance variable.
     /// </summary>
-    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName, GeneratedFields? fields = null)
+    internal static string EmitValidateBodyAsString(INamedTypeSymbol classSymbol, Compilation compilation, string modelParamName, GeneratedFields? fields = null, string? validatorState = null)
     {
         var sb = new System.Text.StringBuilder();
-        EmitValidateBody(sb, classSymbol, compilation, modelParamName, fields);
+        EmitValidateBody(sb, classSymbol, compilation, modelParamName, fields, validatorState: validatorState);
         return sb.ToString();
     }
 

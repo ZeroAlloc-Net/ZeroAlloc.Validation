@@ -619,9 +619,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         // run guarantees each field appears exactly once at class scope
         // (no CS0102 duplicate-member errors when both paths reference the same prop).
         var fields = new GeneratedFields();
-        // Only the nested validators are instance fields; a chain whose body reads them cannot
-        // use static lambdas, #294, so it caches its delegates in fields instead, #298.
-        var chains = new BehaviorChains(modelName, readsInstanceState: nestedFields.Count > 0);
+        // Every chain lambda is static, so the validator reaches its nested validators, the only
+        // instance fields its body reads, through the pipeline state, #410.
+        var chains = BehaviorChains.For(classSymbol, readsInstanceState: nestedFields.Count > 0);
         if (RuleEmitter.RequiresAsync(classSymbol, compilation))
         {
             EmitThrowingValidateMethod(sb, classSymbol, modelName);
@@ -634,7 +634,6 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
         }
 
         fields.AppendDeclarations(sb);
-        chains.AppendDeclarations(sb);
 
         sb.AppendLine("}");
 
@@ -673,11 +672,11 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 {
                     var paramName = depth == 0 ? "instance" : $"r{depth}";
                     return "{\n"
-                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, fields)
+                        + RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, fields, chains.StateAt(depth))
                         + "        }";
                 }
             };
-            var chain = chains.Emit(syncBehaviors, syncShape, BehaviorChains.Sync);
+            var chain = chains.Emit(syncBehaviors, syncShape);
             sb.AppendLine($"        return {chain};");
         }
         sb.AppendLine("    }");
@@ -733,9 +732,9 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 LambdaParameterPrefixes = new[] { "r", "c" },
                 InnermostBodyFactory    = depth => depth == 0
                     ? $"{{\n            return {core}(instance, {ct});\n        }}"
-                    : $"{{\n            return {core}(r{depth}, c{depth});\n        }}",
+                    : $"{{\n            return {(chains.StateAt(depth) is { } state ? state + "." : "")}{core}(r{depth}, c{depth});\n        }}",
             };
-            call = chains.Emit(asyncBehaviors, asyncShape, BehaviorChains.Async);
+            call = chains.Emit(asyncBehaviors, asyncShape);
         }
 
         sb.AppendLine();
@@ -782,12 +781,12 @@ public sealed class ValidatorGenerator : IIncrementalGenerator
                 // wrapClose adds one extra closing paren for FromResult(...) and the semicolon.
                 // The closing paren for ValidationResult(...) is already included in the matched substring.
                 const string wrapClose    = ");";
-                var body = RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, fields: fields);
+                var body = RuleEmitter.EmitValidateBodyAsString(classSymbol, compilation, paramName, fields, chains.StateAt(depth));
                 var asyncBody = WrapReturnSites(body, returnPrefix, wrapOpen, wrapClose);
                 return "{\n" + asyncBody + "        }";
             }
         };
-        var chain = chains.Emit(asyncBehaviors, asyncShape, BehaviorChains.Async);
+        var chain = chains.Emit(asyncBehaviors, asyncShape);
         sb.AppendLine();
         sb.AppendLine("    /// <inheritdoc/>");
         sb.AppendLine($"    public override global::System.Threading.Tasks.ValueTask<global::ZeroAlloc.Validation.ValidationResult> ValidateAsync({modelName} instance, global::System.Threading.CancellationToken ct = default)");

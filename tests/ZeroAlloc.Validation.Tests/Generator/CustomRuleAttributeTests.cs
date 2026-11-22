@@ -328,11 +328,11 @@ public class CustomRuleAttributeTests
             [PipelineBehavior(Order = 0, AppliesTo = typeof(Request))]
             public class AuditBehavior : IPipelineBehavior
             {
-                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel>(
-                    TModel instance,
+                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel, TState>(
+                    TModel instance, TState state,
                     CancellationToken ct,
-                    System.Func<TModel, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
-                    => await next(instance, ct);
+                    System.Func<TModel, TState, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
+                    => await next(instance, state, ct);
             }
             """;
 
@@ -1050,20 +1050,20 @@ public class CustomRuleAttributeTests
             [PipelineBehavior(Order = 0, AppliesTo = typeof(Request))]
             public class SyncBehavior : IPipelineBehavior
             {
-                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
-                    TModel instance,
-                    System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
-                    => next(instance);
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel, TState>(
+                    TModel instance, TState state,
+                    System.Func<TModel, TState, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(instance, state);
             }
 
             [PipelineBehavior(Order = 1, AppliesTo = typeof(Request))]
             public class AsyncBehavior : IPipelineBehavior
             {
-                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel>(
-                    TModel instance,
+                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel, TState>(
+                    TModel instance, TState state,
                     CancellationToken ct,
-                    System.Func<TModel, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
-                    => await next(instance, ct);
+                    System.Func<TModel, TState, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
+                    => await next(instance, state, ct);
             }
             """;
 
@@ -1230,20 +1230,20 @@ public class CustomRuleAttributeTests
             [PipelineBehavior(Order = 0, AppliesTo = typeof(Request))]
             public class SyncBehavior : IPipelineBehavior
             {
-                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
-                    TModel instance,
-                    System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
-                    => next(instance);
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel, TState>(
+                    TModel instance, TState state,
+                    System.Func<TModel, TState, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(instance, state);
             }
 
             [PipelineBehavior(Order = 1, AppliesTo = typeof(Request))]
             public class AsyncBehavior : IPipelineBehavior
             {
-                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel>(
-                    TModel instance,
+                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel, TState>(
+                    TModel instance, TState state,
                     CancellationToken ct,
-                    System.Func<TModel, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
-                    => await next(instance, ct);
+                    System.Func<TModel, TState, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
+                    => await next(instance, state, ct);
             }
             """;
 

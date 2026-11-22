@@ -15,12 +15,12 @@ public class NestedAsyncAuditBehavior : IPipelineBehavior
     [System.ThreadStatic]
     public static List<string>? CallLog;
 
-    public static async ValueTask<ValidationResult> Handle<TModel>(
-        TModel instance,
+    public static async ValueTask<ValidationResult> Handle<TModel, TState>(
+        TModel instance, TState state,
         CancellationToken ct,
-        System.Func<TModel, CancellationToken, ValueTask<ValidationResult>> next)
+        System.Func<TModel, TState, CancellationToken, ValueTask<ValidationResult>> next)
     {
         CallLog?.Add("async");
-        return await next(instance, ct).ConfigureAwait(false);
+        return await next(instance, state, ct).ConfigureAwait(false);
     }
 }

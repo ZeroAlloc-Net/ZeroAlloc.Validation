@@ -10,6 +10,6 @@ namespace ZeroAlloc.Validation.Tests.Integration;
 [PipelineBehavior(Order = 1, AppliesTo = typeof(AllocGenericBehaviorModel<>))]
 public class AllocGenericBehaviorInnerAudit : IPipelineBehavior
 {
-    public static ValidationResult Handle<TModel>(TModel instance, System.Func<TModel, ValidationResult> next)
-        => next(instance);
+    public static ValidationResult Handle<TModel, TState>(TModel instance, TState state, System.Func<TModel, TState, ValidationResult> next)
+        => next(instance, state);
 }

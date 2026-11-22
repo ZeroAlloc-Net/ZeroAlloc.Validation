@@ -26,10 +26,10 @@ public class BehaviorDiscoveryTests
             [PipelineBehavior(Order = 0)]
             public class LoggingBehavior : IPipelineBehavior
             {
-                public static ValidationResult Handle<TModel>(
-                    TModel instance,
-                    System.Func<TModel, ValidationResult> next)
-                    => next(instance);
+                public static ValidationResult Handle<TModel, TState>(
+                    TModel instance, TState state,
+                    System.Func<TModel, TState, ValidationResult> next)
+                    => next(instance, state);
             }
             """;
 
@@ -53,11 +53,11 @@ public class BehaviorDiscoveryTests
             [PipelineBehavior(Order = 0)]
             public class CachingBehavior : IPipelineBehavior
             {
-                public static async ValueTask<ValidationResult> Handle<TModel>(
-                    TModel instance,
+                public static async ValueTask<ValidationResult> Handle<TModel, TState>(
+                    TModel instance, TState state,
                     CancellationToken ct,
-                    System.Func<TModel, CancellationToken, ValueTask<ValidationResult>> next)
-                    => await next(instance, ct);
+                    System.Func<TModel, TState, CancellationToken, ValueTask<ValidationResult>> next)
+                    => await next(instance, state, ct);
             }
             """;
 
@@ -102,10 +102,10 @@ public class BehaviorDiscoveryTests
             [PipelineBehavior(Order = 0)]
             public class LoggingBehavior : IPipelineBehavior
             {
-                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
-                    TModel instance,
-                    System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
-                    => next(instance);
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel, TState>(
+                    TModel instance, TState state,
+                    System.Func<TModel, TState, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(instance, state);
             }
             """;
 
@@ -136,17 +136,17 @@ public class BehaviorDiscoveryTests
             [PipelineBehavior(Order = 0)]
             public class BehaviorA : IPipelineBehavior
             {
-                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
-                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
-                    => next(inst);
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel, TState>(
+                    TModel inst, TState state, System.Func<TModel, TState, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst, state);
             }
 
             [PipelineBehavior(Order = 0)]
             public class BehaviorB : IPipelineBehavior
             {
-                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
-                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
-                    => next(inst);
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel, TState>(
+                    TModel inst, TState state, System.Func<TModel, TState, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst, state);
             }
             """;
 
@@ -176,18 +176,18 @@ public class BehaviorDiscoveryTests
             [PipelineBehavior(Order = 0)]
             public class SyncBehavior : IPipelineBehavior
             {
-                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
-                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
-                    => next(inst);
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel, TState>(
+                    TModel inst, TState state, System.Func<TModel, TState, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst, state);
             }
 
             [PipelineBehavior(Order = 0)]
             public class AsyncBehavior : IPipelineBehavior
             {
-                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel>(
-                    TModel inst, CancellationToken ct,
-                    System.Func<TModel, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
-                    => await next(inst, ct);
+                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel, TState>(
+                    TModel inst, TState state, CancellationToken ct,
+                    System.Func<TModel, TState, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
+                    => await next(inst, state, ct);
             }
             """;
 
@@ -215,17 +215,17 @@ public class BehaviorDiscoveryTests
             [PipelineBehavior(Order = 0)]
             public class BehaviorA : IPipelineBehavior
             {
-                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
-                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
-                    => next(inst);
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel, TState>(
+                    TModel inst, TState state, System.Func<TModel, TState, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst, state);
             }
 
             [PipelineBehavior(Order = 0)]
             public class BehaviorB : IPipelineBehavior
             {
-                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
-                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
-                    => next(inst);
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel, TState>(
+                    TModel inst, TState state, System.Func<TModel, TState, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst, state);
             }
             """;
 
@@ -257,17 +257,17 @@ public class BehaviorDiscoveryTests
             [PipelineBehavior(Order = 0)]
             public class BehaviorA : IPipelineBehavior
             {
-                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
-                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
-                    => next(inst);
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel, TState>(
+                    TModel inst, TState state, System.Func<TModel, TState, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst, state);
             }
 
             [PipelineBehavior(Order = 0)]
             public class BehaviorB : IPipelineBehavior
             {
-                public static ZeroAlloc.Validation.ValidationResult Handle<TModel>(
-                    TModel inst, System.Func<TModel, ZeroAlloc.Validation.ValidationResult> next)
-                    => next(inst);
+                public static ZeroAlloc.Validation.ValidationResult Handle<TModel, TState>(
+                    TModel inst, TState state, System.Func<TModel, TState, ZeroAlloc.Validation.ValidationResult> next)
+                    => next(inst, state);
             }
             """;
 
@@ -368,11 +368,11 @@ public class BehaviorDiscoveryTests
             [PipelineBehavior(Order = 0, AppliesTo = typeof(Customer))]
             public class AuditBehavior : IPipelineBehavior
             {
-                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel>(
-                    TModel instance,
+                public static async ValueTask<ZeroAlloc.Validation.ValidationResult> Handle<TModel, TState>(
+                    TModel instance, TState state,
                     CancellationToken ct,
-                    System.Func<TModel, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
-                    => await next(instance, ct);
+                    System.Func<TModel, TState, CancellationToken, ValueTask<ZeroAlloc.Validation.ValidationResult>> next)
+                    => await next(instance, state, ct);
             }
             """;
 

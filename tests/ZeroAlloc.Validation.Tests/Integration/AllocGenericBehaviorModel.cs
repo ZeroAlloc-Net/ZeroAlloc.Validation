@@ -4,7 +4,7 @@ namespace ZeroAlloc.Validation.Tests.Integration;
 
 /// <summary>
 /// A generic model with a nested validator and behaviors applied to its open form: every closing's
-/// chains cache their delegates, issue #298.
+/// chains thread the validator as their state and allocate no delegate, issues #298 and #410.
 /// </summary>
 [Validate]
 public class AllocGenericBehaviorModel<T>
