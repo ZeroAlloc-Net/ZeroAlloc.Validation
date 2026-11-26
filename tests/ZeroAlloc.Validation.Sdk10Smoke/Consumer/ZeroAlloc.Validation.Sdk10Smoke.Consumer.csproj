@@ -36,6 +36,6 @@
     <PackageReference Include="ZeroAlloc.Validation.Inject" Version="[$(ZeroAllocValidationVersion)]" />
     <PackageReference Include="ZeroAlloc.Validation.Options" Version="[$(ZeroAllocValidationVersion)]" />
     <PackageReference Include="ZeroAlloc.Validation.AspNetCore" Version="[$(ZeroAllocValidationVersion)]" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="11.0.0" />
   </ItemGroup>
 </Project>
