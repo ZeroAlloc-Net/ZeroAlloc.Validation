@@ -10,6 +10,11 @@ sidebar_position: 1
 
 Add the core library to your project. The integration and testing packages are optional.
 
+The bundled generators need the .NET 10 SDK 10.0.100 or later, or Visual Studio 2026 or later: they
+are built against Roslyn 5.0, and an older compiler skips them with warning CS9057, after which the
+generated validators are missing. Versions up to 2.6.1 were built against Roslyn 5.9 and load only in
+SDK 10.0.4xx or later; on an older .NET 10 SDK, use 2.6.2 or later.
+
 **Core library (required)**
 
 ```bash

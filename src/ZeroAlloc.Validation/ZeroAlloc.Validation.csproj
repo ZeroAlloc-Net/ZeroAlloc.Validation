@@ -3,13 +3,20 @@
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0;net11.0</TargetFrameworks>
     <PackageId>ZeroAlloc.Validation</PackageId>
+    <ZeroAllocPipelineGeneratorsVersion>1.5.2</ZeroAllocPipelineGeneratorsVersion>
     <IsAotCompatible>true</IsAotCompatible>
     <Description>A zero-allocation validation library for .NET. Roslyn source generator wires all rule evaluation at compile time — no reflection, no boxing, no runtime overhead.</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ZeroAlloc.Pipeline" Version="1.4.0" GeneratePathProperty="true" />
-    <PackageReference Include="ZeroAlloc.Pipeline.Generators" Version="1.4.0" GeneratePathProperty="true" PrivateAssets="all" />
+    <PackageReference Include="ZeroAlloc.Pipeline" Version="1.4.0" />
+    <!-- The Pipeline generator this project's build runs, and the ZeroAlloc.Pipeline.dll it binds
+         to at load time. Pipeline.Generators 1.5.2 references Roslyn 5.0; 1.4.0 referenced 5.9.
+         A PackageReference to 1.5.2 would raise the ZeroAlloc.Pipeline floor above to 1.5.2
+         through its dependency, but 1.5 adds only .NET 11 support, so the runtime floor stays at
+         1.4.0 and the build-time DLLs are downloaded outside the dependency graph. -->
+    <PackageDownload Include="ZeroAlloc.Pipeline.Generators" Version="[$(ZeroAllocPipelineGeneratorsVersion)]" />
+    <PackageDownload Include="ZeroAlloc.Pipeline" Version="[$(ZeroAllocPipelineGeneratorsVersion)]" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" PrivateAssets="all">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
@@ -36,8 +43,8 @@
   <!-- Expose generator dependency DLLs as Analyzer items so Roslyn's loader finds them
        during *this* project's build. -->
   <ItemGroup>
-    <Analyzer Include="$(PkgZeroAlloc_Pipeline_Generators)\lib\netstandard2.0\ZeroAlloc.Pipeline.Generators.dll" />
-    <Analyzer Include="$(PkgZeroAlloc_Pipeline)\lib\netstandard2.0\ZeroAlloc.Pipeline.dll" />
+    <Analyzer Include="$([MSBuild]::EnsureTrailingSlash($(NuGetPackageRoot)))zeroalloc.pipeline.generators/$(ZeroAllocPipelineGeneratorsVersion)/lib/netstandard2.0/ZeroAlloc.Pipeline.Generators.dll" />
+    <Analyzer Include="$([MSBuild]::EnsureTrailingSlash($(NuGetPackageRoot)))zeroalloc.pipeline/$(ZeroAllocPipelineGeneratorsVersion)/lib/netstandard2.0/ZeroAlloc.Pipeline.dll" />
   </ItemGroup>
 
   <!--
