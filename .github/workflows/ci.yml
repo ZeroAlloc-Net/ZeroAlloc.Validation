@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'release-please--**']
+    branches: [main, 'release-please--**', 'release/**']
   # No branch filter: a PR targeting a branch other than main (a stacked PR, say) would
   # otherwise get no checks at all and report as "no checks reported", which reads like
   # they have not started yet rather than that they will never run.
